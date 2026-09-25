@@ -7,10 +7,13 @@ import time
 from pathlib import Path
 
 import moderngl
-from PyQt6.QtCore import QFileSystemWatcher, QTimer, pyqtSignal
-from PyQt6.QtGui import QSurfaceFormat
+from PyQt6.QtCore import QFileSystemWatcher, QPointF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QMouseEvent, QSurfaceFormat, QWheelEvent
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 
+from earthling.core.geo import LocalFrame
+from earthling.core.gpx import Track
+from earthling.render.camera import Camera, OrbitController
 from earthling.render.renderer import Renderer
 
 log = logging.getLogger(__name__)
@@ -36,14 +39,33 @@ class Viewport(QOpenGLWidget):
         self.dev_mode = dev_mode
         self.ctx: moderngl.Context | None = None
         self.renderer: Renderer | None = None
-        self._start = time.perf_counter()
+        self.camera = Camera()
+        self.orbit = OrbitController(self.camera)
+        self._pending_scene: tuple[LocalFrame, list[Track]] | None = None
+        self._last_mouse: QPointF | None = None
         self._frames = 0
         self._fps_timer = time.perf_counter()
         self._watcher: QFileSystemWatcher | None = None
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         # Continuous redraw; later steps switch to on-demand rendering where possible.
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update)
         self._timer.start(0)
+
+    # --- scene -------------------------------------------------------------------------
+    def set_scene(self, frame: LocalFrame, tracks: list[Track], reframe: bool = True) -> None:
+        if self.renderer is None:
+            self._pending_scene = (frame, tracks)
+            return
+        self.makeCurrent()
+        self.renderer.set_scene(frame, tracks)
+        self.doneCurrent()
+        if reframe:
+            self.frame_all()
+
+    def frame_all(self) -> None:
+        if self.renderer is not None and self.renderer.tracks.bounds is not None:
+            self.orbit.frame_bounds(*self.renderer.tracks.bounds)
 
     # --- Qt GL hooks -------------------------------------------------------------------
     def initializeGL(self) -> None:
@@ -53,6 +75,11 @@ class Viewport(QOpenGLWidget):
         if self.dev_mode:
             self._watcher = QFileSystemWatcher(self)
             self._watcher.fileChanged.connect(self._on_shader_changed)
+        if self._pending_scene is not None:
+            frame, tracks = self._pending_scene
+            self._pending_scene = None
+            self.renderer.set_scene(frame, tracks)
+            self.frame_all()
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:
@@ -60,9 +87,30 @@ class Viewport(QOpenGLWidget):
         fbo = self.ctx.detect_framebuffer(self.defaultFramebufferObject())
         ratio = self.devicePixelRatio()
         width, height = int(self.width() * ratio), int(self.height() * ratio)
-        self.renderer.render(fbo, width, height, time.perf_counter() - self._start)
+        self.renderer.render(fbo, width, height, self.camera)
         self._sync_watcher()
         self._count_frame()
+
+    # --- input -------------------------------------------------------------------------
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._last_mouse = event.position()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        self._last_mouse = None
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._last_mouse is None:
+            return
+        delta = event.position() - self._last_mouse
+        self._last_mouse = event.position()
+        buttons = event.buttons()
+        if buttons & Qt.MouseButton.LeftButton:
+            self.orbit.rotate(delta.x(), delta.y())
+        elif buttons & (Qt.MouseButton.RightButton | Qt.MouseButton.MiddleButton):
+            self.orbit.pan(delta.x(), delta.y(), self.height())
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        self.orbit.zoom(event.angleDelta().y() / 120.0)
 
     # --- helpers -----------------------------------------------------------------------
     def _count_frame(self) -> None:

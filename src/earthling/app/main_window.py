@@ -12,6 +12,7 @@ from earthling import __version__
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.viewport import Viewport
 from earthling.core.config import ConfigError, Project
+from earthling.core.geo import LocalFrame, frame_for_bbox
 from earthling.core.gpx import Track, load_gpx_folder
 
 MAX_RECENT = 8
@@ -25,6 +26,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.project: Project | None = None
         self.tracks: list[Track] = []
+        self.frame: LocalFrame | None = None
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
@@ -61,6 +63,8 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_menu()
 
         self.view_menu = bar.addMenu("&View")
+        self._add_action(self.view_menu, "&Frame All", lambda: self.viewport.frame_all(), "Home")
+        self.view_menu.addSeparator()
 
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
@@ -89,6 +93,8 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.tracks, errors = load_gpx_folder(project.gpx_dir)
         self.tracks_dock.set_tracks(self.tracks)
+        self.frame = self._frame_for_tracks()
+        self.viewport.set_scene(self.frame, self.tracks)
         self.statusBar().showMessage(
             f"Opened project {project.folder} – {len(self.tracks)} track(s)", 5000
         )
@@ -96,6 +102,17 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "GPX problems", "\n".join(errors))
         self.project_changed.emit(project)
         self.tracks_changed.emit()
+
+    def _frame_for_tracks(self) -> LocalFrame:
+        if not self.tracks:
+            return LocalFrame(46.0, 7.0, 0.0)
+        boxes = [t.bbox() for t in self.tracks]
+        return frame_for_bbox(
+            min(b[0] for b in boxes),
+            min(b[1] for b in boxes),
+            max(b[2] for b in boxes),
+            max(b[3] for b in boxes),
+        )
 
     def _new_project(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Choose (empty) folder for new project")

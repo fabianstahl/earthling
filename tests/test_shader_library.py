@@ -35,11 +35,21 @@ def test_hot_reload_keeps_old_program_on_error(gl_ctx, tmp_path):
     assert lib.get("p") is not first
 
 
-def test_renderer_draws_triangle(gl_ctx):
+def test_renderer_draws_tracks(gl_ctx):
+    from pathlib import Path
+
+    from earthling.core.geo import LocalFrame
+    from earthling.core.gpx import load_gpx_folder
+    from earthling.render.camera import Camera, OrbitController
+
+    tracks, _ = load_gpx_folder(Path(__file__).parents[1] / "examples" / "alps_demo" / "gpx")
     renderer = Renderer(gl_ctx)
-    fbo = gl_ctx.simple_framebuffer((64, 64))
-    renderer.render(fbo, 64, 64, 0.0)
-    img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(64, 64, 3)
-    center = img[32, 32].astype(int)
-    corner = img[1, 1].astype(int)
-    assert center.sum() > corner.sum() + 100
+    renderer.set_scene(LocalFrame(46.0, 6.99, 0.0), tracks)
+    camera = Camera()
+    OrbitController(camera).frame_bounds(*renderer.tracks.bounds)
+    fbo = gl_ctx.simple_framebuffer((128, 128))
+    renderer.render(fbo, 128, 128, camera)
+    img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(128, 128, 3)
+    background = np.array([20, 23, 28])
+    lit = np.abs(img.astype(int) - background).sum(axis=2) > 60
+    assert lit.sum() > 50
