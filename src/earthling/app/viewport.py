@@ -75,6 +75,8 @@ class Viewport(QOpenGLWidget):
         self._pending_camera_path = None
         self.store = None  # PropertyStore of the scene
         self.animated_camera = False  # follow the "camera.pose" property (timeline playback)
+        self.pose_provider = None  # () -> pose; the camera rig (modes, transitions)
+        self._pick_callback = None  # set by request_pick(): the next click picks a point
         self.timezone = "UTC"
         self._shut_down = False
         self._camera_restored = False  # a saved camera must not be overridden by framing
@@ -140,9 +142,21 @@ class Viewport(QOpenGLWidget):
             self.renderer.store = store
 
     def _on_store_changed(self, pid: str, value) -> None:
-        if pid == "camera.pose" and self.animated_camera:
-            self.apply_pose(value)
+        if self.animated_camera and pid.startswith(("camera.", "follow.", "progress.")):
+            pose = self.current_animated_pose()
+            if pose is not None:
+                self.apply_pose(pose)
         self.request_render()
+
+    def request_pick(self, callback) -> None:
+        """The next left click on the terrain calls ``callback(enu_position)``."""
+        self._pick_callback = callback
+        self.setCursor(Qt.CursorShape.CrossCursor)
+
+    def current_animated_pose(self):
+        if self.pose_provider is not None:
+            return self.pose_provider()
+        return self.store["camera.pose"] if self.store is not None else None
 
     # --- animated camera ----------------------------------------------------------------
     def camera_pose(self) -> tuple[float, float, float, float, float, float]:
@@ -159,8 +173,10 @@ class Viewport(QOpenGLWidget):
         if enabled == self.animated_camera:
             return
         self.animated_camera = enabled
-        if enabled and self.store is not None:
-            self.apply_pose(self.store["camera.pose"])
+        if enabled:
+            pose = self.current_animated_pose()
+            if pose is not None:
+                self.apply_pose(pose)
         if not enabled:
             self.mode = self.FLY
             self.mode_changed.emit(self.mode)
@@ -244,6 +260,19 @@ class Viewport(QOpenGLWidget):
 
     def _exaggeration(self) -> float:
         return self.renderer.terrain.exaggeration if self.renderer is not None else 1.0
+
+    def clamp_pose(self, pose):
+        """Keep an animated pose above the terrain (follow/look-at paths may cut ridges)."""
+        if self.frame is None:
+            return pose
+        lat, lon, h = self.frame.enu_to_geodetic(np.array(pose[:3]))
+        ground = self.ground_height(float(lat), float(lon))
+        if ground is None:
+            return pose
+        lift = ground * self._exaggeration() + MIN_GROUND_CLEARANCE_M - float(h)
+        if lift <= 0:
+            return pose
+        return (pose[0], pose[1], pose[2] + lift, *pose[3:])
 
     def _clamp_to_ground(self) -> None:
         hag = self.height_above_ground()
@@ -334,10 +363,17 @@ class Viewport(QOpenGLWidget):
         now = time.perf_counter()
         dt = now - self._last_paint
         self._last_paint = now
-        if self.mode == self.FLY:
+        if self.animated_camera:
+            pose = self.current_animated_pose()
+            if pose is not None:
+                x, y, z, heading, pitch, roll = pose
+                self.camera.position = np.array([x, y, z], dtype=np.float64)
+                self.camera.heading, self.camera.pitch, self.camera.roll = heading, pitch, roll
+        elif self.mode == self.FLY:
             hag = self.height_above_ground()
             self.fly.step(dt, hag if hag is not None else 1000.0)
-        self._clamp_to_ground()
+        if not self.animated_camera:
+            self._clamp_to_ground()
         self.renderer.time = now - self._start_time
         fbo = self.ctx.detect_framebuffer(self.defaultFramebufferObject())
         ratio = self.devicePixelRatio()
@@ -348,8 +384,15 @@ class Viewport(QOpenGLWidget):
 
     # --- input -------------------------------------------------------------------------
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        self._last_mouse = event.position()
         self.setFocus()
+        if self._pick_callback is not None and event.button() == Qt.MouseButton.LeftButton:
+            callback, self._pick_callback = self._pick_callback, None
+            self.unsetCursor()
+            point = self.pick(event.position().x(), event.position().y())
+            if point is not None:
+                callback(point)
+            return
+        self._last_mouse = event.position()
         self._take_manual_control()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:

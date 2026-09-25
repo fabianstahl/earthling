@@ -32,6 +32,7 @@ from earthling.core.gpx import Track
 from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
 from earthling.core.session import Session
 from earthling.data.jobs import download_jobs
+from earthling.render.camera_rig import CameraRig
 from earthling.ui.dope_sheet import KeyButton
 from earthling.ui.property_panel import PropertyPanel
 from earthling.ui.timeline_widget import TimelineWidget
@@ -54,12 +55,14 @@ class MainWindow(QMainWindow):
         self.timeline = TimelineController(self.scene.animation, self)
         self.keys = KeyframeEditor(self.scene.animation, self.timeline, self.undo_stack)
         self.keys.changed.connect(self._camera_keys_changed)
+        self.rig = CameraRig(self.scene.animation, self.scene.store)
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
         self.viewport = Viewport(dev_mode=dev_mode)
         self.setCentralWidget(self.viewport)
         self.viewport.set_store(self.scene.store)
+        self.viewport.pose_provider = self._animated_pose
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.viewport.shutdown)
@@ -161,6 +164,7 @@ class MainWindow(QMainWindow):
         self.animated_camera_action.toggled.connect(lambda v: self.viewport.set_animated_camera(v))
         self.view_menu.addAction(self.animated_camera_action)
         self._add_action(self.view_menu, "Add &Camera Key (K)", self.add_camera_key, "K")
+        self._add_action(self.view_menu, "Pick Look-at &Target (T)", self.pick_look_at_target, "T")
         self.view_menu.addSeparator()
         self.view_menu.addAction(
             self._store_toggle("terrain.debug_lod", "Debug: Show Terrain &LOD")
@@ -183,6 +187,20 @@ class MainWindow(QMainWindow):
     def add_camera_key(self) -> None:
         """Key the current view at the playhead."""
         self.keys.set_key("camera.pose", self.viewport.camera_pose())
+
+    def pick_look_at_target(self) -> None:
+        self.statusBar().showMessage("Click on the terrain to set the look-at target", 5000)
+
+        def picked(point) -> None:
+            self._on_panel_edit("camera.target", tuple(float(v) for v in point), False)
+            self.statusBar().showMessage("Look-at target set", 3000)
+
+        self.viewport.request_pick(picked)
+
+    def _animated_pose(self):
+        renderer = self.viewport.renderer
+        self.rig.path = renderer.tracks.path if renderer is not None else None
+        return self.viewport.clamp_pose(self.rig.pose(self.timeline.time))
 
     def _camera_keys_changed(self) -> None:
         curve = self.scene.animation.curves.get("camera.pose")
