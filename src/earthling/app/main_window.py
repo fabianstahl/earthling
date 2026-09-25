@@ -139,6 +139,7 @@ class MainWindow(QMainWindow):
         self._add_action(self.file_menu, "Re&vert Scene", self._revert_scene)
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "Render &Still…", self.render_still_dialog, "Ctrl+R")
+        self._add_action(self.file_menu, "&Export Video…", self.export_video_dialog, "Ctrl+E")
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "&Quit", self.close, QKeySequence.StandardKey.Quit)
         self._rebuild_recent_menu()
@@ -238,6 +239,13 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         self.statusBar().showMessage(f"Saved {path}", 5000)
+
+    def export_video_dialog(self) -> None:
+        from earthling.app.export_dialog import ExportDialog
+
+        if self.viewport.renderer is None:
+            return
+        ExportDialog(self).exec()
 
     def pick_look_at_target(self) -> None:
         self.statusBar().showMessage("Click on the terrain to set the look-at target", 5000)

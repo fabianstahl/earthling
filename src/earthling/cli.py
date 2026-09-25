@@ -18,7 +18,78 @@ def build_parser() -> argparse.ArgumentParser:
     fetch.add_argument("project", help="project folder")
     fetch.add_argument("--kind", choices=["imagery", "dem", "topo", "all"], default="all")
     fetch.add_argument("--max-zoom", type=int, default=None, help="limit the finest zoom level")
+    render = sub.add_parser("render", help="render the animation of a scene to a video file")
+    render.add_argument("project", help="project folder")
+    render.add_argument("--scene", default="scene.json", help="scene file (in the project folder)")
+    render.add_argument("--out", default=None, help="output file (default: <scene>.<ext>)")
+    render.add_argument("--preset", default="prores4444", help="video preset, see --list-presets")
+    render.add_argument("--resolution", default=None, help="e.g. 3840x2160 (default: scene)")
+    render.add_argument("--start", type=float, default=0.0, help="start time in seconds")
+    render.add_argument("--end", type=float, default=None, help="end time (default: duration)")
+    render.add_argument("--list-presets", action="store_true", help="list presets and exit")
     return parser
+
+
+def cmd_render(args) -> int:
+    import time
+    from pathlib import Path
+
+    import moderngl
+
+    from earthling.core.scene import Scene
+    from earthling.export.frames import FrameRenderer, parse_resolution
+    from earthling.export.video import PRESETS, available_presets, export_video
+    from earthling.render.renderer import Renderer
+
+    if args.list_presets:
+        for preset in available_presets():
+            print(f"{preset.id:12s} {preset.label}")
+        return 0
+    if args.preset not in PRESETS:
+        print(f"unknown preset '{args.preset}'", file=sys.stderr)
+        return 2
+    session = _load_session(args.project)
+    if session is None:
+        return 1
+    scene_path = Path(args.scene)
+    if not scene_path.is_absolute():
+        scene_path = session.project.folder / scene_path
+    scene = Scene()
+    for problem in scene.load(scene_path):
+        print(f"warning: {problem}", file=sys.stderr)
+    preset = PRESETS[args.preset]
+    width, height = parse_resolution(args.resolution or scene.store["export.resolution"])
+    anim = scene.animation
+    end = anim.duration if args.end is None else args.end
+    out = Path(args.out) if args.out else scene_path.with_suffix(preset.extension)
+    ctx = moderngl.create_standalone_context(require=430)
+    renderer = Renderer(ctx)
+    renderer.set_scene(session.frame, session.tracks)
+    renderer.set_terrain_source(session.terrain_data(), session.terrain_nodes())
+    renderer.store = scene.store
+    renderer.timezone = session.config.project.timezone
+    frames = FrameRenderer(renderer, anim)
+    started = time.monotonic()
+
+    def progress(done: int, total: int) -> None:
+        elapsed = time.monotonic() - started
+        eta = elapsed / done * (total - done)
+        print(f"\r  frame {done}/{total}  {done / elapsed:5.2f} fps  ETA {eta / 60:5.1f} min",
+              end="", flush=True)  # fmt: skip
+
+    print(f"rendering {scene_path.name} {args.start:g}-{end:g} s at {width}x{height} "
+          f"{anim.fps:g} fps -> {out} ({preset.label})")  # fmt: skip
+    try:
+        count = export_video(
+            frames, out, width, height, anim.fps, preset, args.start, end, progress
+        )
+    except KeyboardInterrupt:
+        print("\ncancelled")
+        return 130
+    finally:
+        renderer.terrain.shutdown()
+    print(f"\nwrote {count} frames to {out}")
+    return 0
 
 
 def _load_session(project_dir: str):
@@ -104,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_plan(args.project)
     if command == "fetch":
         return cmd_fetch(args.project, args.kind, args.max_zoom)
+    if command == "render":
+        return cmd_render(args)
     return 1
 
 

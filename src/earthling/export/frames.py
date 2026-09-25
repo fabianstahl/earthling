@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 
 import moderngl
@@ -79,8 +79,8 @@ class FrameRenderer:
         camera.heading, camera.pitch, camera.roll = heading, pitch, roll
         return camera
 
-    def render(self, time: float, width: int, height: int, bits: int = 8) -> np.ndarray:
-        """RGB image (height, width, 3), uint8 for ``bits`` = 8, else uint16, top row first."""
+    def _draw(self, time: float, width: int, height: int) -> moderngl.Framebuffer:
+        """Render ``time`` at full quality into the offscreen target (no readback)."""
         self.animation.apply(time)
         if self.on_time is not None:
             self.on_time(time)
@@ -100,16 +100,38 @@ class FrameRenderer:
             renderer.prepare(camera, width, height)
             fbo = self._ensure_target(width, height)
             renderer.render(fbo, width, height, camera)
-            self.ctx.finish()
-            raw = fbo.read(components=3, dtype="f2")
         finally:
             renderer.overrides = previous_overrides
             renderer.time = previous_time
-        img = np.frombuffer(raw, dtype=np.float16).reshape(height, width, 3)[::-1]
-        img = np.clip(img.astype(np.float32), 0.0, 1.0)
-        if bits == 8:
-            return (img * 255.0 + 0.5).astype(np.uint8)
-        return (img * 65535.0 + 0.5).astype(np.uint16)
+        return fbo
+
+    def render(self, time: float, width: int, height: int, bits: int = 8) -> np.ndarray:
+        """RGB image (height, width, 3), uint8 for ``bits`` = 8, else uint16, top row first."""
+        fbo = self._draw(time, width, height)
+        self.ctx.finish()
+        return to_image(fbo.read(components=3, dtype="f2"), width, height, bits)
+
+    def iter_frames(
+        self, times: Iterable[float], width: int, height: int, bits: int = 8
+    ) -> Iterator[np.ndarray]:
+        """Render a sequence of frames. The readback of each frame goes into a pixel buffer
+        object and is only collected after the next frame has been submitted, so the GPU
+        keeps rendering while the previous frame is copied and converted."""
+        size = width * height * 3 * 2
+        buffers = [self.ctx.buffer(reserve=size) for _ in range(2)]
+        pending: int | None = None
+        try:
+            for i, t in enumerate(times):
+                fbo = self._draw(t, width, height)
+                fbo.read_into(buffers[i % 2], components=3, dtype="f2")
+                if pending is not None:
+                    yield to_image(buffers[pending].read(), width, height, bits)
+                pending = i % 2
+            if pending is not None:
+                yield to_image(buffers[pending].read(), width, height, bits)
+        finally:
+            for buf in buffers:
+                buf.release()
 
     def release(self) -> None:
         for obj in (self._fbo, self._color):
@@ -117,6 +139,15 @@ class FrameRenderer:
                 obj.release()
         self._fbo = self._color = None
         self._size = (0, 0)
+
+
+def to_image(raw: bytes, width: int, height: int, bits: int) -> np.ndarray:
+    """Bottom-up float16 RGB readback -> top-down uint8/uint16 image."""
+    img = np.frombuffer(raw, dtype=np.float16).reshape(height, width, 3)[::-1]
+    img = np.clip(img.astype(np.float32), 0.0, 1.0)
+    if bits == 8:
+        return (img * 255.0 + 0.5).astype(np.uint8)
+    return (img * 65535.0 + 0.5).astype(np.uint16)
 
 
 def save_png(image: np.ndarray, path) -> None:

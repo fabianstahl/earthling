@@ -75,6 +75,7 @@ class Viewport(QOpenGLWidget):
         self._pending_terrain = None
         self._pending_camera_path = None
         self.store = None  # PropertyStore of the scene
+        self.suspended = False  # no viewport rendering (e.g. while exporting a video)
         self.animated_camera = False  # follow the "camera.pose" property (timeline playback)
         self.pose_provider = None  # () -> pose; the camera rig (modes, transitions)
         self._pick_callback = None  # set by request_pick(): the next click picks a point
@@ -494,6 +495,8 @@ class Viewport(QOpenGLWidget):
         )
 
     def _tick(self) -> None:
+        if self.suspended:
+            return
         key = self._camera_key()
         if key != self._last_camera_state:
             self._last_camera_state = key

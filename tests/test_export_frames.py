@@ -70,3 +70,14 @@ def test_png16(tmp_path):
 
     with Image.open(path) as im:
         assert im.size == (3, 4)
+
+
+def test_iter_frames_matches_single_renders(gl_ctx):
+    scene, renderer = make(gl_ctx)
+    frames = FrameRenderer(renderer, scene.animation)
+    times = [0.0, 1.0, 3.5]
+    piped = list(frames.iter_frames(times, 96, 54, bits=16))
+    assert len(piped) == 3
+    for t, img in zip(times, piped, strict=True):
+        assert np.array_equal(img, frames.render(t, 96, 54, bits=16))
+    assert not np.array_equal(piped[0], piped[2])  # the camera moved
