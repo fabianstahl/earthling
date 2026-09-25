@@ -11,6 +11,7 @@ import moderngl
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
 from earthling.render.camera import Camera
+from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.tracks import TrackLayer
 
@@ -22,6 +23,7 @@ class Renderer:
         self.clear_color = (0.08, 0.09, 0.11, 1.0)
         self.frame: LocalFrame | None = None
         self.tracks = TrackLayer(ctx, self.shaders)
+        self.outlines = OutlineLayer(ctx, self.shaders)
 
     def set_scene(self, frame: LocalFrame, tracks: list[Track]) -> None:
         self.frame = frame
@@ -34,3 +36,4 @@ class Renderer:
         self.ctx.enable(moderngl.DEPTH_TEST)
         view_proj = camera.view_projection(width / max(1, height))
         self.tracks.render(camera, view_proj)
+        self.outlines.render(camera, view_proj)

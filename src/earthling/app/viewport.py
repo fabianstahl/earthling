@@ -42,6 +42,8 @@ class Viewport(QOpenGLWidget):
         self.camera = Camera()
         self.orbit = OrbitController(self.camera)
         self._pending_scene: tuple[LocalFrame, list[Track]] | None = None
+        self._pending_outlines = None
+        self._outlines_visible = True
         self._last_mouse: QPointF | None = None
         self._frames = 0
         self._fps_timer = time.perf_counter()
@@ -63,6 +65,19 @@ class Viewport(QOpenGLWidget):
         if reframe:
             self.frame_all()
 
+    def set_outlines(self, lines) -> None:
+        if self.renderer is None:
+            self._pending_outlines = lines
+            return
+        self.makeCurrent()
+        self.renderer.outlines.set_lines(lines)
+        self.doneCurrent()
+
+    def set_outlines_visible(self, visible: bool) -> None:
+        self._outlines_visible = visible
+        if self.renderer is not None:
+            self.renderer.outlines.visible = visible
+
     def frame_all(self) -> None:
         if self.renderer is not None and self.renderer.tracks.bounds is not None:
             self.orbit.frame_bounds(*self.renderer.tracks.bounds)
@@ -80,6 +95,10 @@ class Viewport(QOpenGLWidget):
             self._pending_scene = None
             self.renderer.set_scene(frame, tracks)
             self.frame_all()
+        if self._pending_outlines is not None:
+            self.renderer.outlines.set_lines(self._pending_outlines)
+            self._pending_outlines = None
+        self.renderer.outlines.visible = self._outlines_visible
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:
