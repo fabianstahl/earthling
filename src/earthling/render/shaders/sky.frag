@@ -1,11 +1,9 @@
 #include "atmosphere.glsl"
+#include "fog.glsl"
 in vec2 v_ndc;
 out vec4 f_color;
 
 uniform mat4 u_inv_view_proj;     // camera-relative, rotation only
-uniform vec3 u_sun_dir;           // ENU, towards the sun
-uniform float u_sun_illuminance;  // scale of the sky radiance
-uniform float u_camera_height;    // metres above sea level
 uniform float u_sun_disc = 1.0;
 uniform float u_star_brightness = 1.0;
 uniform float u_night = 0.0;      // 0 day .. 1 full night (stars fade in)
@@ -68,5 +66,12 @@ void main() {
     }
     // faint airglow so the night sky is not pitch black
     radiance += vec3(0.0004, 0.0006, 0.0012) * u_night * (below_horizon ? 0.3 : 1.0);
+    // height fog in front of the sky (the aerial perspective part is already in `scatter`)
+    if (u_fog_enabled && u_fog_density > 0.0) {
+        float tau = min(fog_optical_depth(dir, 200e3), 60.0);
+        float t = exp(-tau);
+        vec3 light = u_fog_ambient + u_fog_sun * (4.0 * 3.14159265) * phase_hg(dot(dir, sun), u_fog_glow);
+        radiance = radiance * t + light * (1.0 - t);
+    }
     f_color = vec4(radiance, 1.0);
 }

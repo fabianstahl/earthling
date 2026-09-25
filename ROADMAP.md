@@ -32,7 +32,7 @@ Switzerland. The tool must work for any other region too.
 | Scale | Download resolution set in zones by distance to the track; quadtree LOD terrain with async tile streaming |
 | Licensing | Non-commercial use. Every provider declares its license and attribution text, and an attribution overlay is optional |
 | Sun | Physically computed from lat/lon + date + time, with manual azimuth/elevation override offsets |
-| Sky | Analytic sky model (Preetham/Hosek-Wilkie style) + twilight + night/stars. Physically-based precomputed scattering is an optional late upgrade |
+| Sky | Real-time single-scattering atmosphere (Rayleigh + Mie + ozone, optical-depth LUT) + sun disc + night/stars. Chosen over Preetham during 5.2 because it handles sunsets/twilight. Full multiple-scattering LUTs (Bruneton) remain an optional late upgrade |
 | Effects | Height and distance fog, terrain shadows. Bloom only as needed for track glow. No volumetric clouds, no general post FX suite |
 | Track | 3D tube/ribbon with glow, animated progress, moving hiker marker |
 | Texture layers | Generic layer registry. Two slots (A, B) with a crossfade factor. Choosing the layer for each slot can be keyframed |
@@ -241,8 +241,9 @@ hemispherical sky ambient, normals from finer DEM data than the geometry.
 → Moving the time-of-day slider moves the sun realistically. Solar math tested against reference data.
 
 **5.2 HDR pipeline & analytic sky**
-HDR render target, exposure + ACES tone mapping. Analytic sky dome (Preetham/Hosek-Wilkie) with
-sun disk. Twilight reddening, night transition with a procedural star field and a dim bluish night
+HDR render target, exposure + ACES tone mapping. Sky from real-time single scattering (Rayleigh,
+Mie, ozone; optical depths precomputed into a small LUT shared with the CPU sun color), sun disc.
+Twilight reddening, night transition with a procedural star field and a dim bluish night
 ambient. Sky color feeds terrain ambient.
 → Moving the time from noon to midnight turns the sky red, then dark, with stars.
 

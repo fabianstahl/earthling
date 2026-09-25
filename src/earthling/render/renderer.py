@@ -22,6 +22,7 @@ from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.camera import Camera
 from earthling.render.lighting import (
+    OPTICAL_DEPTH_UNIT,
     Lighting,
     compute_lighting,
     enu_to_celestial,
@@ -136,6 +137,7 @@ class Renderer:
         view_proj = camera.view_projection(width / max(1, height))
         self._render_sky(camera, view_proj, height)
         self.ctx.enable(moderngl.DEPTH_TEST)
+        self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         self.terrain.render(camera, view_proj, height)
         self.tracks.render(camera, view_proj)
         self.outlines.render(camera, view_proj)
@@ -163,14 +165,14 @@ class Renderer:
             return
         program = self._fullscreen_pass("sky")
         program["u_inv_view_proj"].write(glm.inverse(view_proj))
-        program["u_sun_dir"] = self.lighting.sun_direction
-        program["u_camera_height"] = self.camera_height
+        for name, value in lighting_uniforms(self.lighting).items():
+            if name in program:
+                program[name] = value
         program["u_night"] = self.lighting.night
         program["u_pixel_angle"] = float(np.radians(camera.fov_y)) / max(1, height)
         m = enu_to_celestial(self.lighting.when, self.frame.lat, self.frame.lon)
         program["u_to_celestial"].write(m.T.astype("f4").tobytes())  # column-major
-        self.optical_depth.use(2)
-        program["u_optical_depth"] = 2
+        self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         if self.store is not None:
             bind_uniforms(program, self.store)
         self._draw_fullscreen("sky")

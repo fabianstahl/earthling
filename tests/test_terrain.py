@@ -140,3 +140,33 @@ def test_sun_direction_lights_facing_slopes(gl_ctx):
         return img[24:40, 24:40].mean()
 
     assert brightness(270.0) > brightness(90.0) + 20
+
+
+def test_dense_fog_hides_terrain_contrast(gl_ctx):
+    from earthling.core.scene import Scene
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    renderer.store = Scene().store
+    renderer.timezone = "Europe/Paris"
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    renderer.set_terrain_source(SlopeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 64)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 64)
+    fbo = gl_ctx.simple_framebuffer((64, 64))
+
+    def contrast():
+        renderer.render(fbo, 64, 64, camera)
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(64, 64, 3)
+        return img[20:44, 20:44].astype(float).mean(axis=2).std()  # luminance contrast
+
+    clear = contrast()
+    renderer.store.set("fog.enabled", True)
+    renderer.store.set("fog.density", 20.0)
+    renderer.store.set("fog.base", 6000.0)
+    renderer.store.set("fog.falloff", 5000.0)
+    renderer.store.set("fog.sun_scatter", 0.0)  # no view-dependent glow
+    assert contrast() < 0.3 * clear

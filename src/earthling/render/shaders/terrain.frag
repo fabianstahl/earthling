@@ -1,5 +1,7 @@
 #include "terrain_common.glsl"
 #include "logdepth.glsl"
+#include "atmosphere.glsl"
+#include "fog.glsl"
 in vec2 v_hm_uv;
 in vec2 v_tile_uv;
 in float v_height;
@@ -11,7 +13,6 @@ uniform sampler2D u_imagery;
 uniform bool u_has_imagery;
 uniform bool u_debug_lod;
 uniform bool u_show_imagery = true;
-uniform vec3 u_sun_dir = vec3(-0.5, 0.6, 0.6);  // towards the sun (ENU)
 uniform vec3 u_sun_radiance = vec3(1.4);         // linear, 0 below the horizon
 uniform vec3 u_sky_ambient = vec3(0.2, 0.24, 0.35);
 uniform vec3 u_ground_ambient = vec3(0.1, 0.08, 0.06);
@@ -51,5 +52,7 @@ void main() {
     // Hemispherical ambient (sky from above, bounce light from below) + direct sun.
     vec3 ambient = mix(u_ground_ambient, u_sky_ambient, n.z * 0.5 + 0.5);
     vec3 color = albedo * (ambient + u_sun_radiance * diffuse);
+    float dist = length(v_world);
+    color = apply_atmosphere(color, v_world / max(dist, 1e-3), dist);
     f_color = vec4(color, 1.0);  // linear HDR radiance
 }

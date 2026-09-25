@@ -59,8 +59,8 @@ vec3 extinction(vec3 od) {
 
 // In-scattered radiance along the ray segment [0, max_dist] (unit sun irradiance) and the
 // transmittance of that segment.
-vec3 scatter(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, out vec3 transmittance) {
-    const int SAMPLES = 32;
+vec3 scatter_steps(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, int SAMPLES,
+                   out vec3 transmittance) {
     vec3 beta_r = RAYLEIGH_BETA * u_rayleigh_scale;
     float beta_m = MIE_BETA * u_mie_scale;
     vec2 hit = ray_sphere(origin, dir, ATMOSPHERE_RADIUS);
@@ -95,4 +95,13 @@ vec3 scatter(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, out vec3 trans
     transmittance = extinction(od_view);
     float mu = dot(dir, sun_dir);
     return sum_r * beta_r * phase_rayleigh(mu) + sum_m * beta_m * phase_mie(mu);
+}
+
+vec3 scatter(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, out vec3 transmittance) {
+    return scatter_steps(origin, dir, max_dist, sun_dir, 32, transmittance);
+}
+
+// Cheaper variant for aerial perspective (short segments near the ground).
+vec3 scatter_short(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, out vec3 transmittance) {
+    return scatter_steps(origin, dir, max_dist, sun_dir, 10, transmittance);
 }

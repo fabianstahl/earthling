@@ -97,6 +97,24 @@ SKY = section(
     flt("sky.stars", "Star brightness", 1.0, 0.0, 10.0, uniform="u_star_brightness"),
 )  # fmt: skip
 
+FOG = section(
+    "Fog & Haze",
+    flt("haze.aerial", "Aerial perspective", 1.0, 0.0, 4.0, uniform="u_aerial_strength",
+        tooltip="Physically based haze between camera and terrain (uses the sky model)"),
+    boolean("fog.enabled", "Height fog", False, uniform="u_fog_enabled"),
+    flt("fog.density", "Fog density", 0.3, 0.0, 20.0, step=0.01, unit="/km",
+        logarithmic=False, tooltip="Extinction per kilometre at the fog base height"),
+    flt("fog.base", "Fog base height", 1200.0, -500.0, 6000.0, step=10.0, decimals=0, unit="m",
+        uniform="u_fog_base"),
+    flt("fog.falloff", "Fog falloff", 250.0, 10.0, 5000.0, step=10.0, decimals=0, unit="m",
+        logarithmic=True, uniform="u_fog_falloff",
+        tooltip="Height over which the fog density drops to 37 %"),
+    color("fog.color", "Fog color", (0.85, 0.88, 0.92)),
+    flt("fog.sun_scatter", "Sun glow", 1.0, 0.0, 5.0,
+        tooltip="How strongly sunlight scatters in the fog (glow towards the sun)"),
+    flt("fog.anisotropy", "Glow sharpness", 0.6, 0.0, 0.95, uniform="u_fog_glow"),
+)  # fmt: skip
+
 POST = section(
     "Camera & Tonemapping",
     flt("post.exposure", "Exposure", 0.0, -8.0, 8.0, step=0.1, decimals=1, unit="EV"),
@@ -113,6 +131,6 @@ TRACKS = section(
 
 def build_registry() -> PropertyRegistry:
     registry = PropertyRegistry()
-    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SKY, TRACKS):
+    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SKY, FOG, TRACKS):
         registry.extend(group)
     return registry

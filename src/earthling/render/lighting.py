@@ -12,6 +12,8 @@ from earthling.core.properties import PropertyStore
 from earthling.core.sun import SunPosition, local_to_aware, solar_position
 from earthling.render.atmosphere import sun_transmittance
 
+OPTICAL_DEPTH_UNIT = 2  # texture unit of the optical depth LUT
+
 
 def srgb_to_linear(c) -> tuple[float, float, float]:
     return tuple(float(v) ** 2.2 for v in c)  # type: ignore[return-value]
@@ -53,6 +55,10 @@ class Lighting:
     ground_ambient: tuple[float, float, float]
     night: float  # 0 = day, 1 = full night
     when: datetime  # aware
+    camera_height: float = 1500.0
+    fog_ambient: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    fog_sun: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    fog_density: float = 0.0  # per metre
 
 
 def compute_lighting(
@@ -83,14 +89,25 @@ def compute_lighting(
     ] * day * tint + night_sky * store["light.night_ambient"] * (1.0 - day)
     ground = np.array(srgb_to_linear(store["light.ground_color"])) * store["light.ambient"] * day
     ground = ground * (0.3 + 0.7 * float(visibility)) + night_sky * 0.3 * (1.0 - day)
+    fog_color = np.array(srgb_to_linear(store["fog.color"]))
+    fog_ambient = fog_color * (sky * 0.8 + ground * 0.2)
+    fog_sun = fog_color * radiance * store["fog.sun_scatter"] * 0.25
+
+    def vec(a) -> tuple[float, float, float]:
+        return tuple(float(v) for v in a)  # type: ignore[return-value]
+
     return Lighting(
         sun,
         direction,
-        tuple(float(v) for v in radiance),  # type: ignore[arg-type]
-        tuple(float(v) for v in sky),  # type: ignore[arg-type]
-        tuple(float(v) for v in ground),  # type: ignore[arg-type]
+        vec(radiance),
+        vec(sky),
+        vec(ground),
         float(night),
         when,
+        camera_height,
+        vec(fog_ambient),
+        vec(fog_sun),
+        store["fog.density"] / 1000.0,
     )
 
 
@@ -100,4 +117,9 @@ def lighting_uniforms(lighting: Lighting) -> dict[str, object]:
         "u_sun_radiance": lighting.sun_radiance,
         "u_sky_ambient": lighting.sky_ambient,
         "u_ground_ambient": lighting.ground_ambient,
+        "u_camera_height": lighting.camera_height,
+        "u_fog_ambient": lighting.fog_ambient,
+        "u_fog_sun": lighting.fog_sun,
+        "u_fog_density": lighting.fog_density,
+        "u_optical_depth": OPTICAL_DEPTH_UNIT,
     }
