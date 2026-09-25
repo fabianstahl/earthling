@@ -151,7 +151,7 @@ class WmsDemSource(DemSource):
     nodata_below = -1000.0  # e.g. -99999 outside the data
     # Request ``oversample`` x the sample resolution and box-average: servers that resample
     # with nearest neighbour snap to their internal grid, which shifts the result by up to a
-    # pixel; averaging finer pixels shrinks that error (see tools/check_dem_alignment.py).
+    # pixel; averaging finer pixels shrinks that error (see ``earthling check-source``).
     oversample: int = 1
 
     def files_for_bounds(self, bounds, client=None):

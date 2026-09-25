@@ -6,6 +6,13 @@ timeline and export 4K video.
 
 See [ROADMAP.md](ROADMAP.md) for the plan.
 
+## Data sources
+
+Worldwide: Esri World Imagery, EOX Sentinel-2 cloudless, OpenTopoMap and Copernicus DEM GLO-30.
+High-resolution regional data is built in for France (IGN) and Switzerland (swisstopo), and
+more regions can be added in the project configuration. See
+[docs/adding-a-region.md](docs/adding-a-region.md).
+
 ## Setup
 
 ```powershell

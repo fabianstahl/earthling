@@ -22,6 +22,9 @@ DEFAULT_FRAME = LocalFrame(46.0, 7.0, 0.0)
 class Session:
     def __init__(self, project: Project) -> None:
         self.project = project
+        from earthling.data.project_sources import register_project_sources
+
+        self.project_sources = register_project_sources(project)
         self.tracks: list[Track]
         self.tracks, self.load_errors = load_gpx_folder(project.gpx_dir)
         try:

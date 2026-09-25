@@ -29,6 +29,7 @@ SIMPLIFY_M = 150.0
 REGIONS = {
     "france": (["FRA"], (-5.5, 41.0, 10.0, 51.5)),  # metropolitan France incl. Corsica
     "switzerland": (["CHE", "LIE"], None),  # swisstopo covers Liechtenstein too
+    "austria": (["AUT"], None),
 }
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import tomllib
 import zoneinfo
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
@@ -106,10 +106,61 @@ class SourcesSection(_Model):
     topo: tuple[str, ...] = ("opentopomap",)
 
 
+class ProviderDef(_Model):
+    """A data source defined in the project (``[[providers]]``), see docs/adding-a-region.md.
+
+    kind ``imagery``/``topo`` with type ``xyz`` (XYZ or WMTS tile URL with {z} {x} {y}), or kind
+    ``dem`` with type ``wms`` (float32 BIL GetMap in EPSG:3857) or ``stac`` (GeoTIFF sheets
+    listed by a STAC collection)."""
+
+    id: str = Field(pattern=r"^[a-z0-9_]+$")
+    kind: Literal["imagery", "topo", "dem"]
+    type: Literal["xyz", "wms", "stac"] = "xyz"
+    name: str = ""
+    url: str
+    # regional coverage: a shipped name ("france", "switzerland", "austria") or a GeoJSON path
+    coverage: str | None = None
+    feather_m: float = Field(default=300.0, gt=0)
+    attribution: str = ""
+    license: str = "unknown"
+    license_url: str = ""
+    commercial_use: bool = False
+    requests_per_second: float = Field(default=5.0, ge=0)
+    concurrency: int = Field(default=4, ge=1, le=32)
+    headers: dict[str, str] = {}
+    # xyz
+    ext: str = "jpg"
+    min_zoom: int = Field(default=0, ge=0, le=22)
+    max_zoom: int = Field(default=19, ge=0, le=22)
+    tile_size: int = 256
+    placeholder_md5: tuple[str, ...] = ()
+    # dem
+    layer: str = ""  # wms
+    oversample: int = Field(default=2, ge=1, le=4)  # wms
+    nodata_below: float = -1000.0  # wms
+    asset_suffix: str = ""  # stac: which asset of an item, e.g. "_2_2056_5728.tif"
+    native_resolution_m: float = Field(default=5.0, gt=0)
+
+    @model_validator(mode="after")
+    def _check_type(self) -> Self:
+        if self.kind == "dem" and self.type == "xyz":
+            raise ValueError("DEM providers need type = 'wms' or 'stac'")
+        if self.kind != "dem" and self.type != "xyz":
+            raise ValueError("imagery/topo providers must be type = 'xyz'")
+        if self.type == "xyz" and not all(f"{{{k}}}" in self.url for k in "zxy"):
+            raise ValueError("xyz url needs {z}, {x} and {y} placeholders")
+        if self.type == "wms" and not self.layer:
+            raise ValueError("wms providers need a layer")
+        if self.type == "stac" and not self.asset_suffix:
+            raise ValueError("stac providers need an asset_suffix")
+        return self
+
+
 class Config(_Model):
     project: ProjectSection = ProjectSection()
     area: AreaSection = AreaSection()
     sources: SourcesSection = SourcesSection()
+    providers: tuple[ProviderDef, ...] = ()
 
     @classmethod
     def from_toml(cls, text: str) -> Config:
