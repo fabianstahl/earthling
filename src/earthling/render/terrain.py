@@ -88,6 +88,7 @@ class TerrainTile:
     vbo: moderngl.Buffer
     heightmap: moderngl.Texture
     vao: moderngl.VertexArray | None = None
+    imagery: moderngl.Texture | None = None
     min_h: float = 0.0
     max_h: float = 0.0
 
@@ -96,6 +97,22 @@ class TerrainTile:
             self.vao.release()
         self.vbo.release()
         self.heightmap.release()
+        if self.imagery is not None:
+            self.imagery.release()
+
+    def set_imagery(self, ctx: moderngl.Context, rgb: np.ndarray | None) -> None:
+        if self.imagery is not None:
+            self.imagery.release()
+            self.imagery = None
+        if rgb is None:
+            return
+        h, w, _ = rgb.shape
+        tex = ctx.texture((w, h), 3, np.ascontiguousarray(rgb).tobytes())
+        tex.build_mipmaps()
+        tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+        tex.anisotropy = 16.0
+        tex.repeat_x = tex.repeat_y = False
+        self.imagery = tex
 
 
 class TerrainLayer:
@@ -109,7 +126,13 @@ class TerrainLayer:
         self._program: moderngl.Program | None = None
 
     def add_tile(
-        self, frame: LocalFrame, z: int, x: int, y: int, heights: np.ndarray
+        self,
+        frame: LocalFrame,
+        z: int,
+        x: int,
+        y: int,
+        heights: np.ndarray,
+        imagery: np.ndarray | None = None,
     ) -> TerrainTile:
         geo = tile_geometry(frame, z, x, y)
         verts = np.hstack([geo.positions, geo.ups]).astype("f4")
@@ -125,6 +148,7 @@ class TerrainLayer:
         tile = TerrainTile(
             z, x, y, geo, filled, vbo, tex, min_h=float(filled.min()), max_h=float(filled.max())
         )
+        tile.set_imagery(self.ctx, imagery)
         self.tiles.append(tile)
         return tile
 
@@ -160,6 +184,7 @@ class TerrainLayer:
         program["u_log_depth_coef"] = camera.log_depth_coef
         program["u_exaggeration"] = self.exaggeration
         program["u_heightmap"] = 0
+        program["u_imagery"] = 1
         for tile in self.tiles:
             if tile.vao is None:
                 tile.vao = self.ctx.vertex_array(
@@ -174,4 +199,7 @@ class TerrainLayer:
             program["u_tangent"].write(geo.tangent.astype("f4").tobytes())
             program["u_sample_spacing"] = geo.sample_spacing_m
             tile.heightmap.use(0)
+            if tile.imagery is not None:
+                tile.imagery.use(1)
+            program["u_has_imagery"] = tile.imagery is not None
             tile.vao.render(moderngl.TRIANGLES)

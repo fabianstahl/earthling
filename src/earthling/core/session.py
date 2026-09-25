@@ -107,9 +107,16 @@ class Session:
         """Zoom used for the (pre-LOD) static terrain: the outer zone's DEM zoom."""
         return self.config.area.zones[-1].dem_zoom
 
+    @property
+    def static_imagery_zoom(self) -> int:
+        """Imagery zoom for static terrain tiles (at most 8x8 imagery tiles per terrain tile)."""
+        wanted = self.config.area.zones[-1].imagery_zoom
+        return max(self.static_terrain_zoom, min(wanted, self.static_terrain_zoom + 3))
+
     def load_static_terrain(self):
-        """Heightmaps of all cached DEM tiles at :attr:`static_terrain_zoom`."""
+        """(z, x, y, heights, imagery) of all cached DEM tiles at :attr:`static_terrain_zoom`."""
         from earthling.data.dem import read_heightmap
+        from earthling.data.imagery import compose_tile_texture
 
         if self.plan is None:
             return []
@@ -118,5 +125,8 @@ class Session:
         for x, y in self.plan.levels["dem"].get(z, []):
             heights = read_heightmap(self.cache, self.dem_source.id, z, int(x), int(y))
             if heights is not None:
-                out.append((z, int(x), int(y), heights))
+                rgb = compose_tile_texture(
+                    self.cache, self.imagery_provider, z, int(x), int(y), self.static_imagery_zoom
+                )
+                out.append((z, int(x), int(y), heights, rgb))
         return out

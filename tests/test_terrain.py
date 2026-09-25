@@ -42,7 +42,9 @@ def test_render_terrain(gl_ctx):
     tx, ty = lonlat_to_tile(7.0, 46.0, 11)
     heights = np.full((HEIGHTMAP_SAMPLES, HEIGHTMAP_SAMPLES), 1500.0, dtype=np.float32)
     heights[100:150, 100:150] = 2500.0
-    renderer.set_terrain([(11, int(tx), int(ty), heights)])
+    rgb = np.zeros((256, 256, 3), dtype=np.uint8)
+    rgb[..., 1] = 200
+    renderer.set_terrain([(11, int(tx), int(ty), heights, rgb)])
     lo, hi = renderer.scene_bounds()
     assert lo[2] == pytest.approx(1500) and hi[2] == pytest.approx(2500)
     camera = Camera()

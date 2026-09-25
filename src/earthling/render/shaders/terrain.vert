@@ -5,12 +5,14 @@ uniform mat4 u_view_proj;
 uniform vec3 u_offset;  // tile origin - camera position
 
 out vec2 v_uv;
+out vec2 v_tile_uv;
 out float v_height;
 out vec3 v_world;  // camera-relative position
 out float v_log_z;
 
 void main() {
     v_uv = vertex_uv(gl_VertexID);
+    v_tile_uv = vertex_tile_uv(gl_VertexID);
     float h = height_at(v_uv);
     vec3 p = in_pos + in_up * h + u_offset;
     v_world = p;

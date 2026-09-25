@@ -15,6 +15,13 @@ vec2 vertex_uv(int vertex_id) {
     return (vec2(i, j) * HEIGHTMAP_STRIDE + 1.5) / HEIGHTMAP_SAMPLES;
 }
 
+// Tile-local texture coordinate (0..1 across the tile, v north -> south) of vertex (i, j).
+vec2 vertex_tile_uv(int vertex_id) {
+    int i = vertex_id % (MESH_GRID + 1);
+    int j = vertex_id / (MESH_GRID + 1);
+    return vec2(i, j) / float(MESH_GRID);
+}
+
 float height_at(vec2 uv) {
     return texture(u_heightmap, uv).r * u_exaggeration;
 }

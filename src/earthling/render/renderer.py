@@ -32,12 +32,12 @@ class Renderer:
         self.tracks.set_tracks(tracks, frame)
 
     def set_terrain(self, tiles) -> None:
-        """``tiles``: iterable of (z, x, y, heights)."""
+        """``tiles``: iterable of (z, x, y, heights, imagery_rgb_or_None)."""
         self.terrain.clear()
         if self.frame is None:
             return
-        for z, x, y, heights in tiles:
-            self.terrain.add_tile(self.frame, z, x, y, heights)
+        for z, x, y, heights, imagery in tiles:
+            self.terrain.add_tile(self.frame, z, x, y, heights, imagery)
 
     def scene_bounds(self):
         return self.terrain.bounds() or self.tracks.bounds

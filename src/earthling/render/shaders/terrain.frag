@@ -1,10 +1,17 @@
 #include "terrain_common.glsl"
 #include "logdepth.glsl"
 in vec2 v_uv;
+in vec2 v_tile_uv;
 in float v_height;
 in vec3 v_world;
 in float v_log_z;
 out vec4 f_color;
+
+uniform sampler2D u_imagery;
+uniform bool u_has_imagery;
+
+vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
+vec3 linear_to_srgb(vec3 c) { return pow(max(c, 0.0), vec3(1.0 / 2.2)); }
 
 vec3 elevation_ramp(float h) {
     const vec3 c0 = vec3(0.18, 0.35, 0.18);  //  500 m
@@ -22,6 +29,9 @@ void main() {
     vec3 n = terrain_normal(v_uv);
     vec3 sun = normalize(vec3(-0.5, 0.6, 0.6));
     float diffuse = max(dot(n, sun), 0.0);
-    vec3 albedo = elevation_ramp(v_height);
-    f_color = vec4(albedo * (0.25 + 0.85 * diffuse), 1.0);
+    vec3 albedo = u_has_imagery ? srgb_to_linear(texture(u_imagery, v_tile_uv).rgb)
+                                : srgb_to_linear(elevation_ramp(v_height));
+    // Imagery already contains baked-in shading; only add moderate relief lighting.
+    vec3 color = albedo * (0.55 + 0.75 * diffuse);
+    f_color = vec4(linear_to_srgb(color), 1.0);
 }
