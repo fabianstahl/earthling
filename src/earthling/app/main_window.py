@@ -9,12 +9,14 @@ from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QFileDialog, QLabel, QMainWindow, QMessageBox
 
 from earthling import __version__
+from earthling.app.download_dialog import DownloadDialog
 from earthling.app.plan_dialog import PlanDialog
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.viewport import Viewport
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
 from earthling.core.session import Session
+from earthling.data.jobs import download_jobs
 
 MAX_RECENT = 8
 
@@ -22,6 +24,7 @@ MAX_RECENT = 8
 class MainWindow(QMainWindow):
     project_changed = pyqtSignal(object)
     tracks_changed = pyqtSignal()
+    data_changed = pyqtSignal()  # new tiles in the cache
 
     def __init__(self, dev_mode: bool = False) -> None:
         super().__init__()
@@ -71,6 +74,7 @@ class MainWindow(QMainWindow):
 
         self.data_menu = bar.addMenu("&Data")
         self._add_action(self.data_menu, "Download &Plan…", self._show_plan)
+        self._add_action(self.data_menu, "&Download Data…", self._show_download, "Ctrl+D")
 
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
@@ -94,15 +98,15 @@ class MainWindow(QMainWindow):
     # --- project handling --------------------------------------------------------------
     def open_project(self, folder: str | Path) -> bool:
         try:
-            project = Project.load(folder)
+            session = Session(Project.load(folder))
         except ConfigError as exc:
             QMessageBox.critical(self, "Cannot open project", str(exc))
             return False
-        self._set_project(project)
+        self._set_session(session)
         return True
 
-    def _set_project(self, project: Project) -> None:
-        session = Session(project)
+    def _set_session(self, session: Session) -> None:
+        project = session.project
         self.session = session
         self._remember_recent(project.folder)
         self._update_title()
@@ -123,10 +127,20 @@ class MainWindow(QMainWindow):
             return
         PlanDialog(self.session, self).exec()
 
+    def _show_download(self) -> None:
+        if self.session is None or self.session.plan is None:
+            QMessageBox.information(self, "Download", "Open a project with tracks first.")
+            return
+        session = self.session
+        dialog = DownloadDialog(session, lambda kinds: download_jobs(session, kinds), self)
+        dialog.data_changed.connect(self.data_changed.emit)
+        dialog.exec()
+
     def _new_project(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Choose (empty) folder for new project")
         if folder:
-            self._set_project(Project.create(folder))
+            project = Project.create(folder)
+            self.open_project(project.folder)
 
     def _open_project_dialog(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Open project folder")

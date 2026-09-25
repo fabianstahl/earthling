@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "gpxpy>=1.6.2",
+    "httpx>=0.28.1",
     "moderngl>=5.12.0",
     "numpy>=2.5.3",
     "pydantic>=2.13.5",

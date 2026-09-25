@@ -10,9 +10,11 @@ from functools import cached_property
 import numpy as np
 
 from earthling.core.aoi import AreaOfInterest, TilePlan, compute_aoi, plan_tiles
-from earthling.core.config import Project
+from earthling.core.config import ConfigError, Project
 from earthling.core.geo import LocalFrame, frame_for_bbox
 from earthling.core.gpx import Track, load_gpx_folder
+from earthling.data.cache import TileCache
+from earthling.data.providers import TileProvider, get_provider
 
 DEFAULT_FRAME = LocalFrame(46.0, 7.0, 0.0)
 
@@ -22,6 +24,19 @@ class Session:
         self.project = project
         self.tracks: list[Track]
         self.tracks, self.load_errors = load_gpx_folder(project.gpx_dir)
+        try:
+            self.imagery_providers: list[TileProvider] = [
+                get_provider(pid) for pid in self.config.sources.imagery
+            ]
+        except KeyError as exc:
+            raise ConfigError(f"sources.imagery: {exc.args[0]}") from exc
+        if not self.imagery_providers:
+            raise ConfigError("sources.imagery must name at least one provider")
+        self.cache = TileCache(project.cache_dir)
+
+    @property
+    def imagery_provider(self) -> TileProvider:
+        return self.imagery_providers[0]
 
     @property
     def config(self):
