@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PyQt6.QtCore import QSettings, Qt, pyqtSignal
+from PyQt6.QtCore import QByteArray, QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QDockWidget, QFileDialog, QLabel, QMainWindow, QMessageBox
 
@@ -17,7 +17,7 @@ from earthling.app.tracks_dock import TracksDock
 from earthling.app.viewport import Viewport
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
-from earthling.core.scene import Scene
+from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
 from earthling.core.session import Session
 from earthling.data.jobs import download_jobs
 from earthling.ui.property_panel import PropertyPanel
@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.session: Session | None = None
         self.scene = Scene()
+        self.scene.on_dirty_changed(lambda dirty: self._update_title())
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
@@ -81,6 +82,13 @@ class MainWindow(QMainWindow):
         )  # fmt: skip
         self.recent_menu = self.file_menu.addMenu("Open &Recent")
         self._add_action(self.file_menu, "Re&load Project", self._reload_project, "F5")
+        self.file_menu.addSeparator()
+        self._add_action(self.file_menu, "Open &Scene…", self._open_scene_dialog)
+        self._add_action(
+            self.file_menu, "&Save Scene", lambda: self.save_scene(), QKeySequence.StandardKey.Save
+        )
+        self._add_action(self.file_menu, "Save Scene &As…", self.save_scene_as, "Ctrl+Shift+S")
+        self._add_action(self.file_menu, "Re&vert Scene", self._revert_scene)
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "&Quit", self.close, QKeySequence.StandardKey.Quit)
         self._rebuild_recent_menu()
@@ -142,6 +150,8 @@ class MainWindow(QMainWindow):
 
     # --- project handling --------------------------------------------------------------
     def open_project(self, folder: str | Path) -> bool:
+        if not self._confirm_discard():
+            return False
         try:
             session = Session(Project.load(folder))
         except ConfigError as exc:
@@ -159,6 +169,12 @@ class MainWindow(QMainWindow):
         self.viewport.set_scene(session.frame, session.tracks)
         self.viewport.set_outlines(session.outline_lines())
         self._reload_terrain(reframe=True)
+        scene_path = project.folder / DEFAULT_SCENE_NAME
+        if scene_path.exists():
+            self.load_scene(scene_path)
+        else:
+            self.scene.reset(scene_path)
+            self._update_title()
         self.statusBar().showMessage(
             f"Opened project {project.folder} – {len(session.tracks)} track(s)", 5000
         )
@@ -166,6 +182,76 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "GPX problems", "\n".join(session.load_errors))
         self.project_changed.emit(project)
         self.tracks_changed.emit()
+
+    # --- scene files -------------------------------------------------------------------
+    def load_scene(self, path: Path) -> bool:
+        try:
+            problems = self.scene.load(path)
+        except SceneError as exc:
+            QMessageBox.critical(self, "Cannot open scene", str(exc))
+            return False
+        if self.scene.camera:
+            self.viewport.restore_camera_state(self.scene.camera)
+        self._restore_ui_state()
+        self._update_title()
+        if problems:
+            QMessageBox.warning(self, "Scene problems", "\n".join(problems[:30]))
+        return True
+
+    def save_scene(self, path: Path | None = None) -> bool:
+        if path is None and self.scene.path is None:
+            return self.save_scene_as()
+        self.scene.camera = self.viewport.camera_state()
+        self.scene.ui = self._ui_state()
+        try:
+            saved = self.scene.save(path)
+        except OSError as exc:
+            QMessageBox.critical(self, "Cannot save scene", str(exc))
+            return False
+        self._update_title()
+        self.statusBar().showMessage(f"Saved {saved}", 4000)
+        return True
+
+    def save_scene_as(self) -> bool:
+        start = str(self.scene.path or (self.project.folder if self.project else Path.cwd()))
+        path, _ = QFileDialog.getSaveFileName(self, "Save scene as", start, "Scenes (*.json)")
+        return bool(path) and self.save_scene(Path(path))
+
+    def _open_scene_dialog(self) -> None:
+        if not self._confirm_discard():
+            return
+        start = str(self.project.folder if self.project else Path.cwd())
+        path, _ = QFileDialog.getOpenFileName(self, "Open scene", start, "Scenes (*.json)")
+        if path:
+            self.load_scene(Path(path))
+
+    def _revert_scene(self) -> None:
+        if self.scene.path is not None and self.scene.path.exists():
+            self.load_scene(self.scene.path)
+
+    def _confirm_discard(self) -> bool:
+        """Ask to save unsaved changes. False if the user cancelled."""
+        if not self.scene.dirty:
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Unsaved changes",
+            "The scene has unsaved changes. Save them?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Save:
+            return self.save_scene()
+        return answer == QMessageBox.StandardButton.Discard
+
+    def _ui_state(self) -> dict:
+        return {"window_state": bytes(self.saveState().toBase64()).decode("ascii")}
+
+    def _restore_ui_state(self) -> None:
+        state = self.scene.ui.get("window_state")
+        if state:
+            self.restoreState(QByteArray.fromBase64(state.encode("ascii")))
 
     def _reload_terrain(self, reframe: bool = False) -> None:
         if self.session is None:
@@ -226,7 +312,8 @@ class MainWindow(QMainWindow):
     def _update_title(self) -> None:
         title = "Earthling"
         if self.project is not None:
-            title = f"{self.project.name} – Earthling"
+            scene = self.scene.path.name if self.scene.path else "untitled"
+            title = f"{self.project.name} – {scene}{'*' if self.scene.dirty else ''} – Earthling"
         self.setWindowTitle(title)
 
     def _go_to(self) -> None:
@@ -244,6 +331,9 @@ class MainWindow(QMainWindow):
         self.viewport.frame_box(enu.min(axis=0), enu.max(axis=0))
 
     def closeEvent(self, event) -> None:
+        if not self._confirm_discard():
+            event.ignore()
+            return
         self.viewport.shutdown()
         super().closeEvent(event)
 

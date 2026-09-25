@@ -72,6 +72,7 @@ class Viewport(QOpenGLWidget):
         self._pending_outlines = None
         self._pending_terrain = None
         self.store = None  # PropertyStore of the scene
+        self._camera_restored = False  # a saved camera must not be overridden by framing
         self._last_mouse: QPointF | None = None
         self._last_paint = time.perf_counter()
         self._frames = 0
@@ -86,6 +87,7 @@ class Viewport(QOpenGLWidget):
     # --- scene -------------------------------------------------------------------------
     def set_scene(self, frame: LocalFrame, tracks: list[Track], reframe: bool = True) -> None:
         self.frame = frame
+        self._camera_restored = False
         if self.renderer is None:
             self._pending_scene = (frame, tracks)
             return
@@ -187,6 +189,36 @@ class Viewport(QOpenGLWidget):
             lift = np.array([0.0, 0.0, MIN_GROUND_CLEARANCE_M - hag])
             self.camera.position = self.camera.position + lift
 
+    def camera_state(self) -> dict:
+        c = self.camera
+        return {
+            "position": [float(v) for v in c.position],
+            "heading": c.heading,
+            "pitch": c.pitch,
+            "roll": c.roll,
+            "mode": self.mode,
+            "orbit_target": [float(v) for v in self.orbit.target],
+        }
+
+    def restore_camera_state(self, state: dict) -> bool:
+        try:
+            position = np.array(state["position"], dtype=np.float64)
+            heading, pitch = float(state["heading"]), float(state["pitch"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        self._camera_restored = True
+        self.camera.position = position
+        self.camera.heading, self.camera.pitch = heading, pitch
+        self.camera.roll = float(state.get("roll", 0.0))
+        if state.get("mode") == self.ORBIT and "orbit_target" in state:
+            self.orbit.sync_from_camera(np.array(state["orbit_target"], dtype=np.float64))
+            self.camera.roll = float(state.get("roll", 0.0))
+            self.mode = self.ORBIT
+        else:
+            self.mode = self.FLY
+        self.mode_changed.emit(self.mode)
+        return True
+
     # --- picking -----------------------------------------------------------------------
     def pick(self, x: float, y: float) -> np.ndarray | None:
         """ENU position of the rendered surface under widget pixel (x, y), or None."""
@@ -219,7 +251,8 @@ class Viewport(QOpenGLWidget):
             frame, tracks = self._pending_scene
             self._pending_scene = None
             self.renderer.set_scene(frame, tracks)
-            self.frame_all()
+            if not self._camera_restored:
+                self.frame_all()
         if self._pending_terrain is not None:
             self.renderer.set_terrain_source(*self._pending_terrain)
             self._pending_terrain = None
