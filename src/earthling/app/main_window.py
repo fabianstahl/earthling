@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.tracks_dock)
         self.view_menu.addAction(self.tracks_dock.toggleViewAction())
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
+        self.tracks_changed.connect(self.viewport.request_render)
         self.tracks_dock.track_activated.connect(self._frame_track)
         self.viewport.mode_changed.connect(
             lambda mode: self.fly_mode_action.setChecked(mode == self.viewport.FLY)

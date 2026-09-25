@@ -14,6 +14,16 @@ uniform sampler2D u_imagery;
 uniform bool u_has_imagery;
 uniform sampler2D u_topo;
 uniform bool u_has_topo;
+uniform sampler2D u_borders;  // distance to border lines in node uv units (r: countries, g: regions)
+uniform bool u_has_borders;
+uniform bool u_borders_overlay = false;
+uniform bool u_borders_regions = true;
+uniform float u_border_width = 2.5;
+uniform vec3 u_border_color = vec3(1.0, 0.85, 0.3);
+uniform float u_border_glow = 12.0;
+uniform float u_border_glow_strength = 0.6;
+uniform float u_region_width = 1.2;
+uniform vec3 u_region_color = vec3(0.9, 0.9, 0.9);
 uniform bool u_contours_overlay = false;
 uniform float u_contour_interval = 100.0;
 uniform float u_contour_major = 5.0;
@@ -40,7 +50,17 @@ struct LayerInput {
     float aspect;       // degrees clockwise from north (direction the slope faces)
     vec3 imagery;       // sRGB of the node's imagery texture (fallback: hypsometric tint)
     vec3 topo;          // sRGB of the topographic map texture (fallback: light grey)
+    float border_px;    // screen-pixel distance to the nearest country border (large if none)
+    float region_px;    // screen-pixel distance to the nearest regional border
+    float border_reach; // 1 near a border .. 0 at the distance-field clamp (no border nearby)
 };
+
+const float BORDER_MAX_UV = 0.15;  // must match data/borders.py MAX_DISTANCE_UV
+
+// Anti-aliased line coverage for a pixel distance and a line width in pixels.
+float line_coverage(float dist_px, float width_px) {
+    return 1.0 - smoothstep(width_px * 0.5 - 0.6, width_px * 0.5 + 0.6, dist_px);
+}
 
 // Anti-aliased contour line coverage (0..1) for a height in metres.
 float contour_lines(float height, float interval, float major_every, float width_px) {
@@ -86,6 +106,14 @@ void main() {
     li.imagery = u_has_imagery ? texture(u_imagery, v_tile_uv).rgb
                                : ramp_hypsometric((v_height - 500.0) / 4000.0);
     li.topo = u_has_topo ? texture(u_topo, v_tile_uv).rgb : vec3(0.85);
+    {
+        // node uv -> screen pixels (uses the larger footprint of anisotropic texels)
+        float px_per_uv = 1.0 / max(max(fwidth(v_tile_uv.x), fwidth(v_tile_uv.y)), 1e-7);
+        vec2 d = u_has_borders ? texture(u_borders, v_tile_uv).rg : vec2(1.0);
+        li.border_px = d.r * px_per_uv;
+        li.region_px = u_borders_regions ? d.g * px_per_uv : 1e9;
+        li.border_reach = 1.0 - smoothstep(0.5 * BORDER_MAX_UV, 0.95 * BORDER_MAX_UV, d.r);
+    }
 
     // Hemispherical ambient (sky from above, bounce light from below) + direct sun.
     vec3 ambient = mix(u_ground_ambient, u_sky_ambient, n.z * 0.5 + 0.5);
@@ -99,6 +127,17 @@ void main() {
         vec3 albedo_b = srgb_to_linear(layer_albedo(u_layer_b, li)) * layer_gain(u_layer_b);
         vec3 color_b = albedo_b * mix(flat_light, lit, layer_shading(u_layer_b));
         color = mix(color, color_b, u_layer_mix);
+    }
+    if (u_borders_overlay) {
+        float region = line_coverage(li.region_px, u_region_width);
+        color = mix(color, srgb_to_linear(u_region_color) * flat_light * 0.8, region * 0.8);
+        float border = line_coverage(li.border_px, u_border_width);
+        vec3 border_rgb = srgb_to_linear(u_border_color);
+        color = mix(color, border_rgb * flat_light, border);
+        // glow: emitted light, visible at night too
+        float glow = exp(-li.border_px / max(u_border_glow, 0.1)) * u_border_glow_strength
+                   * li.border_reach;
+        color += border_rgb * glow * (0.15 + 0.35 * max(flat_light.g, 0.02));
     }
     if (u_contours_overlay) {
         float c = contour_lines(v_height, u_contour_interval, u_contour_major, u_contour_width);

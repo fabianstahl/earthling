@@ -126,13 +126,24 @@ class Session:
             sources["topo"] = self.topo_providers[0]
         return sources
 
+    @cached_property
+    def borders(self):
+        from earthling.data.borders import BorderData
+
+        return BorderData(self.cache)
+
     def terrain_data(self, on_demand: bool = True):
         from earthling.data.terrain_data import TerrainData
 
         if self.plan is None:
             return None
         return TerrainData(
-            self.cache, self.dem_source.id, self.tile_sources(), self.plan, on_demand=on_demand
+            self.cache,
+            self.dem_source.id,
+            self.tile_sources(),
+            self.plan,
+            on_demand=on_demand,
+            borders=self.borders,
         )
 
     def terrain_nodes(self):

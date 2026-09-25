@@ -88,6 +88,18 @@ LAYERS: list[Layer] = [
         shading=0.7,
     ),
     _layer(
+        "borders",
+        "Border map",
+        """
+    float t = clamp((li.height - 300.0) / 4500.0, 0.0, 1.0);
+    vec3 base = mix(u_bmap_land, vec3(1.0), 0.5 * t);
+    base = mix(base, u_region_color * 0.7, line_coverage(li.region_px, u_region_width) * 0.7);
+    return mix(base, u_border_color, line_coverage(li.border_px, u_border_width));""",
+        color("layer_borders.land", "Land colour", (0.82, 0.8, 0.74), uniform="u_bmap_land"),
+        shading=0.7,
+        tile_source="borders",
+    ),
+    _layer(
         "elevation",
         "Elevation",
         """
@@ -204,6 +216,22 @@ LAYERS: list[Layer] = [
 LAYER_IDS = [layer.id for layer in LAYERS]
 
 
+BORDERS = section(
+    "Borders",
+    boolean("borders.overlay", "Overlay on any layer", False, uniform="u_borders_overlay"),
+    boolean("borders.regions", "Regional borders", True, uniform="u_borders_regions"),
+    flt("borders.width", "Country line width", 2.5, 0.5, 12.0, step=0.1, decimals=1, unit="px",
+        uniform="u_border_width"),
+    color("borders.color", "Country line colour", (1.0, 0.82, 0.3), uniform="u_border_color"),
+    flt("borders.glow", "Glow width", 8.0, 0.0, 80.0, step=1.0, decimals=0, unit="px",
+        uniform="u_border_glow"),
+    flt("borders.glow_strength", "Glow strength", 0.5, 0.0, 5.0, uniform="u_border_glow_strength"),
+    flt("borders.region_width", "Region line width", 1.2, 0.3, 8.0, step=0.1, decimals=1,
+        unit="px", uniform="u_region_width"),
+    color("borders.region_color", "Region line colour", (0.92, 0.92, 0.92),
+          uniform="u_region_color"),
+)  # fmt: skip
+
 CONTOURS = section(
     "Contour Lines",
     boolean("contours.overlay", "Overlay on any layer", False, uniform="u_contours_overlay"),
@@ -218,10 +246,14 @@ CONTOURS = section(
 )  # fmt: skip
 
 
-def required_tile_sources(layer_a: str, layer_b: str, mix: float) -> frozenset[str]:
+def required_tile_sources(
+    layer_a: str, layer_b: str, mix: float, borders_overlay: bool = False
+) -> frozenset[str]:
     """Tile sources the terrain nodes must provide for the current slot selection."""
     by_id = {layer.id: layer for layer in LAYERS}
     needed = {"imagery"}  # also the fallback colour of several layers
+    if borders_overlay:
+        needed.add("borders")
     for layer_id, active in ((layer_a, mix < 1.0), (layer_b, mix > 0.0)):
         source = by_id[layer_id].tile_source if layer_id in by_id else None
         if active and source:
@@ -237,7 +269,7 @@ def layer_properties() -> list[PropertyDef]:
         enum("layers.b", "Layer B", "elevation", options, uniform="u_layer_b"),
         flt("layers.mix", "Blend A → B", 0.0, 0.0, 1.0, uniform="u_layer_mix"),
     )
-    props = list(slots) + list(CONTOURS)
+    props = list(slots) + list(BORDERS) + list(CONTOURS)
     for layer in LAYERS:
         props.extend(layer.properties)
     return props

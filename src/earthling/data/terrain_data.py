@@ -50,7 +50,9 @@ class TerrainData:
         plan: TilePlan,
         max_heightmaps: int = 512,
         on_demand: bool = False,
+        borders=None,
     ) -> None:
+        """``borders``: optional BorderData providing the "borders" texture source."""
         if isinstance(sources, TileProvider):
             sources = {"imagery": sources}
         self.cache = cache
@@ -69,6 +71,7 @@ class TerrainData:
             else {}
         )
         self.on_demand = on_demand
+        self.borders = borders
 
     @property
     def imagery(self) -> TileProvider:
@@ -137,7 +140,21 @@ class TerrainData:
 
         return ensure
 
+    def source_ready(self, source: str) -> bool:
+        """False while a texture source is still initialising (then nodes skip it for now)."""
+        if source == "borders":
+            if self.borders is None:
+                return True
+            self.borders.allow_download = self.on_demand
+            return self.borders.ready
+        return True
+
     def texture_for(self, key: TileKey, source: str = "imagery") -> np.ndarray | None:
+        if source == "borders":
+            if self.borders is None:
+                return None
+            self.borders.allow_download = self.on_demand
+            return self.borders.distance_field(*key)
         provider = self.sources.get(source)
         if provider is None:
             return None

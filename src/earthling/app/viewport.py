@@ -81,10 +81,13 @@ class Viewport(QOpenGLWidget):
         self._fps_timer = time.perf_counter()
         self._watcher: QFileSystemWatcher | None = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        # Continuous redraw; later steps switch to on-demand rendering where possible.
+        # On-demand rendering: a 60 Hz tick repaints only when something changed, so idle
+        # views cost no CPU and background loading threads get the GIL.
+        self._needs_render = True
+        self._last_camera_state: tuple | None = None
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self.update)
-        self._timer.start(0)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(16)
 
     # --- scene -------------------------------------------------------------------------
     def set_scene(
@@ -100,6 +103,7 @@ class Viewport(QOpenGLWidget):
         self.makeCurrent()
         self.renderer.set_scene(frame, tracks)
         self.doneCurrent()
+        self.request_render()
         if reframe:
             self.frame_all()
 
@@ -110,6 +114,7 @@ class Viewport(QOpenGLWidget):
         self.makeCurrent()
         self.renderer.set_terrain_source(data, nodes)
         self.doneCurrent()
+        self.request_render()
 
     def set_outlines(self, lines) -> None:
         if self.renderer is None:
@@ -118,6 +123,7 @@ class Viewport(QOpenGLWidget):
         self.makeCurrent()
         self.renderer.outlines.set_lines(lines)
         self.doneCurrent()
+        self.request_render()
 
     def set_on_demand(self, enabled: bool) -> None:
         if self.renderer is not None and self.renderer.terrain.data is not None:
@@ -125,6 +131,7 @@ class Viewport(QOpenGLWidget):
 
     def set_store(self, store) -> None:
         self.store = store
+        store.subscribe(lambda pid, value: self.request_render())
         if self.renderer is not None:
             self.renderer.store = store
 
@@ -359,6 +366,31 @@ class Viewport(QOpenGLWidget):
         else:
             self.fly.boost = 1.0
 
+    # --- on-demand rendering --------------------------------------------------------------
+    def request_render(self) -> None:
+        self._needs_render = True
+
+    def _camera_key(self) -> tuple:
+        c = self.camera
+        return (*(round(float(v), 3) for v in c.position), c.heading, c.pitch, c.roll, c.fov_y)
+
+    def _busy(self) -> bool:
+        if self.fly.pressed:
+            return True
+        t = self.renderer.terrain if self.renderer is not None else None
+        return (
+            t is not None and t.nodes is not None and (t.pending_count > 0 or not t.fully_loaded())
+        )
+
+    def _tick(self) -> None:
+        key = self._camera_key()
+        if key != self._last_camera_state:
+            self._last_camera_state = key
+            self._needs_render = True
+        if self._needs_render or self._busy():
+            self._needs_render = False
+            self.update()
+
     # --- helpers -----------------------------------------------------------------------
     def camera_text(self) -> str:
         geo = self.camera_geodetic()
@@ -410,6 +442,7 @@ class Viewport(QOpenGLWidget):
             self._watcher.addPath(path)
         for err in errors:
             self.shader_error.emit(err)
+        self.request_render()
 
 
 def unproject_log_depth(

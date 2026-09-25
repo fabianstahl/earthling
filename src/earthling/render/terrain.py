@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 
 MESH_GRID = 64  # intervals per tile edge
 # texture unit per tile source (0 = heightmap, 2 = optical depth LUT, 3 = shadow atlas)
-TEXTURE_UNITS = {"imagery": 1, "topo": 4}
+TEXTURE_UNITS = {"imagery": 1, "topo": 4, "borders": 5}
 DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0
 
 TileKey = tuple[int, int, int]
@@ -159,7 +159,10 @@ def prepare_node(
         if np.isfinite(window).any():
             min_h, max_h = float(np.nanmin(window)), float(np.nanmax(window))
     textures: dict[str, np.ndarray | None] = {}
+    ready = getattr(data, "source_ready", lambda source: True)
     for source in sorted(sources):
+        if not ready(source):
+            continue  # not initialised yet: the node is refreshed later
         rgb = data.texture_for(key, source)
         textures[source] = None if rgb is None else np.ascontiguousarray(rgb)
     return PreparedNode(
@@ -192,14 +195,18 @@ class TexturePool:
         self.max_free = max_free_per_size
         self._free: dict[tuple[int, int], list[moderngl.Texture]] = {}
 
-    def acquire(self, rgb: np.ndarray) -> moderngl.Texture:
-        h, w, _ = rgb.shape
-        free = self._free.get((w, h))
+    def acquire(self, data: np.ndarray) -> moderngl.Texture:
+        """uint8 RGB images or float fields (stored as half floats)."""
+        h, w, components = data.shape
+        is_float = data.dtype.kind == "f"
+        dtype = "f2" if is_float else "f1"
+        payload = data.astype(np.float16).tobytes() if is_float else data.tobytes()
+        free = self._free.get((w, h, components, dtype))
         if free:
             tex = free.pop()
-            tex.write(rgb.tobytes())
+            tex.write(payload)
         else:
-            tex = self.ctx.texture((w, h), 3, rgb.tobytes())
+            tex = self.ctx.texture((w, h), components, payload, dtype=dtype)
             tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
             tex.anisotropy = 16.0
             tex.repeat_x = tex.repeat_y = False
@@ -207,7 +214,7 @@ class TexturePool:
         return tex
 
     def release(self, tex: moderngl.Texture) -> None:
-        free = self._free.setdefault(tex.size, [])
+        free = self._free.setdefault((*tex.size, tex.components, tex.dtype), [])
         if len(free) < self.max_free:
             free.append(tex)
         else:
@@ -368,12 +375,20 @@ class TerrainLayer:
         assert self.frame is not None and self.data is not None
         if key in self._in_flight or key in self._failed or (key in self._resident and not refresh):
             return
+        sources = self.required_sources
+        node = self._resident.get(key)
+        if refresh and node is not None:
+            sources = frozenset(sources - node.textures.keys())  # only what is missing
         self._in_flight[key] = self._executor.submit(
-            prepare_node, self.frame, self.data, key, self.required_sources
+            prepare_node, self.frame, self.data, key, sources
         )
 
     def _needs_refresh(self, node: _Node) -> bool:
-        return not self.required_sources <= node.textures.keys()
+        missing = self.required_sources - node.textures.keys()
+        if not missing:
+            return False
+        ready = getattr(self.data, "source_ready", lambda source: True)
+        return any(ready(source) for source in missing)
 
     def _upload(self, prepared: PreparedNode) -> _Node:
         vbo = self.ctx.buffer(prepared.vertices.tobytes())
@@ -402,6 +417,11 @@ class TerrainLayer:
         )
         old = self._resident.pop(prepared.key, None)
         if old is not None:
+            # a refresh only prepares missing sources: keep the textures the old node had
+            for name, tex in list(old.textures.items()):
+                if name not in node.textures:
+                    node.textures[name] = tex
+                    del old.textures[name]
             self._release_node(old)
         self._resident[prepared.key] = node
         self._bounds.pop(prepared.key, None)  # recompute with real heights
