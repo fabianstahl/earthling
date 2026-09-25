@@ -264,7 +264,9 @@ class Renderer:
         self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         if selection is not None:
             extra = {"u_camera_forward": tuple(float(v) for v in camera.forward), **shadow_uniforms}
-            self.terrain.draw(camera, view_proj, selection.draw, extra_uniforms=extra)
+            self.terrain.draw(
+                camera, view_proj, selection.draw, extra_uniforms=extra, morph=selection.morph
+            )
         self._render_tracks(camera, view_proj, width, height)
         self.outlines.render(camera, view_proj)
         self.ctx.disable(moderngl.DEPTH_TEST)  # the camera path is drawn on top

@@ -39,6 +39,7 @@ log = logging.getLogger(__name__)
 MESH_GRID = 64  # intervals per tile edge
 # texture unit per tile source (0 = heightmap, 2 = optical depth LUT, 3 = shadow atlas)
 TEXTURE_UNITS = {"imagery": 1, "topo": 4, "borders": 5}
+PARENT_HEIGHTMAP_UNIT = 6  # geomorphing: the parent node's heightmap
 DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0
 
 TileKey = tuple[int, int, int]
@@ -286,6 +287,8 @@ class TerrainLayer:
         self.shaders = shaders
         self.visible = True
         self.exaggeration = 1.0
+        self.geomorph = True  # blend new nodes from their parent's surface (no popping)
+        self.shadow_morph: dict[TileKey, float] = {}
         self.debug_lod = False
         self.params = lod.LodParams()
         self.memory_budget_mb = 3000
@@ -627,7 +630,9 @@ class TerrainLayer:
         keys: list[TileKey],
         shadow_pass: bool = False,
         extra_uniforms: dict[str, object] | None = None,
+        morph: dict[TileKey, float] | None = None,
     ) -> None:
+        """``morph``: geomorphing factors of the selection (missing = fully own heights)."""
         if shadow_pass:
             program = self.shaders.get("terrain", defines={"SHADOW_PASS": 1})
         else:
@@ -636,6 +641,8 @@ class TerrainLayer:
         program["u_view_proj"].write(view_proj)
         _set(program, "u_exaggeration", self.exaggeration)
         _set(program, "u_heightmap", 0)
+        _set(program, "u_parent_heightmap", PARENT_HEIGHTMAP_UNIT)
+        morph = morph if morph is not None and self.geomorph else {}
         if not shadow_pass:
             _set(program, "u_log_depth_coef", camera.log_depth_coef)
             for name, unit in TEXTURE_UNITS.items():
@@ -661,6 +668,7 @@ class TerrainLayer:
             _set(program, "u_hm_offset", node.hm_offset)
             _set(program, "u_skirt_depth", skirt_depth(node, self.exaggeration))
             self._heightmaps[node.heightmap_key].texture.use(0)
+            self._bind_parent(program, key, node, morph.get(key, 1.0))
             if not shadow_pass:
                 _set(program, "u_sample_spacing", node.sample_spacing_m)
                 # GLSL mat3 is column-major: columns = east, north, up
@@ -673,6 +681,25 @@ class TerrainLayer:
                         tex.use(unit)
                     _set(program, f"u_has_{name}", tex is not None)
             vao.render(moderngl.TRIANGLES)
+
+    def _bind_parent(self, program, key: TileKey, node, factor: float) -> None:
+        """Geomorphing uniforms: the parent's heightmap and where this node lies in it."""
+        z, x, y = key
+        parent = self._resident.get((z - 1, x >> 1, y >> 1)) if z > 0 else None
+        if (
+            factor >= 1.0
+            or parent is None
+            or parent.heightmap_key is None
+            or parent.heightmap_key not in self._heightmaps
+        ):
+            _set(program, "u_morph", 1.0)
+            return
+        _set(program, "u_morph", float(factor))
+        _set(program, "u_parent_uv_offset", (0.5 * (x & 1), 0.5 * (y & 1)))
+        _set(program, "u_parent_hm_scale", parent.hm_scale)
+        _set(program, "u_parent_hm_offset", parent.hm_offset)
+        _set(program, "u_parent_sample_spacing", parent.sample_spacing_m)
+        self._heightmaps[parent.heightmap_key].texture.use(PARENT_HEIGHTMAP_UNIT)
 
     # --- shadows ------------------------------------------------------------------------
     def select_shadow_casters(
@@ -701,6 +728,7 @@ class TerrainLayer:
             node = self._resident.get(key)
             if node is not None:
                 node.last_used = self._frame_no
+        self.shadow_morph = sel.morph
         return sel.draw
 
     def draw_shadow_casters(self, camera: Camera, light_view_proj, keys: list[TileKey]) -> None:
@@ -712,4 +740,4 @@ class TerrainLayer:
                 planes, self.node_bounds(k).center - camera.position, self.node_bounds(k).radius
             )
         ]
-        self.draw(camera, light_view_proj, visible, shadow_pass=True)
+        self.draw(camera, light_view_proj, visible, shadow_pass=True, morph=self.shadow_morph)

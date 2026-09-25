@@ -5,6 +5,7 @@
 #include "shadows.glsl"
 in vec2 v_hm_uv;
 in vec2 v_tile_uv;
+in float v_skirt;  // 1 on the skirts hiding cracks between nodes
 in float v_height;
 in vec3 v_world;
 in float v_log_z;
@@ -85,13 +86,56 @@ vec3 zoom_color(int z) {
     return colors[z % 6];
 }
 
+// Close-range detail normals: the imagery's luminance as a few metres of relief, applied with
+// screen-space derivative bump mapping (Mikkelsen 2010, no tangents needed). Adds rock and
+// forest structure where the heightmap is too coarse; fades out with distance.
+uniform float u_detail_normals = 0.0;       // strength
+uniform float u_detail_distance_km = 3.0;   // fully faded out at this distance
+const float DETAIL_RELIEF_M = 6.0;          // relief of luminance 0 -> 1
+
+float luminance(vec2 uv) {
+    return dot(texture(u_imagery, uv).rgb, vec3(0.299, 0.587, 0.114));
+}
+
+vec3 detail_normal(vec3 n, float strength) {
+    // relief gradient in texture space (finite differences over the pixel footprint), then
+    // into screen space with the uv derivatives: no seams where 2x2 pixel quads straddle
+    // node borders, unlike derivatives of the sampled luminance itself
+    vec2 uv = v_tile_uv;
+    vec2 texel = 1.0 / vec2(textureSize(u_imagery, 0));
+    vec2 fw = fwidth(uv);
+    float d = max(max(fw.x, fw.y), max(texel.x, texel.y));
+    float scale = DETAIL_RELIEF_M * strength / (2.0 * d);
+    float dh_du = (luminance(uv + vec2(d, 0.0)) - luminance(uv - vec2(d, 0.0))) * scale;
+    float dh_dv = (luminance(uv + vec2(0.0, d)) - luminance(uv - vec2(0.0, d))) * scale;
+    vec2 duvx = dFdx(uv);
+    vec2 duvy = dFdy(uv);
+    float dhx = dh_du * duvx.x + dh_dv * duvx.y;
+    float dhy = dh_du * duvy.x + dh_dv * duvy.y;
+    vec3 dpdx = dFdx(v_world);
+    vec3 dpdy = dFdy(v_world);
+    vec3 r1 = cross(dpdy, n);
+    vec3 r2 = cross(n, dpdx);
+    float det = dot(dpdx, r1);
+    vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
+    vec3 r = abs(det) * n - grad;
+    float len2 = dot(r, r);
+    // degenerate screen-space frames (edge-on slivers) keep the plain normal
+    return (abs(det) > 1e-12 && len2 > 1e-24) ? r * inversesqrt(len2) : n;
+}
+
 void main() {
     if (valid_at(v_hm_uv) < 0.5) discard;
 #ifdef SHADOW_PASS
     return;  // depth only
 #else
     write_log_depth(v_log_z);
-    vec3 n = terrain_normal(v_hm_uv);
+    vec3 n = morphed_normal(v_hm_uv, v_tile_uv);
+    if (u_detail_normals > 0.0 && u_has_imagery && v_skirt < 0.5) {
+        float reach = u_detail_distance_km * 1000.0;
+        float fade = 1.0 - smoothstep(0.35 * reach, reach, length(v_world));
+        if (fade > 0.0) n = detail_normal(n, u_detail_normals * fade);
+    }
     vec3 sun = normalize(u_sun_dir);
     float diffuse = max(dot(n, sun), 0.0);
     if (diffuse > 0.0) diffuse *= mix(1.0, sun_shadow(v_world, n, sun), u_shadow_strength);

@@ -110,10 +110,17 @@ def sphere_visible(planes: np.ndarray, center_rel: np.ndarray, radius: float) ->
     return bool(np.all(d >= -radius))
 
 
+# Geomorphing: a node drawn in place of its parent blends from the parent's surface to its
+# own heights while the parent's screen error grows from the split threshold (ratio 1) to
+# MORPH_END. The child itself splits at ratio 2, so it is fully morphed by then.
+MORPH_END = 1.6
+
+
 @dataclass
 class Selection:
     draw: list[TileKey] = field(default_factory=list)
     request: list[TileKey] = field(default_factory=list)  # most important first
+    morph: dict[TileKey, float] = field(default_factory=dict)  # 0 = parent surface, 1 = own
 
 
 @dataclass
@@ -140,7 +147,7 @@ def select_nodes(
         dist = max(1.0, float(np.linalg.norm(b.center - camera_pos)) - b.radius)
         return b.tile_width_m / TEXELS_PER_NODE * pixels_per_radian / dist
 
-    def visit(key: TileKey) -> None:
+    def visit(key: TileKey, parent_ratio: float | None = None) -> None:
         b = bounds_of(key)
         if not sphere_visible(planes, b.center - camera_pos, b.radius):
             return
@@ -150,12 +157,16 @@ def select_nodes(
         if refinable and texel > params.pixel_threshold and len(sel.draw) < params.max_nodes:
             missing = [k for k in kids if not is_ready(k)]
             if not missing:
+                ratio = texel / max(params.pixel_threshold, 1e-9)
                 for k in kids:
-                    visit(k)
+                    visit(k, ratio)
                 return
             for k in missing:
                 requests.append((-texel, k))
         sel.draw.append(key)
+        if parent_ratio is not None:
+            t = min(max((parent_ratio - 1.0) / (MORPH_END - 1.0), 0.0), 1.0)
+            sel.morph[key] = t * t * (3.0 - 2.0 * t)
 
     for root in nodes.roots():
         if is_ready(root):

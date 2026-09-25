@@ -213,3 +213,104 @@ def test_failed_child_keeps_parent_drawn(gl_ctx):
     drawn = renderer.terrain.last_selection.draw
     assert (10, x, y) in drawn  # the parent still covers the failed quadrant
     assert (11, 2 * x, 2 * y) not in drawn
+
+
+class LeveledTerrainData(FakeTerrainData):
+    """A west-east ramp; the z >= 11 heightmaps add a ripple their z 10 parent lacks."""
+
+    def heightmap_for(self, key):
+        z, x, _ = key
+        cols = np.arange(HEIGHTMAP_SAMPLES, dtype=np.float32)
+        n = 1 << (z - 10)
+        start = (x % n) / n  # position of this tile within the z 10 parent
+        east = start + (cols - 1.0) / 256.0 / n  # 0..1 across the parent
+        heights = np.tile(1500.0 + 800.0 * east, (HEIGHTMAP_SAMPLES, 1))
+        if z >= 11:
+            heights = heights + 150.0 * np.sin(cols / 6.0)[None, :]
+        return HeightmapRef(key, heights.astype(np.float32), 256.0, (0.0, 0.0))
+
+
+def test_geomorphing_starts_from_the_parent_surface(gl_ctx):
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    parent = (10, int(tx), int(ty))
+    kids = lod.children(parent)
+    renderer.set_terrain_source(
+        LeveledTerrainData(), lod.NodeSet({10: [parent[1:]], 11: [k[1:] for k in kids]})
+    )
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 128)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.distance *= 0.35
+    orbit.pitch = -40.0
+    orbit.apply()
+    assert renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 128)
+    assert all(k in renderer.terrain._resident for k in (parent, *kids))
+    fbo = gl_ctx.simple_framebuffer((128, 128))
+
+    def frame(draw, morph):
+        renderer.terrain.update = lambda *a: lod.Selection(draw=list(draw), morph=morph)
+        renderer.render(fbo, 128, 128, camera)
+        return np.frombuffer(fbo.read(components=3), dtype=np.uint8).astype(float)
+
+    coarse = frame([parent], {})
+    start = frame(kids, {k: 0.0 for k in kids})
+    detail = frame(kids, {k: 1.0 for k in kids})
+    assert np.abs(start - coarse).mean() < 1.0  # the split itself is invisible
+    assert np.abs(detail - coarse).mean() > 3.0 * max(np.abs(start - coarse).mean(), 0.3)
+    halfway = frame(kids, {k: 0.5 for k in kids})
+    assert np.abs(halfway - coarse).mean() < np.abs(detail - coarse).mean()
+    renderer.terrain.geomorph = False  # switched off: new nodes appear with their own heights
+    assert np.abs(frame(kids, {k: 0.0 for k in kids}) - detail).mean() < 1.0
+
+
+def test_selection_morph_factors():
+    from earthling.render.lod import MORPH_END
+
+    assert MORPH_END < 2.0  # fully morphed before the children split themselves
+
+
+class CheckerTerrainData(FakeTerrainData):
+    """Imagery with a coarse checkerboard (luminance edges for the detail normals)."""
+
+    def imagery_for(self, key):
+        yy, xx = np.mgrid[0:256, 0:256]
+        checker = ((xx // 2 + yy // 2) % 2).astype(np.uint8)
+        rgb = np.zeros((256, 256, 3), dtype=np.uint8)
+        rgb[...] = (60 + 140 * checker)[..., None]
+        return rgb
+
+
+def test_detail_normals_add_relief_without_artifacts(gl_ctx):
+    from earthling.core.scene import Scene
+
+    def render(data, strength):
+        renderer = Renderer(gl_ctx)
+        renderer.set_scene(FRAME, [])
+        tx, ty = lonlat_to_tile(7.0, 46.0, 11)
+        renderer.set_terrain_source(data, lod.NodeSet({11: [(int(tx), int(ty))]}))
+        scene = Scene()
+        scene.store.set("terrain.detail_normals", strength)
+        scene.store.set("terrain.detail_distance", 30.0)
+        scene.store.set("shadows.enabled", False)
+        renderer.store = scene.store
+        camera = Camera()
+        renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 128)
+        orbit = OrbitController(camera)
+        orbit.frame_bounds(*renderer.scene_bounds())
+        orbit.distance *= 0.08  # close range: this is where the relief matters
+        orbit.pitch = -50.0
+        orbit.apply()
+        renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 128)
+        fbo = gl_ctx.simple_framebuffer((128, 128))
+        renderer.render(fbo, 128, 128, camera)
+        return np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(128, 128, 3)
+
+    flat, relief = render(CheckerTerrainData(), 0.0), render(CheckerTerrainData(), 3.0)
+    assert np.abs(flat.astype(int) - relief.astype(int)).mean() > 0.5
+    black = lambda img: int((img.max(axis=2) < 3).sum())  # noqa: E731
+    assert black(relief) <= black(flat)  # no NaN normals
+    uniform_a, uniform_b = render(FakeTerrainData(), 0.0), render(FakeTerrainData(), 3.0)
+    assert np.abs(uniform_a.astype(int) - uniform_b.astype(int)).max() <= 1  # flat imagery

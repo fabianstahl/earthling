@@ -9,14 +9,16 @@ uniform float u_skirt_depth;
 
 out vec2 v_hm_uv;
 out vec2 v_tile_uv;
+out float v_skirt;
 out float v_height;
 out vec3 v_world;  // camera-relative position
 out float v_log_z;
 
 void main() {
     v_tile_uv = in_uv;
+    v_skirt = in_skirt;
     v_hm_uv = heightmap_uv(in_uv);
-    float h = height_at(v_hm_uv) - in_skirt * u_skirt_depth;
+    float h = morphed_height(v_hm_uv, in_uv) - in_skirt * u_skirt_depth;
     vec3 p = in_pos + in_up * h + u_offset;
     v_world = p;
     v_height = h / max(u_exaggeration, 1e-6);
