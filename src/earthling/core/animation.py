@@ -380,3 +380,34 @@ class Animation:
             except (KeyError, TypeError, ValueError) as exc:
                 problems.append(f"animation of '{pid}': {exc}")
         return problems
+
+
+def layer_switch_warnings(animation: Animation) -> list[tuple[str, float, str]]:
+    """Keys that switch a texture-layer slot while it is visible (a visible jump).
+
+    Slot A is visible while ``layers.mix < 1``, slot B while ``layers.mix > 0``. Returns
+    (property id, key time, message) triples.
+    """
+    store = animation.store
+    mix_curve = animation.curves.get("layers.mix")
+
+    def mix_at(t: float) -> float:
+        if mix_curve is not None and mix_curve.keys:
+            return float(mix_curve.evaluate(t))
+        return float(store.get("layers.mix", 0.0))
+
+    warnings = []
+    for pid, visible, slot in (
+        ("layers.a", lambda m: m < 1.0 - 1e-6, "A"),
+        ("layers.b", lambda m: m > 1e-6, "B"),
+    ):
+        curve = animation.curves.get(pid)
+        if curve is None:
+            continue
+        for k0, k1 in zip(curve.keys, curve.keys[1:], strict=False):
+            if k1.value != k0.value and visible(mix_at(k1.time)):
+                warnings.append(
+                    (pid, k1.time, f"layer slot {slot} switches from '{k0.value}' to "
+                                   f"'{k1.value}' at {k1.time:.2f} s while it is visible")
+                )  # fmt: skip
+    return warnings

@@ -136,3 +136,44 @@ def test_scene_saves_animation(tmp_path):
     other.load(path)
     other.animation.apply(10.0)
     assert other.store["sun.datetime"] == datetime(2026, 7, 1, 17, 0)
+
+
+def test_layer_switch_warnings():
+    from earthling.core.animation import layer_switch_warnings
+
+    scene = Scene()
+    anim = scene.animation
+    anim.set_key("layers.b", 0.0, "slope")
+    anim.set_key("layers.b", 5.0, "aspect")  # B hidden (mix 0) -> fine
+    anim.set_key("layers.a", 0.0, "satellite")
+    anim.set_key("layers.a", 2.0, "elevation")  # A visible -> jump
+    assert [(pid, t) for pid, t, _ in layer_switch_warnings(anim)] == [("layers.a", 2.0)]
+    anim.set_key("layers.mix", 0.0, 1.0)  # now B is fully visible, A hidden
+    assert [(pid, t) for pid, t, _ in layer_switch_warnings(anim)] == [("layers.b", 5.0)]
+
+
+def test_showcase_scene_loads_and_is_clean():
+    from pathlib import Path
+
+    from earthling.core.animation import layer_switch_warnings
+
+    path = Path(__file__).parents[1] / "examples" / "alps_demo" / "showcase.json"
+    scene = Scene()
+    assert scene.load(path) == []
+    anim = scene.animation
+    for pid in (
+        "camera.pose",
+        "camera.mode",
+        "sun.datetime",
+        "progress.head",
+        "layers.b",
+        "layers.mix",
+        "borders.overlay",
+        "post.exposure",
+        "fog.density",
+        "tracks.glow",
+    ):
+        assert anim.is_animated(pid), pid  # fmt: skip
+    assert layer_switch_warnings(anim) == []
+    for t in (0.0, 9.0, 15.0, 29.9):
+        anim.apply(t)

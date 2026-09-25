@@ -26,6 +26,7 @@ from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.undo import set_property
 from earthling.app.viewport import Viewport
+from earthling.core.animation import layer_switch_warnings
 from earthling.core.camera_path import camera_path_lines
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
@@ -148,6 +149,9 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(undo)
         edit_menu.addAction(redo)
 
+        self.animation_menu = bar.addMenu("&Animation")
+        self._add_action(self.animation_menu, "&Check Animation…", self.check_animation)
+
         self.view_menu = bar.addMenu("&View")
         self._add_action(self.view_menu, "&Frame All", lambda: self.viewport.frame_all(), "Home")
         self._add_action(self.view_menu, "&Go To Coordinate…", self._go_to, "Ctrl+G")
@@ -187,6 +191,14 @@ class MainWindow(QMainWindow):
     def add_camera_key(self) -> None:
         """Key the current view at the playhead."""
         self.keys.set_key("camera.pose", self.viewport.camera_pose())
+
+    def check_animation(self) -> list[str]:
+        messages = [message for _, _, message in layer_switch_warnings(self.scene.animation)]
+        if messages:
+            QMessageBox.warning(self, "Animation check", "\n".join(messages))
+        else:
+            QMessageBox.information(self, "Animation check", "No problems found.")
+        return messages
 
     def pick_look_at_target(self) -> None:
         self.statusBar().showMessage("Click on the terrain to set the look-at target", 5000)

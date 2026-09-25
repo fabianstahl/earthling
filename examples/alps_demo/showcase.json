@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "properties": {
+    "view.fov": 50.0,
+    "view.show_outlines": false,
+    "camera.pose": [
+      0.0,
+      -5000.0,
+      3000.0,
+      0.0,
+      -30.0,
+      0.0
+    ],
+    "camera.mode": "keys",
+    "camera.transition": 2.0,
+    "camera.constant_speed": false,
+    "camera.target": [
+      -9922.943932886987,
+      -17525.362050074633,
+      4776.204154829204
+    ],
+    "follow.distance": 600.0,
+    "follow.height": 250.0,
+    "follow.angle": 0.0,
+    "follow.lag": 1.0,
+    "follow.look_ahead": 300.0,
+    "post.exposure": 0.0,
+    "post.tonemap": "aces",
+    "terrain.exaggeration": 1.0,
+    "terrain.detail": 1.0,
+    "terrain.memory_budget_mb": 3000,
+    "terrain.debug_lod": false,
+    "sun.datetime": "2026-07-01T12:00:00",
+    "sun.azimuth_offset": 0.0,
+    "sun.elevation_offset": 0.0,
+    "sun.intensity": 1.4,
+    "sun.color": [
+      1.0,
+      0.96,
+      0.9
+    ],
+    "light.ambient": 0.45,
+    "light.night_ambient": 1.0,
+    "light.sky_color": [
+      0.62,
+      0.72,
+      0.92
+    ],
+    "light.ground_color": [
+      0.45,
+      0.4,
+      0.33
+    ],
+    "shadows.enabled": true,
+    "shadows.strength": 1.0,
+    "shadows.distance": 40.0,
+    "shadows.resolution": "4096",
+    "shadows.softness": 1.5,
+    "shadows.bias": 1.0,
+    "sky.illuminance": 20.0,
+    "sky.rayleigh": 1.0,
+    "sky.haze": 1.0,
+    "sky.sun_disc": 1.0,
+    "sky.stars": 1.0,
+    "haze.aerial": 1.0,
+    "fog.enabled": true,
+    "fog.density": 0.3,
+    "fog.base": 1100.0,
+    "fog.falloff": 250.0,
+    "fog.color": [
+      0.85,
+      0.88,
+      0.92
+    ],
+    "fog.sun_scatter": 1.0,
+    "fog.anisotropy": 0.6,
+    "tracks.visible": true,
+    "tracks.width": 5.0,
+    "tracks.width_mode": "pixels",
+    "tracks.min_px": 1.5,
+    "tracks.elevation": "dem",
+    "tracks.height_offset": 3.0,
+    "tracks.smoothing": 5,
+    "tracks.color_mode": "per_track",
+    "tracks.color": [
+      1.0,
+      0.35,
+      0.15
+    ],
+    "tracks.opacity": 1.0,
+    "tracks.emissive": 0.5,
+    "tracks.outline": 1.0,
+    "tracks.glow": 1.2,
+    "progress.head": 1.0,
+    "progress.tail": 0.0,
+    "progress.mode": "distance",
+    "progress.head_fade": 150.0,
+    "progress.head_boost": 1.5,
+    "marker.visible": true,
+    "marker.size": 14.0,
+    "marker.color": [
+      1.0,
+      0.95,
+      0.8
+    ],
+    "marker.pulse": 0.8,
+    "marker.glow": 3.0,
+    "glow.enabled": true,
+    "glow.intensity": 0.8,
+    "glow.radius": 1.0,
+    "glow.levels": 6,
+    "layers.a": "satellite",
+    "layers.b": "elevation",
+    "layers.mix": 0.0,
+    "borders.overlay": false,
+    "borders.regions": true,
+    "borders.width": 2.5,
+    "borders.color": [
+      1.0,
+      0.82,
+      0.3
+    ],
+    "borders.glow": 8.0,
+    "borders.glow_strength": 0.5,
+    "borders.region_width": 1.2,
+    "borders.region_color": [
+      0.92,
+      0.92,
+      0.92
+    ],
+    "contours.overlay": false,
+    "contours.interval": 100.0,
+    "contours.major": 5.0,
+    "contours.width": 1.2,
+    "contours.color": [
+      0.45,
+      0.25,
+      0.12
+    ],
+    "contours.opacity": 0.8,
+    "layer_satellite.shading": 1.0,
+    "layer_satellite.gain": 1.0,
+    "layer_satellite.brightness": 0.0,
+    "layer_satellite.contrast": 1.0,
+    "layer_satellite.saturation": 1.0,
+    "layer_topo.shading": 0.5,
+    "layer_topo.gain": 0.6,
+    "layer_topo.saturation": 1.0,
+    "layer_contours.shading": 0.7,
+    "layer_contours.gain": 0.45,
+    "layer_contours.paper": [
+      0.96,
+      0.94,
+      0.88
+    ],
+    "layer_borders.shading": 0.7,
+    "layer_borders.gain": 0.45,
+    "layer_borders.land": [
+      0.82,
+      0.8,
+      0.74
+    ],
+    "layer_elevation.shading": 1.0,
+    "layer_elevation.gain": 0.45,
+    "layer_elevation.min": 500.0,
+    "layer_elevation.max": 4500.0,
+    "layer_elevation.ramp": "hypsometric",
+    "layer_elevation.bands": 0.0,
+    "layer_slope.shading": 0.6,
+    "layer_slope.gain": 0.45,
+    "layer_slope.classes": true,
+    "layer_slope.max": 60.0,
+    "layer_slope.ramp": "turbo",
+    "layer_aspect.shading": 0.6,
+    "layer_aspect.gain": 0.45,
+    "layer_aspect.saturation": 0.75,
+    "layer_hillshade.shading": 0.0,
+    "layer_hillshade.gain": 0.45,
+    "layer_hillshade.azimuth": 315.0,
+    "layer_hillshade.altitude": 45.0,
+    "layer_hillshade.z": 1.5
+  },
+  "animation": {
+    "duration": 30.0,
+    "fps": 60.0,
+    "curves": {
+      "camera.pose": [
+        {
+          "t": 0.0,
+          "v": [
+            -11869.473836608822,
+            -12246.62201016172,
+            3277.21127713787,
+            40.0,
+            -18.0,
+            0.0
+          ],
+          "interp": "ease_in"
+        },
+        {
+          "t": 3.5,
+          "v": [
+            -9917.60243637709,
+            -6133.4732491888635,
+            3089.354299702019,
+            50.0,
+            -22.0,
+            0.0
+          ],
+          "interp": "linear"
+        },
+        {
+          "t": 7.0,
+          "v": [
+            -6809.363589305582,
+            -1689.5751960163423,
+            3396.149347079307,
+            60.0,
+            -20.0,
+            0.0
+          ],
+          "interp": "linear"
+        },
+        {
+          "t": 10.5,
+          "v": [
+            -3318.103707801599,
+            2200.000251561321,
+            3598.7591109515056,
+            90.0,
+            -24.0,
+            0.0
+          ],
+          "interp": "ease_out"
+        },
+        {
+          "t": 14.0,
+          "v": [
+            556.3705546669019,
+            4423.632376850838,
+            3898.440379275961,
+            140.0,
+            -28.0,
+            0.0
+          ],
+          "interp": "linear"
+        }
+      ],
+      "camera.mode": [
+        {
+          "t": 0.0,
+          "v": "keys",
+          "interp": "step"
+        },
+        {
+          "t": 14.0,
+          "v": "follow",
+          "interp": "step"
+        },
+        {
+          "t": 20.0,
+          "v": "look_at",
+          "interp": "step"
+        }
+      ],
+      "sun.datetime": [
+        {
+          "t": 0.0,
+          "v": "2026-07-01T17:30:00",
+          "interp": "linear"
+        },
+        {
+          "t": 20.0,
+          "v": "2026-07-01T21:20:00",
+          "interp": "ease_out"
+        },
+        {
+          "t": 30.0,
+          "v": "2026-07-01T22:30:00",
+          "interp": "linear"
+        }
+      ],
+      "progress.head": [
+        {
+          "t": 0.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 26.0,
+          "v": 1.0,
+          "interp": "linear"
+        }
+      ],
+      "layers.b": [
+        {
+          "t": 0.0,
+          "v": "slope",
+          "interp": "step"
+        },
+        {
+          "t": 15.0,
+          "v": "borders",
+          "interp": "step"
+        }
+      ],
+      "layers.mix": [
+        {
+          "t": 0.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 8.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 9.5,
+          "v": 1.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 11.0,
+          "v": 1.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 12.5,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        }
+      ],
+      "borders.overlay": [
+        {
+          "t": 0.0,
+          "v": false,
+          "interp": "step"
+        },
+        {
+          "t": 15.0,
+          "v": true,
+          "interp": "step"
+        }
+      ],
+      "post.exposure": [
+        {
+          "t": 20.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 26.0,
+          "v": 1.5,
+          "interp": "ease_in_out"
+        }
+      ],
+      "fog.density": [
+        {
+          "t": 0.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 20.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 28.0,
+          "v": 1.5,
+          "interp": "ease_in_out"
+        }
+      ],
+      "tracks.glow": [
+        {
+          "t": 0.0,
+          "v": 1.0,
+          "interp": "linear"
+        },
+        {
+          "t": 22.0,
+          "v": 1.0,
+          "interp": "linear"
+        },
+        {
+          "t": 28.0,
+          "v": 4.0,
+          "interp": "linear"
+        }
+      ]
+    }
+  },
+  "camera": {},
+  "ui": {}
+}

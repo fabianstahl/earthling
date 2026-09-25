@@ -16,7 +16,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import QMenu, QSizePolicy, QToolButton, QWidget
 
 from earthling.app.keyframing import KeyframeEditor, KeyRef
-from earthling.core.animation import INTERP_LABELS, Interp, snap_to_frame
+from earthling.core.animation import INTERP_LABELS, Interp, layer_switch_warnings, snap_to_frame
 from earthling.ui.timeline_widget import diamond
 
 LABEL_WIDTH = 200
@@ -25,6 +25,7 @@ KEY_RADIUS = 5.0
 KEY_COLOR = QColor(240, 190, 60)
 SELECTED_COLOR = QColor(255, 255, 255)
 PLAYHEAD_COLOR = QColor(90, 170, 255)
+WARN_COLOR = QColor(235, 70, 60)  # keys that cause a visible jump
 
 
 class DopeSheet(QWidget):
@@ -41,6 +42,7 @@ class DopeSheet(QWidget):
         self._drag_keys: list[KeyRef] = []
         self._drag_dt = 0.0
         self._band: QRectF | None = None
+        self._warnings: list = []
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(ROW_HEIGHT * 3)
@@ -87,6 +89,7 @@ class DopeSheet(QWidget):
         p.fillRect(self.rect(), pal.base())
         rows = self.rows()
         registry = self.editor.animation.store.registry
+        self._warnings = layer_switch_warnings(self.editor.animation)
         for i, pid in enumerate(rows):
             y0 = i * ROW_HEIGHT
             if i % 2:
@@ -108,13 +111,15 @@ class DopeSheet(QWidget):
                     p.drawLine(
                         QPointF(self.time_to_x(k0.time), y), QPointF(self.time_to_x(k1.time), y)
                     )
+            warn_times = {t for w_pid, t, _ in self._warnings if w_pid == pid}
             for k in curve.keys:
                 t = k.time
                 selected = (pid, t) in self.selection
+                warned = t in warn_times
                 if selected and self._drag_keys and (pid, t) in self._drag_keys:
                     t = t + self._drag_dt
                 p.setPen(QPen(QColor(30, 30, 30), 1))
-                p.setBrush(SELECTED_COLOR if selected else KEY_COLOR)
+                p.setBrush(SELECTED_COLOR if selected else (WARN_COLOR if warned else KEY_COLOR))
                 p.drawPolygon(diamond(QPointF(self.time_to_x(t), y0 + ROW_HEIGHT / 2), KEY_RADIUS))
         if not rows:
             p.setPen(pal.placeholderText().color())
