@@ -2,7 +2,7 @@
 
 Scenes are stored as JSON (``scene.json`` in the project folder by default)::
 
-    {"version": 1, "properties": {...}, "camera": {...}, "ui": {...}}
+    {"version": 1, "properties": {...}, "animation": {...}, "camera": {...}, "ui": {...}}
 
 ``MIGRATIONS`` upgrade older files step by step to :data:`SCENE_VERSION`.
 """
@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from earthling.core.animation import Animation
 from earthling.core.properties import PropertyStore
 
 SCENE_VERSION = 1
@@ -47,6 +48,7 @@ class Scene:
 
         self.registry = build_registry()
         self.store = PropertyStore(self.registry)
+        self.animation = Animation(self.store)
         self.camera: dict[str, Any] = {}  # serialised camera state (owned by the viewport)
         self.ui: dict[str, Any] = {}  # window/dock layout (owned by the main window)
         self.path: Path | None = None
@@ -69,6 +71,7 @@ class Scene:
         return {
             "version": SCENE_VERSION,
             "properties": self.store.to_json(),
+            "animation": self.animation.to_json(),
             "camera": self.camera,
             "ui": self.ui,
         }
@@ -79,6 +82,7 @@ class Scene:
         for d in self.registry:  # properties missing in the file get their defaults
             self.store.set(d.id, d.default)
         problems = self.store.load_json(doc.get("properties", {}))
+        problems += self.animation.load_json(doc.get("animation", {}))
         self.camera = dict(doc.get("camera", {}))
         self.ui = dict(doc.get("ui", {}))
         return problems
