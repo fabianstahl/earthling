@@ -17,8 +17,10 @@ import io
 import logging
 import math
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,7 +38,7 @@ from earthling.core.geo import (
     tile_bounds_mercator,
 )
 from earthling.data.cache import TileCache, write_atomic
-from earthling.data.downloader import DownloadProgress, http_client
+from earthling.data.downloader import MAX_RETRIES, DownloadProgress, RateLimiter, http_client
 from earthling.data.providers import License
 
 log = logging.getLogger(__name__)
@@ -99,6 +101,10 @@ class DemSource:
     license: License = License("unknown", "")
     coverage: str | None = None  # regional sources, see earthling.data.coverage
     feather_m: float = 300.0
+    # direct sources serve heightmap tiles per request (e.g. a WMS) instead of source files
+    direct: bool = False
+    concurrency: int = 1
+    max_requests_per_second: float = 0.0
 
     @property
     def coverage_area(self):
@@ -108,6 +114,79 @@ class DemSource:
 
     def files_for_bounds(self, bounds: tuple[float, float, float, float]) -> list[SourceFile]:
         raise NotImplementedError
+
+    def fetch_tile(self, z: int, x: int, y: int, client: httpx.Client) -> np.ndarray | None:
+        """Heightmap samples of one tile (direct sources); None where there is no data."""
+        raise NotImplementedError
+
+
+class WmsDemSource(DemSource):
+    """Elevation from a WMS serving raw float32 rasters (``image/x-bil;bits=32``) in
+    EPSG:3857. One request per heightmap tile; the request box is widened by 1.5 sample steps
+    so the pixel centres are exactly the tile's corner-aligned samples (incl. the border)."""
+
+    direct = True
+    concurrency = 4
+    max_requests_per_second = 8.0
+    wms_url = ""
+    layer = ""
+    nodata_below = -1000.0  # e.g. -99999 outside the data
+    # Request ``oversample`` x the sample resolution and box-average: servers that resample
+    # with nearest neighbour snap to their internal grid, which shifts the result by up to a
+    # pixel; averaging finer pixels shrinks that error (see tools/check_dem_alignment.py).
+    oversample: int = 1
+
+    def files_for_bounds(self, bounds):
+        return []
+
+    def request_params(self, z: int, x: int, y: int) -> dict[str, str]:
+        min_x, min_y, max_x, max_y = tile_bounds_mercator(z, x, y)
+        pad = 1.5 * (max_x - min_x) / GRID_INTERVALS
+        bbox = (min_x - pad, min_y - pad, max_x + pad, max_y + pad)
+        size = str(HEIGHTMAP_SAMPLES * self.oversample)
+        return {
+            "SERVICE": "WMS",
+            "VERSION": "1.3.0",
+            "REQUEST": "GetMap",
+            "LAYERS": self.layer,
+            "STYLES": "",
+            "CRS": "EPSG:3857",
+            "BBOX": ",".join(f"{v:.4f}" for v in bbox),
+            "WIDTH": size,
+            "HEIGHT": size,
+            "FORMAT": "image/x-bil;bits=32",
+        }
+
+    def fetch_tile(self, z, x, y, client):
+        response = client.get(self.wms_url, params=self.request_params(z, x, y))
+        if response.status_code in (204, 404):
+            return None
+        response.raise_for_status()
+        n, k = HEIGHTMAP_SAMPLES, self.oversample
+        content_type = response.headers.get("content-type", "")
+        if "bil" not in content_type or len(response.content) != n * n * k * k * 4:
+            raise ValueError(f"unexpected WMS answer ({content_type}): {response.text[:200]}")
+        pixels = np.frombuffer(response.content, dtype="<f4").reshape(n * k, n * k)
+        pixels = np.where(pixels > self.nodata_below, pixels, np.nan)
+        # the centre of every k x k block is exactly one heightmap sample
+        heights = pixels.reshape(n, k, n, k).mean(axis=(1, 3)).astype(np.float32)
+        return None if np.isnan(heights).all() else heights
+
+
+class IgnRgeAlti(WmsDemSource):
+    id = "ign_rgealti"
+    name = "IGN RGE ALTI (France)"
+    native_resolution_m = 1.0
+    wms_url = "https://data.geopf.fr/wms-r/wms"
+    layer = "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES"
+    coverage = "france"
+    oversample = 2
+    license = License(
+        "Licence Ouverte / Open Licence 2.0 (Etalab)",
+        "Elevation: © IGN – RGE ALTI®",
+        "https://www.etalab.gouv.fr/licence-ouverte-open-licence/",
+        commercial_use=True,
+    )
 
 
 class CopernicusGlo30(DemSource):
@@ -141,7 +220,7 @@ class CopernicusGlo30(DemSource):
         return files
 
 
-DEM_SOURCES: dict[str, DemSource] = {s.id: s for s in (CopernicusGlo30(),)}
+DEM_SOURCES: dict[str, DemSource] = {s.id: s for s in (CopernicusGlo30(), IgnRgeAlti())}
 
 
 def get_dem_source(source_id: str) -> DemSource:
@@ -259,9 +338,17 @@ class _Raster:
 class DemBaker:
     """Bakes heightmap tiles from the downloaded source files of a DEM source."""
 
-    def __init__(self, source: DemSource, cache: TileCache, max_rasters: int = 6) -> None:
+    def __init__(
+        self,
+        source: DemSource,
+        cache: TileCache,
+        max_rasters: int = 6,
+        client: httpx.Client | None = None,
+    ) -> None:
         self.source = source
         self.cache = cache
+        self._client = client
+        self._limiter = RateLimiter(source.max_requests_per_second)
         self.folder = source_dir(cache, source)
         self._rasters: OrderedDict[tuple[str, int], _Raster] = OrderedDict()
         self._max_rasters = max_rasters
@@ -285,7 +372,30 @@ class DemBaker:
             factor *= 2
         return factor
 
+    def _fetch_direct(self, z: int, x: int, y: int) -> np.ndarray | None:
+        if self._client is None:
+            self._client = http_client()
+        delay = 1.0
+        last: Exception | None = None
+        for _attempt in range(MAX_RETRIES + 1):
+            self._limiter.wait()
+            try:
+                return self.source.fetch_tile(z, x, y, self._client)
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status < 500 and status != 429:
+                    raise
+                last = exc
+            except httpx.TransportError as exc:
+                last = exc
+            time.sleep(delay)
+            delay = min(delay * 2, 30.0)
+        assert last is not None
+        raise last
+
     def bake_tile(self, z: int, x: int, y: int) -> np.ndarray | None:
+        if self.source.direct:
+            return self._fetch_direct(z, x, y)
         west, south, east, north = tile_bounds_lonlat(z, x, y)
         margin = (east - west) / GRID_INTERVALS * 2
         files = [
@@ -322,32 +432,47 @@ class DemBaker:
         tiles = list(tiles)
         progress = DownloadProgress(total=len(tiles))
         sid = self.source.id
+        lock = threading.Lock()
         # Coarse-to-fine and spatially sorted, so raster cache hits are likely.
         tiles.sort(key=lambda t: (t[0], t[1] >> 3, t[2] >> 3, t[1], t[2]))
-        for z, x, y in tiles:
+
+        def work(tile: tuple[int, int, int]) -> None:
+            z, x, y = tile
             if cancel is not None and cancel.is_set():
-                break
-            if not overwrite and self.cache.is_known(sid, z, x, y, "png"):
-                progress.skipped += 1
-            else:
+                return
+            outcome, size, error = "skipped", 0, ""
+            if overwrite or not self.cache.is_known(sid, z, x, y, "png"):
                 try:
                     heights = self.bake_tile(z, x, y)
-                except Exception as exc:  # rasterio errors etc.
-                    progress.failed += 1
-                    progress.errors.append(f"{z}/{x}/{y}: {exc}")
-                    log.exception("baking %s/%s/%s failed", z, x, y)
+                except Exception as exc:  # rasterio / network errors etc.
+                    outcome, error = "failed", f"{z}/{x}/{y}: {exc}"
+                    log.warning("baking %s/%s/%s failed: %s", z, x, y, exc)
                 else:
                     if heights is None:
                         self.cache.mark_missing(sid, z, x, y)
-                        progress.missing += 1
+                        outcome = "missing"
                     else:
                         data = encode_heightmap(heights)
                         self.cache.write(sid, z, x, y, "png", data)
-                        progress.downloaded += 1
-                        progress.bytes += len(data)
-            progress.done += 1
-            if on_progress:
-                on_progress(progress)
+                        outcome, size = "downloaded", len(data)
+            with lock:
+                setattr(progress, outcome, getattr(progress, outcome) + 1)
+                progress.bytes += size
+                if error:
+                    progress.errors.append(error)
+                progress.done += 1
+                if on_progress:
+                    on_progress(progress)
+
+        workers = self.source.concurrency if self.source.direct else 1
+        if workers > 1:
+            with ThreadPoolExecutor(workers, thread_name_prefix=f"dem-{sid}") as pool:
+                list(pool.map(work, tiles))
+        else:
+            for tile in tiles:
+                if cancel is not None and cancel.is_set():
+                    break
+                work(tile)
         return progress
 
 

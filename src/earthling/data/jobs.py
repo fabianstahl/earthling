@@ -75,17 +75,22 @@ def _dem_jobs(session: Session, source, tiles: list[tuple[int, int, int]]) -> li
     ]
     cancel = threading.Event()
     baker = DemBaker(source, session.cache)
-    return [
-        DownloadJob(
-            f"DEM sources ({source.name})",
-            lambda cb: download_sources(
-                source, files, session.cache, on_progress=cb, cancel=cancel
-            ),
-            cancel.set,
-        ),
+    jobs = []
+    if not source.direct:  # direct sources (WMS) are fetched per heightmap tile
+        jobs.append(
+            DownloadJob(
+                f"DEM sources ({source.name})",
+                lambda cb: download_sources(
+                    source, files, session.cache, on_progress=cb, cancel=cancel
+                ),
+                cancel.set,
+            )
+        )
+    jobs.append(
         DownloadJob(
             f"DEM heightmap tiles ({source.name})",
             lambda cb: baker.bake(tiles, cb, cancel),
             cancel.set,
-        ),
-    ]
+        )
+    )
+    return jobs

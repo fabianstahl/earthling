@@ -108,8 +108,32 @@ OPENTOPOMAP = TileProvider(
     concurrency=2,
 )
 
+# --- France: IGN Géoplateforme --------------------------------------------------------------
+IGN_BDORTHO = TileProvider(
+    id="ign_bdortho",
+    name="IGN BD ORTHO (France)",
+    kind="imagery",
+    url_template=(
+        "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+        "&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM"
+        "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg"
+    ),
+    ext="jpg",
+    max_zoom=19,  # 20 cm orthophotos
+    license=License(
+        "Licence Ouverte / Open Licence 2.0 (Etalab)",
+        "Orthophotos: © IGN – BD ORTHO®",
+        "https://www.etalab.gouv.fr/licence-ouverte-open-licence/",
+        commercial_use=True,
+    ),
+    max_requests_per_second=10.0,
+    # all-white tile served inside the service area where there is no imagery
+    placeholder_md5=frozenset({"cb33c7debb71738617c005e666ba5db4"}),
+    coverage="france",
+)
+
 PROVIDERS: dict[str, TileProvider] = {
-    p.id: p for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP)
+    p.id: p for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP, IGN_BDORTHO)
 }
 
 
