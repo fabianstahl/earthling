@@ -16,3 +16,6 @@ zones = [
 [sources]
 imagery = ["esri_world_imagery"]
 dem     = ["copernicus_glo30"]
+# Much sharper, with the national data of France and Switzerland (the hike crosses the border):
+# imagery = ["ign_bdortho", "swisstopo_swissimage", "esri_world_imagery"]
+# dem     = ["ign_rgealti", "swisstopo_alti3d", "copernicus_glo30"]
