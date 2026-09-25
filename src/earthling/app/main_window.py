@@ -4,28 +4,36 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QSettings, pyqtSignal
+from PyQt6.QtCore import QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QFileDialog, QLabel, QMainWindow, QMessageBox
 
 from earthling import __version__
+from earthling.app.tracks_dock import TracksDock
 from earthling.app.viewport import Viewport
 from earthling.core.config import ConfigError, Project
+from earthling.core.gpx import Track, load_gpx_folder
 
 MAX_RECENT = 8
 
 
 class MainWindow(QMainWindow):
     project_changed = pyqtSignal(object)
+    tracks_changed = pyqtSignal()
 
     def __init__(self, dev_mode: bool = False) -> None:
         super().__init__()
         self.project: Project | None = None
+        self.tracks: list[Track] = []
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
         self.viewport = Viewport(dev_mode=dev_mode)
         self.setCentralWidget(self.viewport)
+        self.tracks_dock = TracksDock(self)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.tracks_dock)
+        self.view_menu.addAction(self.tracks_dock.toggleViewAction())
+        self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
         self._fps_label = QLabel()
         self.statusBar().addPermanentWidget(self._fps_label)
         self.viewport.fps_changed.connect(lambda fps: self._fps_label.setText(f"{fps:5.1f} fps"))
@@ -79,8 +87,15 @@ class MainWindow(QMainWindow):
         self.project = project
         self._remember_recent(project.folder)
         self._update_title()
-        self.statusBar().showMessage(f"Opened project {project.folder}", 5000)
+        self.tracks, errors = load_gpx_folder(project.gpx_dir)
+        self.tracks_dock.set_tracks(self.tracks)
+        self.statusBar().showMessage(
+            f"Opened project {project.folder} – {len(self.tracks)} track(s)", 5000
+        )
+        if errors:
+            QMessageBox.warning(self, "GPX problems", "\n".join(errors))
         self.project_changed.emit(project)
+        self.tracks_changed.emit()
 
     def _new_project(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Choose (empty) folder for new project")

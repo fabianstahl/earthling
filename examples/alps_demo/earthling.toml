@@ -1,0 +1,18 @@
+# Demo project: two synthetic days on the Tour du Mont Blanc (France -> Switzerland).
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Europe/Paris"
+
+[area]
+border_km = 8.0
+zones = [
+  { within_km = 1.5, imagery_zoom = 16, dem_zoom = 13 },
+  { within_km = 4.0, imagery_zoom = 15, dem_zoom = 12 },
+  { within_km = 8.0, imagery_zoom = 13, dem_zoom = 11 },
+]
+
+[sources]
+imagery = ["esri_world_imagery"]
+dem     = ["copernicus_glo30"]
