@@ -161,10 +161,15 @@ def cmd_plan(project_dir: str) -> int:
     bounds = tuple(round(v, 4) for v in session.aoi.bounds)
     print(f"{len(session.tracks)} track(s), AOI bounds {bounds}")
     print(plan_report(session.plan))
+    print(session.provider_report())
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):  # e.g. cp1252 consoles: never crash on output
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
     command = args.command or "gui"
     if command == "gui":

@@ -57,23 +57,30 @@ def compose_tile_texture(
     y: int,
     image_zoom: int,
     ensure: Callable[[int, int, int], object] | None = None,
-) -> np.ndarray | None:
+    with_mask: bool = False,
+):
     """RGB texture covering terrain tile (z, x, y) built from imagery tiles at ``image_zoom``.
 
     The result has (tile_size * 2**(image_zoom - z))^2 pixels. Returns None if no imagery at all
     (including ancestors) is available. ``ensure(z, x, y)`` is called for every wanted imagery
-    tile first, e.g. to download missing tiles on demand.
+    tile first, e.g. to download missing tiles on demand. With ``with_mask`` the result is
+    ``(image, found)``, ``found`` being a float32 per-pixel mask of the parts that had data.
     """
     image_zoom = min(max(image_zoom, z), provider.max_zoom)
     d = image_zoom - z
     if d < 0:
         # Terrain finer than imagery: crop from the ancestor.
         found = load_tile_rgb(cache, provider, z, x, y)
-        return None if found is None else found[0]
+        if found is None:
+            return None
+        if with_mask:
+            return found[0], np.ones(found[0].shape[:2], dtype=np.float32)
+        return found[0]
     n = 1 << d
     size = provider.tile_size
     out = np.zeros((size * n, size * n, 3), dtype=np.uint8)
     any_found = False
+    mask = np.zeros((n, n), dtype=np.float32)
     for j in range(n):
         for i in range(n):
             if ensure is not None:
@@ -82,5 +89,10 @@ def compose_tile_texture(
             if found is None:
                 continue
             any_found = True
+            mask[j, i] = 1.0
             out[j * size : (j + 1) * size, i * size : (i + 1) * size] = found[0]
-    return out if any_found else None
+    if not any_found:
+        return None
+    if with_mask:
+        return out, np.repeat(np.repeat(mask, size, axis=0), size, axis=1)
+    return out

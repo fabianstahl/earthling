@@ -97,6 +97,14 @@ class DemSource:
     name: str = ""
     native_resolution_m: float = 30.0
     license: License = License("unknown", "")
+    coverage: str | None = None  # regional sources, see earthling.data.coverage
+    feather_m: float = 300.0
+
+    @property
+    def coverage_area(self):
+        from earthling.data.coverage import get_coverage
+
+        return get_coverage(self.coverage, self.feather_m)
 
     def files_for_bounds(self, bounds: tuple[float, float, float, float]) -> list[SourceFile]:
         raise NotImplementedError

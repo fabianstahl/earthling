@@ -37,6 +37,15 @@ class TileProvider:
     headers: dict[str, str] = field(default_factory=dict)
     # MD5 hashes of "no data" placeholder images that must be treated as missing tiles.
     placeholder_md5: frozenset[str] = frozenset()
+    # Regional providers: coverage name (see earthling.data.coverage), None = worldwide.
+    coverage: str | None = None
+    feather_m: float = 300.0  # blend width at the coverage edge
+
+    @property
+    def coverage_area(self):
+        from earthling.data.coverage import get_coverage
+
+        return get_coverage(self.coverage, self.feather_m)
 
     def tile_url(self, z: int, x: int, y: int) -> str:
         return self.url_template.format(z=z, x=x, y=y)

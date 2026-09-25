@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from earthling.core.aoi import format_bytes
+from earthling.core.aoi import AVG_TILE_BYTES, format_bytes
 from earthling.core.session import Session
 from earthling.data.downloader import DownloadProgress
 from earthling.data.jobs import DownloadJob
@@ -73,9 +73,12 @@ class DownloadDialog(QDialog):
         self.resize(640, 420)
         layout = QVBoxLayout(self)
         plan = session.plan
+        imagery = session.provider_tiles("imagery")
+        count = sum(len(t) for _, tiles in imagery for t in tiles.values())
+        names = " + ".join(p.name for p, tiles in imagery if tiles)
         self.imagery_box = QCheckBox(
-            f"Imagery – {session.imagery_provider.name}: {plan.count('imagery')} tiles "
-            f"(≈ {format_bytes(plan.estimated_bytes('imagery'))})"
+            f"Imagery – {names}: {count} tiles "
+            f"(≈ {format_bytes(count * AVG_TILE_BYTES['imagery'])})"
         )
         self.imagery_box.setChecked(True)
         self.dem_box = QCheckBox(

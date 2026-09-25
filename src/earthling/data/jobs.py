@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 import shapely
 
-from earthling.core.aoi import TilePlan
 from earthling.core.session import Session
 from earthling.data.dem import DemBaker, download_sources
 from earthling.data.downloader import DownloadProgress, TileDownloader
@@ -32,18 +31,32 @@ def download_jobs(
     plan = session.plan
     if plan is None:
         return jobs
-    if "imagery" in kinds:
-        jobs.append(_tile_job(session.imagery_provider, session, plan, max_zoom))
-    if "topo" in kinds and session.topo_providers:
-        jobs.append(_tile_job(session.topo_providers[0], session, plan, max_zoom))
+    for kind in ("imagery", "topo"):
+        if kind not in kinds:
+            continue
+        for provider, tiles in session.provider_tiles(kind):
+            if tiles:
+                jobs.append(_tile_job(provider, session, _flatten(tiles, max_zoom)))
+            if kind == "topo":
+                break  # further topo providers are fallbacks only (downloaded on demand)
     if "dem" in kinds:
-        jobs.extend(_dem_jobs(session, plan, max_zoom))
+        for source, tiles in session.provider_tiles("dem"):
+            if tiles:
+                jobs.extend(_dem_jobs(session, source, _flatten(tiles, max_zoom)))
     return jobs
 
 
-def _tile_job(provider, session: Session, plan: TilePlan, max_zoom: int | None) -> DownloadJob:
-    """Download the imagery-zone tiles of ``provider`` (capped at its maximum zoom)."""
-    tiles = [t for t in plan.tiles("imagery") if max_zoom is None or t[0] <= max_zoom]
+def _flatten(tiles: dict, max_zoom: int | None) -> list[tuple[int, int, int]]:
+    return [
+        (z, int(x), int(y))
+        for z in sorted(tiles)
+        if max_zoom is None or z <= max_zoom
+        for x, y in tiles[z]
+    ]
+
+
+def _tile_job(provider, session: Session, tiles: list[tuple[int, int, int]]) -> DownloadJob:
+    """Download ``tiles`` of ``provider`` (the downloader skips zooms it does not serve)."""
     downloader = TileDownloader(provider, session.cache)
     return DownloadJob(
         f"{provider.kind.capitalize()} ({provider.name})",
@@ -52,13 +65,14 @@ def _tile_job(provider, session: Session, plan: TilePlan, max_zoom: int | None) 
     )
 
 
-def _dem_jobs(session: Session, plan: TilePlan, max_zoom: int | None) -> list[DownloadJob]:
-    source = session.dem_source
-    aoi = session.aoi.aoi
+def _dem_jobs(session: Session, source, tiles: list[tuple[int, int, int]]) -> list[DownloadJob]:
+    area = session.aoi.aoi
+    coverage = source.coverage_area
+    if coverage is not None:
+        area = area.intersection(coverage.lonlat)
     files = [
-        f for f in source.files_for_bounds(aoi.bounds) if shapely.box(*f.bounds).intersects(aoi)
+        f for f in source.files_for_bounds(area.bounds) if shapely.box(*f.bounds).intersects(area)
     ]
-    tiles = [t for t in plan.tiles("dem") if max_zoom is None or t[0] <= max_zoom]
     cancel = threading.Event()
     baker = DemBaker(source, session.cache)
     return [
@@ -69,5 +83,9 @@ def _dem_jobs(session: Session, plan: TilePlan, max_zoom: int | None) -> list[Do
             ),
             cancel.set,
         ),
-        DownloadJob("DEM heightmap tiles", lambda cb: baker.bake(tiles, cb, cancel), cancel.set),
+        DownloadJob(
+            f"DEM heightmap tiles ({source.name})",
+            lambda cb: baker.bake(tiles, cb, cancel),
+            cancel.set,
+        ),
     ]

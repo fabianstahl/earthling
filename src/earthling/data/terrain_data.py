@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from earthling.core.aoi import TilePlan
+from earthling.core.geo import tile_bounds_mercator
 from earthling.data.cache import TileCache
 from earthling.data.dem import GRID_INTERVALS, read_heightmap
 from earthling.data.downloader import TileDownloader
@@ -38,15 +39,18 @@ class TerrainData:
     """Heightmaps and textures for LOD nodes.
 
     ``sources`` maps tile-source names used by texture layers ("imagery", "topo", ...) to
-    providers. All texture sources use the imagery zones of the tile plan (capped at each
-    provider's maximum zoom); missing tiles can be downloaded on demand from worker threads.
+    providers, or to lists of providers in priority order: regional providers are composited
+    over the others within their coverage, feathered at its edge, and missing tiles fall back to
+    the next provider. ``dem_id`` may likewise be a list of DEM source ids in priority order.
+    All texture sources use the imagery zones of the tile plan (capped at each provider's
+    maximum zoom); missing tiles can be downloaded on demand from worker threads.
     """
 
     def __init__(
         self,
         cache: TileCache,
-        dem_id: str,
-        sources: dict[str, TileProvider] | TileProvider,
+        dem_id: str | list[str],
+        sources: dict[str, TileProvider | list[TileProvider]] | TileProvider,
         plan: TilePlan,
         max_heightmaps: int = 512,
         on_demand: bool = False,
@@ -56,8 +60,13 @@ class TerrainData:
         if isinstance(sources, TileProvider):
             sources = {"imagery": sources}
         self.cache = cache
-        self.dem_id = dem_id
-        self.sources = dict(sources)
+        self.dem_ids = [dem_id] if isinstance(dem_id, str) else list(dem_id)
+        self.dem_id = self.dem_ids[0]
+        self._dem_coverage = {sid: _dem_coverage(sid) for sid in self.dem_ids}
+        self.stacks: dict[str, list[TileProvider]] = {
+            name: [p] if isinstance(p, TileProvider) else list(p) for name, p in sources.items()
+        }
+        self.sources = {name: stack[0] for name, stack in self.stacks.items()}
         self.plan = plan
         self._imagery_sets = {
             z: {(int(x), int(y)) for x, y in t} for z, t in plan.levels.get("imagery", {}).items()
@@ -66,7 +75,7 @@ class TerrainData:
         self._max = max_heightmaps
         self._lock = threading.Lock()
         self.downloaders = (
-            {name: TileDownloader(p, cache) for name, p in self.sources.items()}
+            {p.id: TileDownloader(p, cache) for stack in self.stacks.values() for p in stack}
             if on_demand
             else {}
         )
@@ -82,15 +91,50 @@ class TerrainData:
             if key in self._heightmaps:
                 self._heightmaps.move_to_end(key)
                 return self._heightmaps[key]
-        z, x, y = key
-        heights = None
-        if not self.cache.is_missing(self.dem_id, z, x, y):
-            heights = read_heightmap(self.cache, self.dem_id, z, x, y)
+        heights = self._composite_heightmap(key)
         with self._lock:
             self._heightmaps[key] = heights
             while len(self._heightmaps) > self._max:
                 self._heightmaps.popitem(last=False)
         return heights
+
+    def _composite_heightmap(self, key: TileKey) -> np.ndarray | None:
+        """The heightmap of ``key`` from the DEM sources in priority order. All sources are
+        baked on the same sample grid, so they blend per sample: feathered at coverage edges,
+        lower sources fill where higher ones have no data."""
+        z, x, y = key
+        bounds = None
+        layers: list[tuple[np.ndarray, np.ndarray | None]] = []
+        for sid in self.dem_ids:
+            coverage = self._dem_coverage[sid]
+            kind = "full"
+            if coverage is not None:
+                bounds = bounds or tile_bounds_mercator(z, x, y)
+                kind = coverage.classify(bounds)
+                if kind == "none":
+                    continue
+            if self.cache.is_missing(sid, z, x, y):
+                continue
+            heights = read_heightmap(self.cache, sid, z, x, y)
+            if heights is None:
+                continue
+            valid = np.isfinite(heights)
+            weight = None if kind == "full" else _sample_weights(coverage, z, x, y)
+            layers.append((heights, weight))
+            if valid.all() and weight is None:
+                break
+        if not layers:
+            return None
+        if len(layers) == 1 and layers[0][1] is None:
+            return layers[0][0]
+        out = np.full(layers[0][0].shape, np.nan, dtype=np.float32)
+        for heights, weight in reversed(layers):
+            valid = np.isfinite(heights)
+            w = valid.astype(np.float32) if weight is None else weight * valid
+            base = np.isfinite(out)
+            blended = out + (np.where(valid, heights, 0.0) - out) * w
+            out = np.where(base, np.where(w > 0, blended, out), np.where(w > 0, heights, np.nan))
+        return out.astype(np.float32)
 
     def heightmap_for(self, key: TileKey) -> HeightmapRef | None:
         z, x, y = key
@@ -125,14 +169,16 @@ class TerrainData:
         for downloader in self.downloaders.values():
             downloader.cancel()
 
-    def _ensurer(self, source: str):
-        downloader = self.downloaders.get(source)
+    def _ensurer(self, provider: TileProvider):
+        downloader = self.downloaders.get(provider.id)
+        coverage = provider.coverage_area
 
         def ensure(z: int, x: int, y: int) -> None:
             if (
                 self.on_demand
                 and downloader is not None
                 and (x, y) in self._imagery_sets.get(z, ())
+                and (coverage is None or coverage.classify(tile_bounds_mercator(z, x, y)) != "none")
             ):
                 # network problems must never break rendering
                 with contextlib.suppress(Exception):
@@ -155,12 +201,48 @@ class TerrainData:
                 return None
             self.borders.allow_download = self.on_demand
             return self.borders.distance_field(*key)
-        provider = self.sources.get(source)
-        if provider is None:
+        stack = self.stacks.get(source)
+        if not stack:
             return None
         z, x, y = key
-        zoom = self.texture_zoom_for(key, provider)
-        return compose_tile_texture(self.cache, provider, z, x, y, zoom, self._ensurer(source))
+        if len(stack) == 1 and stack[0].coverage is None:
+            provider = stack[0]
+            zoom = self.texture_zoom_for(key, provider)
+            return compose_tile_texture(
+                self.cache, provider, z, x, y, zoom, self._ensurer(provider)
+            )
+        return self._composite_texture(key, stack)
+
+    def _composite_texture(self, key: TileKey, stack: list[TileProvider]) -> np.ndarray | None:
+        z, x, y = key
+        bounds = tile_bounds_mercator(z, x, y)
+        layers: list[tuple[np.ndarray, np.ndarray]] = []
+        for provider in stack:
+            coverage = provider.coverage_area
+            kind = "full" if coverage is None else coverage.classify(bounds)
+            if kind == "none":
+                continue
+            zoom = self.texture_zoom_for(key, provider)
+            found = compose_tile_texture(
+                self.cache, provider, z, x, y, zoom, self._ensurer(provider), with_mask=True
+            )
+            if found is None:
+                continue
+            image, mask = found
+            if kind == "partial":
+                mask = mask * coverage.pixel_weights(bounds, image.shape[1], image.shape[0])
+            layers.append((image, mask))
+            if mask.min() >= 1.0:
+                break  # opaque: providers below are hidden
+        if not layers:
+            return None
+        size = max(image.shape[0] for image, _ in layers)
+        out = np.zeros((size, size, 3), dtype=np.float32)
+        for image, mask in reversed(layers):
+            if image.shape[0] != size:
+                image, mask = _resize(image, size), _resize(mask, size)
+            out += (image.astype(np.float32) - out) * mask[..., None]
+        return np.clip(out + 0.5, 0, 255).astype(np.uint8)
 
     def imagery_for(self, key: TileKey) -> np.ndarray | None:
         return self.texture_for(key, "imagery")
@@ -220,3 +302,26 @@ class TerrainData:
             bottom = h[y0 + 1, x0] * (1 - fx) + h[y0 + 1, x0 + 1] * fx
             flat_out[sel] = top * (1 - fy) + bottom * fy
         return flat_out.reshape(lon.shape)
+
+
+def _dem_coverage(source_id: str):
+    from earthling.data.dem import DEM_SOURCES
+
+    source = DEM_SOURCES.get(source_id)
+    return None if source is None else source.coverage_area
+
+
+def _sample_weights(coverage, z: int, x: int, y: int) -> np.ndarray:
+    from earthling.data.dem import sample_positions_mercator
+
+    xs, ys = sample_positions_mercator(z, x, y)
+    return coverage.weights(xs, ys)
+
+
+def _resize(array: np.ndarray, size: int) -> np.ndarray:
+    from PIL import Image
+
+    if array.dtype == np.uint8:
+        return np.asarray(Image.fromarray(array).resize((size, size), Image.Resampling.BILINEAR))
+    img = Image.fromarray(array.astype(np.float32), mode="F")
+    return np.asarray(img.resize((size, size), Image.Resampling.BILINEAR))

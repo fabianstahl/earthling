@@ -119,12 +119,48 @@ class Session:
         return min(starts).replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
 
     # --- terrain ---------------------------------------------------------------------------
-    def tile_sources(self) -> dict[str, TileProvider]:
-        """Texture sources by layer tile-source name."""
-        sources = {"imagery": self.imagery_provider}
+    def tile_sources(self) -> dict[str, list[TileProvider]]:
+        """Texture sources by layer tile-source name (providers in priority order)."""
+        sources = {"imagery": list(self.imagery_providers)}
         if self.topo_providers:
-            sources["topo"] = self.topo_providers[0]
+            sources["topo"] = list(self.topo_providers)
         return sources
+
+    def provider_tiles(self, kind: str) -> list[tuple[object, dict[int, np.ndarray]]]:
+        """(provider or DEM source, {zoom: tiles}) for the tiles each one is needed for:
+        within its coverage, not fully covered by a higher-priority one, up to its maximum
+        zoom. ``kind``: 'imagery', 'topo' or 'dem'."""
+        from earthling.data.coverage import needed_tiles
+
+        if self.plan is None:
+            return []
+        providers = {
+            "imagery": self.imagery_providers,
+            "topo": self.topo_providers,
+            "dem": self.dem_sources,
+        }[kind]
+        levels = self.plan.levels.get("dem" if kind == "dem" else "imagery", {})
+        needs = needed_tiles([p.coverage_area for p in providers], levels)
+        out = []
+        for provider, tiles in zip(providers, needs, strict=True):
+            max_zoom = getattr(provider, "max_zoom", None)
+            if max_zoom is not None:
+                tiles = {z: t for z, t in tiles.items() if z <= max_zoom}
+            out.append((provider, tiles))
+        return out
+
+    def provider_report(self) -> str:
+        from earthling.core.aoi import AVG_TILE_BYTES, format_bytes
+
+        lines = []
+        for kind, title in (("imagery", "imagery"), ("dem", "elevation")):
+            lines.append(f"{title} sources (priority order):")
+            for provider, tiles in self.provider_tiles(kind):
+                count = sum(len(t) for t in tiles.values())
+                size = format_bytes(count * AVG_TILE_BYTES[kind])
+                region = "worldwide" if provider.coverage is None else provider.coverage
+                lines.append(f"  {provider.name:<36} {count:>8} tiles  ~{size:>9}  ({region})")
+        return "\n".join(lines)
 
     @cached_property
     def borders(self):
@@ -139,7 +175,7 @@ class Session:
             return None
         return TerrainData(
             self.cache,
-            self.dem_source.id,
+            [source.id for source in self.dem_sources],
             self.tile_sources(),
             self.plan,
             on_demand=on_demand,
