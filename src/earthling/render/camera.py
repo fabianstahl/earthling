@@ -125,3 +125,66 @@ class OrbitController:
         half_fov = math.radians(self.camera.fov_y) / 2.0
         self.distance = max(500.0, radius / math.sin(half_fov) * 1.1)
         self.apply()
+
+    def sync_from_camera(self, target) -> None:
+        """Take over the current camera pose, orbiting around ``target``."""
+        self.target = np.asarray(target, dtype=np.float64).copy()
+        d = self.target - self.camera.position
+        self.distance = max(10.0, float(np.linalg.norm(d)))
+        self.camera.look_at(self.target)
+        self.heading = self.camera.heading
+        self.pitch = self.camera.pitch
+        self.apply()
+
+
+class FlyController:
+    """First-person flight: WASD move, Q/E down/up, mouse drag looks around.
+
+    Speed scales with the height above ground so that both low valley flights and
+    high overview moves feel natural.
+    """
+
+    FORWARD, BACK, LEFT, RIGHT, DOWN, UP = "forward", "back", "left", "right", "down", "up"
+
+    def __init__(self, camera: Camera) -> None:
+        self.camera = camera
+        self.pressed: set[str] = set()
+        self.speed_multiplier = 1.0  # adjusted with the mouse wheel
+        self.boost = 1.0  # Shift / Ctrl
+        self.look_sensitivity = 0.15
+
+    def look(self, dx_px: float, dy_px: float) -> None:
+        self.camera.heading = (self.camera.heading + dx_px * self.look_sensitivity) % 360.0
+        self.camera.pitch = max(-89.5, min(89.5, self.camera.pitch - dy_px * self.look_sensitivity))
+
+    def speed(self, height_above_ground: float) -> float:
+        return max(15.0, abs(height_above_ground) * 0.9) * self.speed_multiplier * self.boost
+
+    def step(self, dt: float, height_above_ground: float) -> bool:
+        """Advance the camera; returns True if it moved."""
+        if not self.pressed or dt <= 0:
+            return False
+        f = self.camera.forward
+        h = math.radians(self.camera.heading)
+        right = np.array([math.cos(h), -math.sin(h), 0.0])
+        up = np.array([0.0, 0.0, 1.0])
+        move = np.zeros(3)
+        if self.FORWARD in self.pressed:
+            move += f
+        if self.BACK in self.pressed:
+            move -= f
+        if self.RIGHT in self.pressed:
+            move += right
+        if self.LEFT in self.pressed:
+            move -= right
+        if self.UP in self.pressed:
+            move += up
+        if self.DOWN in self.pressed:
+            move -= up
+        norm = np.linalg.norm(move)
+        if norm < 1e-9:
+            return False
+        self.camera.position = self.camera.position + move / norm * self.speed(
+            height_above_ground
+        ) * min(dt, 0.1)
+        return True

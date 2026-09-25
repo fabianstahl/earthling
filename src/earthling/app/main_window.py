@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 from PyQt6.QtCore import QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QFileDialog, QLabel, QMainWindow, QMessageBox
 
 from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
+from earthling.app.goto_dialog import GoToDialog
 from earthling.app.plan_dialog import PlanDialog
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.viewport import Viewport
@@ -38,6 +40,13 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.tracks_dock)
         self.view_menu.addAction(self.tracks_dock.toggleViewAction())
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
+        self.tracks_dock.track_activated.connect(self._frame_track)
+        self.viewport.mode_changed.connect(
+            lambda mode: self.fly_mode_action.setChecked(mode == self.viewport.FLY)
+        )
+        self._camera_label = QLabel()
+        self.statusBar().addPermanentWidget(self._camera_label)
+        self.viewport.camera_changed.connect(self._camera_label.setText)
         self._fps_label = QLabel()
         self.statusBar().addPermanentWidget(self._fps_label)
         self.viewport.stats_changed.connect(self._fps_label.setText)
@@ -67,6 +76,13 @@ class MainWindow(QMainWindow):
 
         self.view_menu = bar.addMenu("&View")
         self._add_action(self.view_menu, "&Frame All", lambda: self.viewport.frame_all(), "Home")
+        self._add_action(self.view_menu, "&Go To Coordinate…", self._go_to, "Ctrl+G")
+        self.fly_mode_action = QAction("&Fly Camera (Tab)", self, checkable=True)
+        self.fly_mode_action.toggled.connect(
+            lambda v: self.viewport.set_mode(self.viewport.FLY if v else self.viewport.ORBIT)
+        )
+        self.view_menu.addAction(self.fly_mode_action)
+        self.view_menu.addSeparator()
         self.debug_lod_action = QAction("Debug: Show Terrain &LOD", self, checkable=True)
         self.debug_lod_action.toggled.connect(lambda v: self.viewport.set_debug_lod(v))
         self.view_menu.addAction(self.debug_lod_action)
@@ -191,6 +207,20 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             title = f"{self.project.name} – Earthling"
         self.setWindowTitle(title)
+
+    def _go_to(self) -> None:
+        geo = self.viewport.camera_geodetic() or (46.0, 7.0, 0.0)
+        dialog = GoToDialog(geo[0], geo[1], self)
+        if dialog.exec():
+            self.viewport.go_to(*dialog.values())
+
+    def _frame_track(self, index: int) -> None:
+        if self.session is None or not (0 <= index < len(self.tracks)):
+            return
+        track = self.tracks[index]
+        lat, lon, ele = track.all_points()
+        enu = self.session.frame.geodetic_to_enu(lat, lon, np.nan_to_num(ele))
+        self.viewport.frame_box(enu.min(axis=0), enu.max(axis=0))
 
     def closeEvent(self, event) -> None:
         self.viewport.shutdown()

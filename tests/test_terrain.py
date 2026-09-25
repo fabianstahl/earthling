@@ -77,3 +77,25 @@ def test_render_lod_terrain(gl_ctx):
     img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(96, 96, 3).astype(int)
     green = (img[..., 1] > 150) & (img[..., 0] < 80)
     assert green.mean() > 0.2
+
+
+def test_pick_depth_hits_terrain(gl_ctx):
+    from earthling.app.viewport import unproject_log_depth
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    renderer.set_terrain_source(FakeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 128)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.pitch = -60.0
+    orbit.apply()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 128)
+    fbo = gl_ctx.simple_framebuffer((128, 128))
+    renderer.render(fbo, 128, 128, camera)
+    depth = renderer.read_depth(64, 64)
+    assert depth is not None and depth < 1.0
+    hit = unproject_log_depth(camera, 64, 64, 128, 128, depth)
+    assert 1400 < hit[2] < 2600  # on the plateau or the bump (z ~ up near the origin)

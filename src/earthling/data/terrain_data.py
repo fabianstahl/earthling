@@ -111,3 +111,28 @@ class TerrainData:
         return compose_tile_texture(
             self.cache, self.imagery, z, x, y, self.imagery_zoom_for(key), self._ensure_imagery
         )
+
+    # --- height queries (CPU) ------------------------------------------------------------
+    def height_at(self, lon: float, lat: float, z: int | None = None) -> float | None:
+        """Terrain height (m) at lon/lat from the finest available heightmap, or None."""
+        from earthling.core.geo import lonlat_to_tile
+
+        if z is None:
+            dem_levels = self.plan.levels.get("dem", {})
+            z = max(dem_levels) if dem_levels else 12
+        tx, ty = lonlat_to_tile(lon, lat, z)
+        x, y = int(np.floor(tx)), int(np.floor(ty))
+        ref = self.heightmap_for((z, x, y))
+        if ref is None:
+            return None
+        # position in source sample units
+        sx = ref.offset[0] + (float(tx) - x) * ref.scale + 1.0
+        sy = ref.offset[1] + (float(ty) - y) * ref.scale + 1.0
+        h = ref.heights
+        x0 = int(np.clip(np.floor(sx), 0, h.shape[1] - 2))
+        y0 = int(np.clip(np.floor(sy), 0, h.shape[0] - 2))
+        fx, fy = sx - x0, sy - y0
+        top = h[y0, x0] * (1 - fx) + h[y0, x0 + 1] * fx
+        bottom = h[y0 + 1, x0] * (1 - fx) + h[y0 + 1, x0 + 1] * fx
+        value = float(top * (1 - fy) + bottom * fy)
+        return value if np.isfinite(value) else None

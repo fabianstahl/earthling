@@ -105,3 +105,19 @@ def test_copernicus_file_names():
     names = sorted(f.filename for f in files)
     assert names[0] == "Copernicus_DSM_COG_10_N45_00_E006_00_DEM.tif"
     assert len(names) == 4
+
+
+def test_terrain_data_height_query(baker):
+    from earthling.core.aoi import TilePlan
+    from earthling.data.providers import TileProvider
+    from earthling.data.terrain_data import TerrainData
+
+    z = 11
+    tx, ty = lonlat_to_tile(6.5, 45.5, z)
+    baker.bake([(z, int(tx), int(ty))])
+    plan = TilePlan({"dem": {z: np.array([[int(tx), int(ty)]])}, "imagery": {}})
+    data = TerrainData(baker.cache, "fake", TileProvider(id="i", name="i", kind="imagery"), plan)
+    assert data.height_at(6.5, 45.5) == pytest.approx(height_fn(6.5, 45.5), abs=0.5)
+    # deeper zoom falls back to the ancestor heightmap
+    assert data.height_at(6.5, 45.5, z=14) == pytest.approx(height_fn(6.5, 45.5), abs=0.5)
+    assert data.height_at(20.0, 10.0) is None

@@ -28,6 +28,7 @@ def fmt_duration(seconds: float | None) -> str:
 
 class TracksDock(QDockWidget):
     visibility_changed = pyqtSignal()
+    track_activated = pyqtSignal(int)  # double-click: index into the track list
 
     def __init__(self, parent=None) -> None:
         super().__init__("Tracks", parent)
@@ -38,6 +39,7 @@ class TracksDock(QDockWidget):
         self.tree.setRootIsDecorated(False)
         self.tree.setAlternatingRowColors(True)
         self.tree.itemChanged.connect(self._on_item_changed)
+        self.tree.itemDoubleClicked.connect(self._on_double_click)
         self.setWidget(self.tree)
         self._tracks: list[Track] = []
 
@@ -88,6 +90,11 @@ class TracksDock(QDockWidget):
         for col in range(len(COLUMNS)):
             self.tree.resizeColumnToContents(col)
         self.tree.blockSignals(False)
+
+    def _on_double_click(self, item: QTreeWidgetItem, column: int) -> None:
+        index = item.data(0, Qt.ItemDataRole.UserRole)
+        if index is not None:
+            self.track_activated.emit(index)
 
     def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
         index = item.data(0, Qt.ItemDataRole.UserRole)
