@@ -166,6 +166,26 @@ TRACKS = section(
         uniform="u_track_glow", tooltip="Light the track emits into the glow effect"),
 )  # fmt: skip
 
+PROGRESS = section(
+    "Hike Progress",
+    flt("progress.head", "Progress", 1.0, 0.0, 1.0, step=0.001, decimals=4,
+        tooltip="How much of the hike is drawn (0 = start, 1 = everything)"),
+    flt("progress.tail", "Start", 0.0, 0.0, 1.0, step=0.001, decimals=4,
+        tooltip="Hide the hike before this point (show only a part)"),
+    enum("progress.mode", "Progress by", "distance",
+         [("distance", "Distance"), ("time", "GPX time (pauses at night)")]),
+    flt("progress.head_fade", "Head highlight length", 150.0, 0.0, 5000.0, step=10.0,
+        decimals=0, unit="m", logarithmic=False, uniform="u_head_fade"),
+    flt("progress.head_boost", "Head highlight", 1.5, 0.0, 10.0, uniform="u_head_boost"),
+    boolean("marker.visible", "Hiker marker", True),
+    flt("marker.size", "Marker size", 14.0, 2.0, 80.0, step=0.5, decimals=1, unit="px",
+        uniform="u_marker_size"),
+    color("marker.color", "Marker colour", (1.0, 0.95, 0.8)),
+    flt("marker.pulse", "Pulse rate", 0.8, 0.0, 5.0, step=0.05, unit="Hz",
+        uniform="u_marker_pulse"),
+    flt("marker.glow", "Marker glow", 3.0, 0.0, 20.0, uniform="u_marker_glow"),
+)  # fmt: skip
+
 GLOW = section(
     "Glow",
     boolean("glow.enabled", "Glow (bloom)", True),
@@ -180,7 +200,7 @@ def build_registry() -> PropertyRegistry:
     from earthling.render.layers import layer_properties
 
     registry = PropertyRegistry()
-    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SHADOWS, SKY, FOG, TRACKS, GLOW):
+    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SHADOWS, SKY, FOG, TRACKS, PROGRESS, GLOW):
         registry.extend(group)
     registry.extend(layer_properties())
     return registry

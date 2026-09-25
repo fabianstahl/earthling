@@ -16,6 +16,11 @@ uniform float u_track_outline = 1.0;      // outline width in pixels
 uniform vec3 u_sun_radiance = vec3(1.4);
 uniform vec3 u_sky_ambient = vec3(0.2, 0.24, 0.35);
 uniform float u_track_glow = 2.0;  // emission into the glow (bloom) buffer
+uniform float u_track_offset = 0.0;  // global distance of this track's start
+uniform float u_head_m = 1e12;       // visible range on the global distance axis
+uniform float u_tail_m = 0.0;
+uniform float u_head_fade = 150.0;   // metres over which the line fades in behind the head
+uniform float u_head_boost = 1.5;    // extra brightness right at the head
 
 void main() {
     write_log_depth(v_log_z);
@@ -23,17 +28,23 @@ void main() {
     float px = a * v_width_px * 0.5;          // pixels from the centre line
     float half_w = v_width_px * 0.5 - 1.0;    // visible half width (1 px AA margin)
     float alpha = 1.0 - smoothstep(half_w - 0.5, half_w + 0.5, px);
+    float gd = v_dist + u_track_offset;
+    if (gd > u_head_m || gd < u_tail_m) discard;
+    alpha *= smoothstep(u_tail_m, u_tail_m + 5.0, gd);
+    // the freshly drawn part near the head is brighter
+    float near_head = u_head_m < 1e11 ? 1.0 - smoothstep(0.0, max(u_head_fade, 1.0), u_head_m - gd) : 0.0;
     if (alpha <= 0.0) discard;
     // tube shading: fake cylinder normal across the ribbon, light from above
     float nz = sqrt(max(0.0, 1.0 - a * a));
 #ifdef GLOW_PASS
-    f_color = vec4(u_color * u_track_glow * (0.5 + 0.5 * nz) * alpha * u_track_opacity, 1.0);
+    float boost = 1.0 + u_head_boost * near_head;
+    f_color = vec4(u_color * u_track_glow * boost * (0.5 + 0.5 * nz) * alpha * u_track_opacity, 1.0);
     return;
 #endif
     float shade = 0.55 + 0.45 * nz;
     vec3 lit = u_color * (u_sky_ambient + u_sun_radiance * 0.8) * shade;
     vec3 self_lit = u_color * mix(0.6, 1.2, nz);
-    vec3 color = mix(lit, self_lit, u_track_emissive);
+    vec3 color = mix(lit, self_lit, u_track_emissive) * (1.0 + u_head_boost * near_head);
     // dark outline for readability on bright ground
     float outline = smoothstep(half_w - u_track_outline - 0.5, half_w - u_track_outline + 0.5, px);
     color = mix(color, color * 0.25, outline * step(0.01, u_track_outline));

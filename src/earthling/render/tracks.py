@@ -44,8 +44,13 @@ def track_color(index: int) -> tuple[float, float, float]:
 
 def resample(lat: np.ndarray, lon: np.ndarray, ele: np.ndarray, spacing_m: float):
     """Drop points closer than ``spacing_m`` to the previously kept one (keeps the ends)."""
+    idx = resample_indices(lat, lon, spacing_m)
+    return lat[idx], lon[idx], ele[idx]
+
+
+def resample_indices(lat: np.ndarray, lon: np.ndarray, spacing_m: float) -> np.ndarray:
     if len(lat) < 3 or spacing_m <= 0:
-        return lat, lon, ele
+        return np.arange(len(lat))
     steps = haversine_m(lat[:-1], lon[:-1], lat[1:], lon[1:])
     cumulative = np.concatenate([[0.0], np.cumsum(steps)])
     keep = [0]
@@ -55,8 +60,7 @@ def resample(lat: np.ndarray, lon: np.ndarray, ele: np.ndarray, spacing_m: float
             keep.append(i)
             last = cumulative[i]
     keep.append(len(lat) - 1)
-    idx = np.array(keep)
-    return lat[idx], lon[idx], ele[idx]
+    return np.array(keep)
 
 
 def smooth(values: np.ndarray, window: int) -> np.ndarray:
@@ -78,17 +82,29 @@ class TrackGeometryOptions:
     smoothing: int = 5  # moving-average window in points
 
 
+@dataclass
+class TrackSegmentGeometry:
+    enu: np.ndarray  # (n, 3) float64
+    dist: np.ndarray  # (n,) metres along the track
+    time: np.ndarray  # (n,) seconds since the epoch, NaN where unknown
+
+
 def build_track_positions(
     track: Track, frame: LocalFrame, options: TrackGeometryOptions, heights_at=None
-) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Per segment: ENU positions (n, 3) and cumulative distance along the track (n,).
+) -> list[TrackSegmentGeometry]:
+    """Per segment: ENU positions, cumulative distance along the track and timestamps.
 
     ``heights_at(lon, lat) -> heights`` (vectorised, NaN where unknown) provides DEM heights.
     """
     result = []
     distance_offset = 0.0
     for seg in track.segments:
-        lat, lon, ele = resample(seg.lat, seg.lon, seg.ele, options.spacing_m)
+        idx = resample_indices(seg.lat, seg.lon, options.spacing_m)
+        lat, lon, ele = seg.lat[idx], seg.lon[idx], seg.ele[idx]
+        times = seg.time[idx]
+        seconds = np.where(
+            np.isnat(times), np.nan, times.astype("datetime64[ms]").astype(np.float64) / 1000.0
+        )
         if len(lat) < 2:
             continue
         gpx_h = np.nan_to_num(ele, nan=np.nanmean(ele) if np.isfinite(ele).any() else 0.0)
@@ -106,15 +122,16 @@ def build_track_positions(
         steps = np.linalg.norm(np.diff(enu, axis=0), axis=1)
         dist = distance_offset + np.concatenate([[0.0], np.cumsum(steps)])
         distance_offset = float(dist[-1])
-        result.append((enu, dist))
+        result.append(TrackSegmentGeometry(enu, dist, seconds))
     return result
 
 
-def ribbon_vertices(segments: list[tuple[np.ndarray, np.ndarray]], origin: np.ndarray):
+def ribbon_vertices(segments: list[TrackSegmentGeometry], origin: np.ndarray):
     """Vertex array (pos, prev, next, side, dist) and strip indices with primitive restart."""
     verts, indices = [], []
     base = 0
-    for enu, dist in segments:
+    for geometry in segments:
+        enu, dist = geometry.enu, geometry.dist
         n = len(enu)
         rel = enu - origin
         prev = np.vstack([2 * rel[0] - rel[1], rel[:-1]])  # mirror the ends
@@ -144,6 +161,52 @@ class _GpuTrack:
     ibo: moderngl.Buffer
     length_m: float
     vaos: dict[int, moderngl.VertexArray]
+    offset_m: float = 0.0  # start of this track on the global (all tracks) distance axis
+    enu: np.ndarray | None = None  # all points (float64), for head positions
+    dist: np.ndarray | None = None
+    time: np.ndarray | None = None
+
+
+class ProgressPath:
+    """The whole hike as one path: global distance (m) <-> position <-> time."""
+
+    def __init__(self, tracks: list[_GpuTrack]) -> None:
+        self.tracks = tracks
+        self.total_m = tracks[-1].offset_m + tracks[-1].length_m if tracks else 0.0
+        dists, times = [], []
+        for g in tracks:
+            dists.append(g.dist + g.offset_m)
+            times.append(g.time)
+        self.dist = np.concatenate(dists) if dists else np.zeros(0)
+        self.time = np.concatenate(times) if times else np.zeros(0)
+        valid = np.isfinite(self.time)
+        # time mode needs monotonic timestamps; otherwise fall back to distance
+        self.has_time = bool(valid.sum() >= 2) and bool(np.all(np.diff(self.time[valid]) >= 0))
+        self._valid = valid
+
+    def distance_for(self, progress: float, mode: str = "distance") -> float:
+        progress = min(max(progress, 0.0), 1.0)
+        if mode == "time" and self.has_time:
+            t = self.time[self._valid]
+            d = self.dist[self._valid]
+            target = t[0] + progress * (t[-1] - t[0])
+            return float(np.interp(target, t, d))
+        return progress * self.total_m
+
+    def position_at(self, distance: float) -> np.ndarray | None:
+        for g in self.tracks:
+            if g.enu is None or g.dist is None or len(g.dist) == 0:
+                continue
+            if distance <= g.offset_m + g.length_m or g is self.tracks[-1]:
+                local = min(max(distance - g.offset_m, 0.0), g.length_m)
+                return np.array([np.interp(local, g.dist, g.enu[:, k]) for k in range(3)])
+        return None
+
+    def time_at(self, distance: float) -> float | None:
+        valid = self._valid
+        if not valid.any():
+            return None
+        return float(np.interp(distance, self.dist[valid], self.time[valid]))
 
 
 class TrackLayer:
@@ -158,6 +221,9 @@ class TrackLayer:
         self.heights_at = None  # vectorised DEM height function
         self._built_key: tuple | None = None
         self.uniforms: dict[str, object] = {}  # lighting/atmosphere uniforms
+        self.path: ProgressPath | None = None
+        self.head_m = float("inf")  # global distance of the visible end (progress)
+        self.tail_m = 0.0  # global distance of the visible start
 
     def set_tracks(self, tracks: list[Track], frame: LocalFrame) -> None:
         self.tracks = tracks
@@ -188,23 +254,29 @@ class TrackLayer:
         if key == self._built_key or self.frame is None:
             return
         self.release()
+        offset = 0.0
         for index, track in enumerate(self.tracks):
             segments = build_track_positions(track, self.frame, options, self.heights_at)
             if not segments:
                 continue
-            origin = segments[0][0][0].copy()
+            origin = segments[0].enu[0].copy()
             verts, indices = ribbon_vertices(segments, origin)
-            self._gpu.append(
-                _GpuTrack(
-                    track,
-                    index,
-                    origin,
-                    self.ctx.buffer(verts.tobytes()),
-                    self.ctx.buffer(indices.tobytes()),
-                    float(segments[-1][1][-1]),
-                    {},
-                )
+            gpu = _GpuTrack(
+                track,
+                index,
+                origin,
+                self.ctx.buffer(verts.tobytes()),
+                self.ctx.buffer(indices.tobytes()),
+                float(segments[-1].dist[-1]),
+                {},
+                offset_m=offset,
+                enu=np.vstack([s.enu for s in segments]),
+                dist=np.concatenate([s.dist for s in segments]),
+                time=np.concatenate([s.time for s in segments]),
             )
+            offset += gpu.length_m
+            self._gpu.append(gpu)
+        self.path = ProgressPath(self._gpu)
         self._built_key = key
 
     def render(
@@ -260,6 +332,9 @@ class TrackLayer:
             color = store["tracks.color"] if single else track_color(g.index)
             _set(program, "u_color", tuple(c**2.2 for c in color))
             _set(program, "u_track_length", g.length_m)
+            _set(program, "u_track_offset", g.offset_m)
+            _set(program, "u_head_m", min(self.head_m, 1e12))
+            _set(program, "u_tail_m", self.tail_m)
             vao.render(moderngl.TRIANGLE_STRIP)
         self.ctx.disable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA

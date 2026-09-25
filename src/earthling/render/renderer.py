@@ -30,6 +30,7 @@ from earthling.render.lighting import (
     enu_to_celestial,
     lighting_uniforms,
 )
+from earthling.render.marker import MarkerLayer
 from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.shadows import SHADOW_UNIT, ShadowMaps, compute_cascades
@@ -121,7 +122,9 @@ class Renderer:
         self.terrain = TerrainLayer(ctx, self.shaders)
         self.tracks = TrackLayer(ctx, self.shaders)
         self.outlines = OutlineLayer(ctx, self.shaders)
+        self.marker = MarkerLayer(ctx, self.shaders)
         self.shadows = ShadowMaps(ctx)
+        self.time = 0.0  # animation time in seconds (drives pulsing effects)
         self.store: PropertyStore | None = None
         self.timezone = "UTC"
         self.lighting: Lighting | None = None
@@ -247,9 +250,28 @@ class Renderer:
             smoothing=s["tracks.smoothing"] if s else 5,
         )
         self.tracks.ensure_built(options, dem_version=id(data))
+        self._update_progress()
         if self.lighting is not None:
             self.tracks.uniforms = {**lighting_uniforms(self.lighting)}
         self.tracks.render(camera, view_proj, width, height, s)
+        if self.tracks.visible:
+            self.marker.render(camera, view_proj, width, height, self.time, s)
+
+    def _update_progress(self) -> None:
+        """Visible range of the hike and the marker position from the progress properties."""
+        s = self.store
+        path = self.tracks.path
+        if s is None or path is None or path.total_m <= 0:
+            self.tracks.head_m, self.tracks.tail_m = float("inf"), 0.0
+            self.marker.position = None
+            return
+        mode = s["progress.mode"]
+        head = path.distance_for(s["progress.head"], mode)
+        tail = min(path.distance_for(s["progress.tail"], mode), head)
+        self.tracks.head_m = head if s["progress.head"] < 1.0 else float("inf")
+        self.tracks.tail_m = tail
+        self.marker.color = s["marker.color"]
+        self.marker.position = path.position_at(head) if s["marker.visible"] else None
 
     def read_depth(self, px: int, py: int) -> float | None:
         """Log depth of the last frame at pixel (px, py) (GL convention, y up)."""
@@ -285,6 +307,8 @@ class Renderer:
         self.ctx.enable(moderngl.DEPTH_TEST)  # test against the scene depth ...
         self.ctx.depth_func = "<="  # ... which already contains the tracks themselves
         self.tracks.render(camera, view_proj, width, height, s, glow_pass=True)
+        if self.tracks.visible:
+            self.marker.render(camera, view_proj, width, height, self.time, s, glow_pass=True)
         self.ctx.depth_func = "<"
         self.ctx.disable(moderngl.DEPTH_TEST)
         assert self.target.glow is not None

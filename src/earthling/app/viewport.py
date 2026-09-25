@@ -77,6 +77,7 @@ class Viewport(QOpenGLWidget):
         self._camera_restored = False  # a saved camera must not be overridden by framing
         self._last_mouse: QPointF | None = None
         self._last_paint = time.perf_counter()
+        self._start_time = self._last_paint
         self._frames = 0
         self._fps_timer = time.perf_counter()
         self._watcher: QFileSystemWatcher | None = None
@@ -287,6 +288,7 @@ class Viewport(QOpenGLWidget):
             hag = self.height_above_ground()
             self.fly.step(dt, hag if hag is not None else 1000.0)
         self._clamp_to_ground()
+        self.renderer.time = now - self._start_time
         fbo = self.ctx.detect_framebuffer(self.defaultFramebufferObject())
         ratio = self.devicePixelRatio()
         width, height = int(self.width() * ratio), int(self.height() * ratio)
@@ -377,6 +379,14 @@ class Viewport(QOpenGLWidget):
     def _busy(self) -> bool:
         if self.fly.pressed:
             return True
+        s = self.store
+        if (
+            s is not None
+            and s["marker.visible"]
+            and s["marker.pulse"] > 0
+            and s["progress.head"] < 1
+        ):
+            return True  # the pulsing marker is animated
         t = self.renderer.terrain if self.renderer is not None else None
         return (
             t is not None and t.nodes is not None and (t.pending_count > 0 or not t.fully_loaded())

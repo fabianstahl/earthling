@@ -8,6 +8,7 @@ from earthling.core.gpx import Segment, Track
 from earthling.render.tracks import (
     PRIMITIVE_RESTART,
     TrackGeometryOptions,
+    TrackSegmentGeometry,
     build_track_positions,
     resample,
     ribbon_vertices,
@@ -42,19 +43,20 @@ def test_positions_use_dem_heights_and_offset():
     segs = build_track_positions(
         t, FRAME, options, heights_at=lambda lon, lat: np.full(lon.shape, 2000.0)
     )
-    enu, dist = segs[0]
+    enu, dist = segs[0].enu, segs[0].dist
     # z includes curvature drop (tiny at 1 km) -> ~2003 m
     assert enu[:, 2] == pytest.approx(2003.0, abs=0.2)
     assert dist[-1] == pytest.approx(1112, rel=0.02)  # smoothing shortens the ends slightly
     gpx = build_track_positions(
         t, FRAME, TrackGeometryOptions(elevation_source="gpx", height_offset_m=0.0)
     )
-    assert gpx[0][0][:, 2] == pytest.approx(1500.0, abs=0.2)
+    assert gpx[0].enu[:, 2] == pytest.approx(1500.0, abs=0.2)
 
 
 def test_ribbon_layout():
     enu = np.array([[0.0, 0, 0], [10.0, 0, 0], [20.0, 0, 0]])
-    verts, idx = ribbon_vertices([(enu, np.array([0.0, 10, 20]))], enu[0])
+    geometry = TrackSegmentGeometry(enu, np.array([0.0, 10, 20]), np.full(3, np.nan))
+    verts, idx = ribbon_vertices([geometry], enu[0])
     assert verts.shape == (6, 11)
     assert list(verts[:, 9]) == [-1, 1, -1, 1, -1, 1]
     assert idx[-1] == PRIMITIVE_RESTART and len(idx) == 7
@@ -124,3 +126,78 @@ def test_glow_adds_a_halo_and_leaves_clean_state(gl_ctx):
     plain = red_width(False)
     assert 4 <= plain <= 9  # the leaked blend state did not wash out the frame
     assert red_width(True) > plain + 4  # halo around the line
+
+
+def timed_track(name, start, n=100, lat0=46.0, minutes=60):
+    lat = np.linspace(lat0, lat0 + 0.01, n)
+    lon = np.full(n, 7.0)
+    t0 = np.datetime64(start, "ms")
+    times = t0 + (np.arange(n) * (minutes * 60_000 // (n - 1))).astype("timedelta64[ms]")
+    seg = Segment(lat, lon, np.full(n, 1500.0), times)
+    return Track(name, Path(f"{name}.gpx"), [seg])
+
+
+def build_path(tracks):
+    from earthling.render.tracks import ProgressPath, _GpuTrack
+
+    gpus, offset = [], 0.0
+    for i, t in enumerate(tracks):
+        segs = build_track_positions(t, FRAME, TrackGeometryOptions(elevation_source="gpx"))
+        enu = np.vstack([s.enu for s in segs])
+        dist = np.concatenate([s.dist for s in segs])
+        time = np.concatenate([s.time for s in segs])
+        g = _GpuTrack(t, i, enu[0], None, None, float(dist[-1]), {}, offset, enu, dist, time)
+        offset += g.length_m
+        gpus.append(g)
+    return ProgressPath(gpus)
+
+
+def test_progress_by_distance_and_time():
+    # day 1: 08:00-09:00, day 2 the next morning 08:00-09:00 (same length each)
+    path = build_path([
+        timed_track("d1", "2026-07-01T08:00", lat0=46.0),
+        timed_track("d2", "2026-07-02T08:00", lat0=46.01),
+    ])  # fmt: skip
+    total = path.total_m
+    assert total == pytest.approx(2 * 1100, rel=0.03)
+    assert path.distance_for(0.5, "distance") == pytest.approx(total / 2)
+    # half of the elapsed time (the night) -> still at the end of day 1
+    d1_end = path.tracks[0].length_m
+    assert path.distance_for(0.5, "time") == pytest.approx(d1_end, rel=0.01)
+    assert path.distance_for(1.0, "time") == pytest.approx(total)
+    pos = path.position_at(d1_end + 1.0)
+    assert pos[1] > path.tracks[0].enu[-1][1]  # into the second track (further north)
+
+
+def test_progress_without_times_falls_back_to_distance():
+    path = build_path([straight_track()])
+    assert not path.has_time
+    assert path.distance_for(0.25, "time") == pytest.approx(path.total_m / 4)
+
+
+def test_head_hides_the_rest_of_the_track(gl_ctx):
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.renderer import Renderer
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [straight_track()])
+    renderer.store = Scene().store
+    for pid, value in (
+        ("tracks.elevation", "gpx"),
+        ("tracks.height_offset", 0.0),
+        ("haze.aerial", 0.0),
+        ("glow.enabled", False),
+        ("marker.visible", False),
+        ("progress.head", 0.5),
+    ):
+        renderer.store.set(pid, value)  # fmt: skip
+    renderer.timezone = "UTC"
+    mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
+    camera = Camera(position=mid + np.array([0.0, 0.0, 3000.0]), heading=0.0, pitch=-89.9)
+    fbo = gl_ctx.simple_framebuffer((200, 200))
+    renderer.render(fbo, 200, 200, camera)
+    img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3).astype(int)
+    red = (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)
+    rows = np.where(red.any(axis=1))[0]  # image rows are bottom-up: row 0 = south
+    assert rows.max() < 105 and rows.min() < 80  # only the southern (first) half is drawn
