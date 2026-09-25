@@ -189,3 +189,34 @@ class TerrainData:
         bottom = h[y0 + 1, x0] * (1 - fx) + h[y0 + 1, x0 + 1] * fx
         value = float(top * (1 - fy) + bottom * fy)
         return value if np.isfinite(value) else None
+
+    def heights_at(self, lon: np.ndarray, lat: np.ndarray, z: int | None = None) -> np.ndarray:
+        """Vectorised :meth:`height_at`; NaN where no DEM data is available."""
+        from earthling.core.geo import lonlat_to_tile
+
+        lon = np.asarray(lon, dtype=np.float64)
+        lat = np.asarray(lat, dtype=np.float64)
+        if z is None:
+            dem_levels = self.plan.levels.get("dem", {})
+            z = max(dem_levels) if dem_levels else 12
+        tx, ty = lonlat_to_tile(lon, lat, z)
+        ix, iy = np.floor(tx).astype(np.int64), np.floor(ty).astype(np.int64)
+        out = np.full(lon.shape, np.nan)
+        keys = np.stack([ix, iy], axis=-1).reshape(-1, 2)
+        flat_tx, flat_ty = tx.ravel(), ty.ravel()
+        flat_out = out.ravel()
+        for x, y in np.unique(keys, axis=0):
+            sel = (keys[:, 0] == x) & (keys[:, 1] == y)
+            ref = self.heightmap_for((z, int(x), int(y)))
+            if ref is None:
+                continue
+            h = ref.heights
+            sx = ref.offset[0] + (flat_tx[sel] - x) * ref.scale + 1.0
+            sy = ref.offset[1] + (flat_ty[sel] - y) * ref.scale + 1.0
+            x0 = np.clip(np.floor(sx).astype(np.int64), 0, h.shape[1] - 2)
+            y0 = np.clip(np.floor(sy).astype(np.int64), 0, h.shape[0] - 2)
+            fx, fy = sx - x0, sy - y0
+            top = h[y0, x0] * (1 - fx) + h[y0, x0 + 1] * fx
+            bottom = h[y0 + 1, x0] * (1 - fx) + h[y0 + 1, x0 + 1] * fx
+            flat_out[sel] = top * (1 - fy) + bottom * fy
+        return flat_out.reshape(lon.shape)

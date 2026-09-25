@@ -121,3 +121,24 @@ def test_terrain_data_height_query(baker):
     # deeper zoom falls back to the ancestor heightmap
     assert data.height_at(6.5, 45.5, z=14) == pytest.approx(height_fn(6.5, 45.5), abs=0.5)
     assert data.height_at(20.0, 10.0) is None
+
+
+def test_vectorised_heights_match_scalar(baker):
+    from earthling.core.aoi import TilePlan
+    from earthling.data.providers import TileProvider
+    from earthling.data.terrain_data import TerrainData
+
+    z = 11
+    tiles = []
+    for lon in (6.4, 6.6):
+        tx, ty = lonlat_to_tile(lon, 45.5, z)
+        tiles.append((int(tx), int(ty)))
+    baker.bake([(z, x, y) for x, y in tiles])
+    plan = TilePlan({"dem": {z: np.array(tiles)}, "imagery": {}})
+    data = TerrainData(baker.cache, "fake", TileProvider(id="i", name="i", kind="imagery"), plan)
+    lon = np.array([6.4, 6.45, 6.6, 20.0])
+    lat = np.array([45.5, 45.52, 45.49, 10.0])
+    h = data.heights_at(lon, lat)
+    for i in range(3):
+        assert h[i] == pytest.approx(data.height_at(lon[i], lat[i]), abs=1e-3)
+    assert np.isnan(h[3])

@@ -33,7 +33,7 @@ from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.shadows import SHADOW_UNIT, ShadowMaps, compute_cascades
 from earthling.render.terrain import TerrainLayer
-from earthling.render.tracks import TrackLayer
+from earthling.render.tracks import TrackGeometryOptions, TrackLayer
 
 
 class SceneTarget:
@@ -151,7 +151,7 @@ class Renderer:
         if selection is not None:
             extra = {"u_camera_forward": tuple(float(v) for v in camera.forward), **shadow_uniforms}
             self.terrain.draw(camera, view_proj, selection.draw, extra_uniforms=extra)
-        self.tracks.render(camera, view_proj)
+        self._render_tracks(camera, view_proj, width, height)
         self.outlines.render(camera, view_proj)
         self.ctx.disable(moderngl.DEPTH_TEST)
         self._tonemap(fbo, width, height)
@@ -186,6 +186,21 @@ class Renderer:
         assert self.shadows.depth is not None
         self.shadows.depth.use(SHADOW_UNIT)
         return self.shadows.uniforms()
+
+    def _render_tracks(self, camera: Camera, view_proj, width: int, height: int) -> None:
+        s = self.store
+        data = self.terrain.data
+        self.tracks.heights_at = getattr(data, "heights_at", None)
+        options = TrackGeometryOptions(
+            elevation_source=s["tracks.elevation"] if s else "dem",
+            height_offset_m=s["tracks.height_offset"] if s else 3.0,
+            exaggeration=self.terrain.exaggeration,
+            smoothing=s["tracks.smoothing"] if s else 5,
+        )
+        self.tracks.ensure_built(options, dem_version=id(data))
+        if self.lighting is not None:
+            self.tracks.uniforms = {**lighting_uniforms(self.lighting)}
+        self.tracks.render(camera, view_proj, width, height, s)
 
     def read_depth(self, px: int, py: int) -> float | None:
         """Log depth of the last frame at pixel (px, py) (GL convention, y up)."""

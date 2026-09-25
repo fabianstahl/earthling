@@ -141,7 +141,28 @@ POST = section(
 TRACKS = section(
     "Tracks",
     boolean("tracks.visible", "Show tracks", True),
-)
+    flt("tracks.width", "Width", 5.0, 0.5, 200.0, step=0.5, decimals=1, logarithmic=True,
+        uniform="u_track_width", tooltip="Pixels or metres, see width mode"),
+    enum("tracks.width_mode", "Width mode", "pixels",
+         [("pixels", "Constant on screen (px)"), ("meters", "In the world (m)")],
+         uniform="u_track_width_mode"),
+    flt("tracks.min_px", "Minimum width", 1.5, 0.0, 10.0, step=0.1, decimals=1, unit="px",
+        uniform="u_track_min_px"),
+    enum("tracks.elevation", "Height source", "dem",
+         [("dem", "Terrain (DEM)"), ("gpx", "GPX elevation")], animatable=False),
+    flt("tracks.height_offset", "Height above ground", 3.0, -50.0, 500.0, step=0.5, decimals=1,
+        unit="m"),
+    integer("tracks.smoothing", "Smoothing", 5, 1, 41, step=2, animatable=False,
+            tooltip="Moving-average window in points"),
+    enum("tracks.color_mode", "Colours", "per_track",
+         [("per_track", "One colour per track / day"), ("single", "Single colour")]),
+    color("tracks.color", "Colour", (1.0, 0.35, 0.15)),
+    flt("tracks.opacity", "Opacity", 1.0, 0.0, 1.0, uniform="u_track_opacity"),
+    flt("tracks.emissive", "Self-illumination", 0.5, 0.0, 1.0, uniform="u_track_emissive",
+        tooltip="0 = lit by sun and sky, 1 = glows on its own (visible at night)"),
+    flt("tracks.outline", "Outline", 1.0, 0.0, 5.0, step=0.1, decimals=1, unit="px",
+        uniform="u_track_outline"),
+)  # fmt: skip
 
 
 def build_registry() -> PropertyRegistry:
