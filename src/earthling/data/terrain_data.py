@@ -96,6 +96,12 @@ class TerrainData:
                 return zi
         return min(z + TEXEL_ZOOM_OFFSET, self.imagery.max_zoom)
 
+    def close(self) -> None:
+        """Stop on-demand downloads so pending worker tasks finish quickly."""
+        self.on_demand = False
+        if self.downloader is not None:
+            self.downloader.cancel()
+
     def _ensure_imagery(self, z: int, x: int, y: int) -> None:
         if (
             self.on_demand

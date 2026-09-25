@@ -6,6 +6,7 @@ order of the UI sections stable.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from earthling.core.properties import PropertyDef, PropertyRegistry, PType
@@ -64,12 +65,23 @@ TERRAIN = section(
             animatable=False),
 )  # fmt: skip
 
+SUN = section(
+    "Sun & Time",
+    PropertyDef("sun.datetime", "Local date & time", PType.DATETIME, datetime(2026, 7, 1, 12, 0),
+                tooltip="Local time in the project's timezone; drives the sun position"),
+    flt("sun.azimuth_offset", "Azimuth offset", 0.0, -180.0, 180.0, step=1.0, decimals=1,
+        unit="°", tooltip="Artistic rotation of the computed sun position"),
+    flt("sun.elevation_offset", "Elevation offset", 0.0, -45.0, 45.0, step=0.5, decimals=1,
+        unit="°"),
+    flt("sun.intensity", "Sun intensity", 1.4, 0.0, 6.0),
+    color("sun.color", "Sun color", (1.0, 0.96, 0.9)),
+)  # fmt: skip
+
 LIGHT = section(
     "Lighting",
-    flt("light.azimuth", "Light azimuth", 315.0, 0.0, 360.0, step=1.0, decimals=0, unit="°"),
-    flt("light.elevation", "Light elevation", 40.0, -10.0, 90.0, step=0.5, decimals=1, unit="°"),
-    flt("light.ambient", "Ambient", 0.55, 0.0, 2.0, uniform="u_ambient"),
-    flt("light.relief", "Relief shading", 0.75, 0.0, 3.0, uniform="u_relief"),
+    flt("light.ambient", "Sky ambient", 0.45, 0.0, 3.0),
+    color("light.sky_color", "Sky ambient color", (0.62, 0.72, 0.92)),
+    color("light.ground_color", "Ground bounce color", (0.45, 0.4, 0.33)),
 )  # fmt: skip
 
 TRACKS = section(
@@ -80,6 +92,6 @@ TRACKS = section(
 
 def build_registry() -> PropertyRegistry:
     registry = PropertyRegistry()
-    for group in (VIEW, TERRAIN, LIGHT, TRACKS):
+    for group in (VIEW, TERRAIN, SUN, LIGHT, TRACKS):
         registry.extend(group)
     return registry

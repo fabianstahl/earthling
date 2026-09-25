@@ -68,7 +68,7 @@ def test_window_saves_and_restores_scene(qtbot, tmp_path):
     window = MainWindow()
     qtbot.addWidget(window)
     assert window.open_project(project)
-    window.scene.store.set("light.azimuth", 42.0)
+    window.scene.store.set("sun.azimuth_offset", 42.0)
     window.viewport.camera.position = np.array([10.0, 20.0, 3000.0])
     window.viewport.camera.heading = 77.0
     window.viewport.mode = window.viewport.FLY
@@ -80,6 +80,6 @@ def test_window_saves_and_restores_scene(qtbot, tmp_path):
     window2 = MainWindow()
     qtbot.addWidget(window2)
     assert window2.open_project(project)
-    assert window2.scene.store["light.azimuth"] == 42.0
+    assert window2.scene.store["sun.azimuth_offset"] == 42.0
     assert window2.viewport.camera.heading == pytest.approx(77.0)
     assert window2.viewport.camera.position == pytest.approx([10.0, 20.0, 3000.0])

@@ -101,6 +101,17 @@ class Session:
             lines.append((enu, (1.0, 1.0, 1.0, 0.9), True))
         return lines
 
+    def first_local_start(self):
+        """Local (project timezone) start time of the earliest track, naive, or None."""
+        from datetime import UTC
+        from zoneinfo import ZoneInfo
+
+        starts = [t.stats.start_time for t in self.tracks if t.stats.start_time is not None]
+        if not starts:
+            return None
+        tz = ZoneInfo(self.config.project.timezone)
+        return min(starts).replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
+
     # --- terrain ---------------------------------------------------------------------------
     def terrain_data(self, on_demand: bool = True):
         from earthling.data.downloader import TileDownloader

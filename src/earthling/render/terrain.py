@@ -42,16 +42,6 @@ DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0
 TileKey = tuple[int, int, int]
 
 
-def light_direction(azimuth_deg: float, elevation_deg: float) -> tuple[float, float, float]:
-    """Unit vector (ENU) pointing towards a light at the given azimuth/elevation."""
-    az, el = np.radians(azimuth_deg), np.radians(elevation_deg)
-    return (
-        float(np.sin(az) * np.cos(el)),
-        float(np.cos(az) * np.cos(el)),
-        float(np.sin(el)),
-    )
-
-
 # --- geometry ----------------------------------------------------------------------------
 def perimeter_indices(n: int = MESH_GRID) -> np.ndarray:
     """Grid vertex indices along the border as a closed loop."""
@@ -257,6 +247,7 @@ class TerrainLayer:
         self.params = lod.LodParams()
         self.memory_budget_mb = 3000
         self.store = None  # PropertyStore for automatic uniform binding
+        self.lighting_uniforms: dict[str, object] = {}
         self.upload_budget_s = 0.006  # GPU upload time per frame
         self.frame: LocalFrame | None = None
         self.data: TerrainData | None = None
@@ -284,6 +275,8 @@ class TerrainLayer:
         self.nodes = nodes
 
     def clear(self) -> None:
+        if self.data is not None and hasattr(self.data, "close"):
+            self.data.close()
         for future in self._in_flight.values():
             future.cancel()
         self._in_flight.clear()
@@ -514,9 +507,9 @@ class TerrainLayer:
         program["u_debug_lod"] = self.debug_lod
         if self.store is not None:
             bind_uniforms(program, self.store)
-            program["u_light_dir"] = light_direction(
-                self.store["light.azimuth"], self.store["light.elevation"]
-            )
+        for name, value in self.lighting_uniforms.items():
+            if name in program:
+                program[name] = value
         for key in keys:
             node = self._resident.get(key)
             if node is None or node.heightmap_key is None:

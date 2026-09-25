@@ -11,9 +11,10 @@ uniform sampler2D u_imagery;
 uniform bool u_has_imagery;
 uniform bool u_debug_lod;
 uniform bool u_show_imagery = true;
-uniform vec3 u_light_dir = vec3(-0.5, 0.6, 0.6);
-uniform float u_ambient = 0.55;
-uniform float u_relief = 0.75;
+uniform vec3 u_sun_dir = vec3(-0.5, 0.6, 0.6);  // towards the sun (ENU)
+uniform vec3 u_sun_radiance = vec3(1.4);         // linear, 0 below the horizon
+uniform vec3 u_sky_ambient = vec3(0.2, 0.24, 0.35);
+uniform vec3 u_ground_ambient = vec3(0.1, 0.08, 0.06);
 uniform int u_zoom;
 
 vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
@@ -40,7 +41,7 @@ void main() {
     if (valid_at(v_hm_uv) < 0.5) discard;
     write_log_depth(v_log_z);
     vec3 n = terrain_normal(v_hm_uv);
-    float diffuse = max(dot(n, normalize(u_light_dir)), 0.0);
+    float diffuse = max(dot(n, normalize(u_sun_dir)), 0.0);
     vec3 albedo = (u_has_imagery && u_show_imagery) ? srgb_to_linear(texture(u_imagery, v_tile_uv).rgb)
                                 : srgb_to_linear(elevation_ramp(v_height));
     if (u_debug_lod) {
@@ -48,7 +49,8 @@ void main() {
         albedo = mix(albedo, srgb_to_linear(zoom_color(u_zoom)), 0.55);
         albedo = mix(albedo, vec3(0.0), clamp(edge, 0.0, 1.0));
     }
-    // Imagery already contains baked-in shading; only add moderate relief lighting.
-    vec3 color = albedo * (u_ambient + u_relief * diffuse);
+    // Hemispherical ambient (sky from above, bounce light from below) + direct sun.
+    vec3 ambient = mix(u_ground_ambient, u_sky_ambient, n.z * 0.5 + 0.5);
+    vec3 color = albedo * (ambient + u_sun_radiance * diffuse);
     f_color = vec4(linear_to_srgb(color), 1.0);
 }

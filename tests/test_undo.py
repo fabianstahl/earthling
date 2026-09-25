@@ -13,10 +13,10 @@ def test_undo_redo_and_drag_merging(qapp):
     for v in (2.1, 2.2, 2.3):
         set_property(stack, store, "terrain.exaggeration", v, interactive=True)
     set_property(stack, store, "terrain.exaggeration", 2.3, interactive=False)
-    set_property(stack, store, "light.azimuth", 10.0)
+    set_property(stack, store, "sun.azimuth_offset", 10.0)
     assert stack.count() == 3
     stack.undo()
-    assert store["light.azimuth"] == 315.0
+    assert store["sun.azimuth_offset"] == 0.0
     stack.undo()
     assert store["terrain.exaggeration"] == 2.0
     stack.undo()

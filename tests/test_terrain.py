@@ -99,3 +99,44 @@ def test_pick_depth_hits_terrain(gl_ctx):
     assert depth is not None and depth < 1.0
     hit = unproject_log_depth(camera, 64, 64, 128, 128, depth)
     assert 1400 < hit[2] < 2600  # on the plateau or the bump (z ~ up near the origin)
+
+
+class SlopeTerrainData(FakeTerrainData):
+    """Height rises towards the east -> the slope faces west."""
+
+    def __init__(self):
+        super().__init__()
+        cols = np.arange(HEIGHTMAP_SAMPLES, dtype=np.float32)
+        self.heights = np.tile(1000.0 + cols * 40.0, (HEIGHTMAP_SAMPLES, 1))
+
+    def imagery_for(self, key):
+        return np.full((64, 64, 3), 128, dtype=np.uint8)
+
+
+def test_sun_direction_lights_facing_slopes(gl_ctx):
+    from earthling.render.lighting import SunPosition
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    renderer.set_terrain_source(SlopeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 64)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.pitch = -89.0
+    orbit.apply()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 64)
+    fbo = gl_ctx.simple_framebuffer((64, 64))
+
+    def brightness(azimuth):
+        sun = SunPosition(azimuth, 30.0).direction_enu()
+        renderer.terrain.lighting_uniforms = {
+            "u_sun_dir": sun, "u_sun_radiance": (1.0, 1.0, 1.0),
+            "u_sky_ambient": (0.1, 0.1, 0.1), "u_ground_ambient": (0.1, 0.1, 0.1),
+        }  # fmt: skip
+        renderer.render(fbo, 64, 64, camera)
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(64, 64, 3)
+        return img[24:40, 24:40].mean()
+
+    assert brightness(270.0) > brightness(90.0) + 20

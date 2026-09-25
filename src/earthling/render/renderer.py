@@ -15,6 +15,7 @@ from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore
 from earthling.render.camera import Camera
+from earthling.render.lighting import Lighting, compute_lighting, lighting_uniforms
 from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.terrain import TerrainLayer
@@ -68,6 +69,8 @@ class Renderer:
         self.tracks = TrackLayer(ctx, self.shaders)
         self.outlines = OutlineLayer(ctx, self.shaders)
         self.store: PropertyStore | None = None
+        self.timezone = "UTC"
+        self.lighting: Lighting | None = None
 
     def apply_properties(self, camera: Camera) -> None:
         """Push the current property values into the render layers."""
@@ -85,6 +88,9 @@ class Renderer:
         self.terrain.store = s
         self.outlines.visible = s["view.show_outlines"]
         self.tracks.visible = s["tracks.visible"]
+        if self.frame is not None:
+            self.lighting = compute_lighting(s, self.frame.lat, self.frame.lon, self.timezone)
+            self.terrain.lighting_uniforms = lighting_uniforms(self.lighting)
 
     def set_scene(self, frame: LocalFrame, tracks: list[Track]) -> None:
         self.frame = frame

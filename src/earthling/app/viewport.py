@@ -72,6 +72,8 @@ class Viewport(QOpenGLWidget):
         self._pending_outlines = None
         self._pending_terrain = None
         self.store = None  # PropertyStore of the scene
+        self.timezone = "UTC"
+        self._shut_down = False
         self._camera_restored = False  # a saved camera must not be overridden by framing
         self._last_mouse: QPointF | None = None
         self._last_paint = time.perf_counter()
@@ -85,12 +87,16 @@ class Viewport(QOpenGLWidget):
         self._timer.start(0)
 
     # --- scene -------------------------------------------------------------------------
-    def set_scene(self, frame: LocalFrame, tracks: list[Track], reframe: bool = True) -> None:
+    def set_scene(
+        self, frame: LocalFrame, tracks: list[Track], reframe: bool = True, timezone: str = "UTC"
+    ) -> None:
         self.frame = frame
+        self.timezone = timezone
         self._camera_restored = False
         if self.renderer is None:
             self._pending_scene = (frame, tracks)
             return
+        self.renderer.timezone = timezone
         self.makeCurrent()
         self.renderer.set_scene(frame, tracks)
         self.doneCurrent()
@@ -123,7 +129,9 @@ class Viewport(QOpenGLWidget):
             self.renderer.store = store
 
     def shutdown(self) -> None:
-        if self.renderer is not None:
+        """Stop background terrain work (idempotent)."""
+        if self.renderer is not None and not self._shut_down:
+            self._shut_down = True
             self.makeCurrent()
             self.renderer.terrain.shutdown()
             self.doneCurrent()
@@ -260,6 +268,7 @@ class Viewport(QOpenGLWidget):
             self.renderer.outlines.set_lines(self._pending_outlines)
             self._pending_outlines = None
         self.renderer.store = self.store
+        self.renderer.timezone = self.timezone
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:

@@ -8,6 +8,7 @@ import numpy as np
 from PyQt6.QtCore import QByteArray, QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence, QUndoStack
 from PyQt6.QtWidgets import (
+    QApplication,
     QDockWidget,
     QFileDialog,
     QLabel,
@@ -51,6 +52,9 @@ class MainWindow(QMainWindow):
         self.viewport = Viewport(dev_mode=dev_mode)
         self.setCentralWidget(self.viewport)
         self.viewport.set_store(self.scene.store)
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self.viewport.shutdown)
         self.parameters_dock = QDockWidget("Parameters", self)
         self.parameters_dock.setObjectName("ParametersDock")
         self.property_panel = PropertyPanel(self.scene.store, on_edit=self.set_property)
@@ -194,7 +198,9 @@ class MainWindow(QMainWindow):
         self._remember_recent(project.folder)
         self._update_title()
         self.tracks_dock.set_tracks(session.tracks)
-        self.viewport.set_scene(session.frame, session.tracks)
+        self.viewport.set_scene(
+            session.frame, session.tracks, timezone=session.config.project.timezone
+        )
         self.viewport.set_outlines(session.outline_lines())
         self._reload_terrain(reframe=True)
         scene_path = project.folder / DEFAULT_SCENE_NAME
@@ -202,6 +208,7 @@ class MainWindow(QMainWindow):
             self.load_scene(scene_path)
         else:
             self.scene.reset(scene_path)
+            self._init_new_scene(session)
             self.undo_stack.clear()
             self._update_title()
         self.statusBar().showMessage(
@@ -211,6 +218,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "GPX problems", "\n".join(session.load_errors))
         self.project_changed.emit(project)
         self.tracks_changed.emit()
+
+    def _init_new_scene(self, session: Session) -> None:
+        """Sensible starting values for a project's first scene."""
+        start = session.first_local_start()
+        if start is not None:
+            self.scene.store.set("sun.datetime", start.replace(hour=12, minute=0, second=0))
+        self.scene.mark_dirty(False)
 
     # --- scene files -------------------------------------------------------------------
     def load_scene(self, path: Path) -> bool:
