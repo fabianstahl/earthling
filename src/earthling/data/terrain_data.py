@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -40,7 +41,9 @@ class TerrainData:
         imagery: TileProvider,
         plan: TilePlan,
         max_heightmaps: int = 512,
+        downloader=None,
     ) -> None:
+        """``downloader``: optional TileDownloader for on-demand fetching of missing imagery."""
         self.cache = cache
         self.dem_id = dem_id
         self.imagery = imagery
@@ -51,6 +54,8 @@ class TerrainData:
         self._heightmaps: OrderedDict[TileKey, np.ndarray | None] = OrderedDict()
         self._max = max_heightmaps
         self._lock = threading.Lock()
+        self.downloader = downloader
+        self.on_demand = downloader is not None
 
     def _heightmap(self, key: TileKey) -> np.ndarray | None:
         with self._lock:
@@ -91,6 +96,18 @@ class TerrainData:
                 return zi
         return min(z + TEXEL_ZOOM_OFFSET, self.imagery.max_zoom)
 
+    def _ensure_imagery(self, z: int, x: int, y: int) -> None:
+        if (
+            self.on_demand
+            and self.downloader is not None
+            and (x, y) in self._imagery_sets.get(z, ())
+        ):
+            # network problems must never break rendering
+            with contextlib.suppress(Exception):
+                self.downloader.fetch_one(z, x, y)
+
     def imagery_for(self, key: TileKey) -> np.ndarray | None:
         z, x, y = key
-        return compose_tile_texture(self.cache, self.imagery, z, x, y, self.imagery_zoom_for(key))
+        return compose_tile_texture(
+            self.cache, self.imagery, z, x, y, self.imagery_zoom_for(key), self._ensure_imagery
+        )

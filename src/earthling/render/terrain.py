@@ -10,9 +10,12 @@ derives normals from the heightmap and discards fragments without DEM data.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import time
 from collections import OrderedDict
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 
 import moderngl
@@ -108,6 +111,47 @@ def tile_geometry(frame: LocalFrame, z: int, x: int, y: int, n: int = MESH_GRID)
     return TileGeometry(origin, positions, ups, np.array([east_c, north_c, up_c]), float(width))
 
 
+# --- CPU preparation (runs on worker threads) ---------------------------------------------
+@dataclass
+class PreparedNode:
+    key: TileKey
+    geometry: TileGeometry
+    vertices: np.ndarray  # float32 (pos, up)
+    heightmap_key: TileKey | None
+    heights: np.ndarray | None  # the source heightmap (shared by descendants)
+    hm_scale: float
+    hm_offset: tuple[float, float]
+    sample_spacing_m: float
+    min_h: float
+    max_h: float
+    rgb: np.ndarray | None
+
+
+def prepare_node(frame: LocalFrame, data: TerrainData, key: TileKey) -> PreparedNode:
+    ref = data.heightmap_for(key)
+    geo = tile_geometry(frame, *key)
+    vertices = np.hstack([geo.positions, geo.ups]).astype("f4")
+    scale, offset = float(GRID_INTERVALS), (0.0, 0.0)
+    spacing = geo.width_m / GRID_INTERVALS
+    min_h = max_h = 0.0
+    hm_key = heights = None
+    if ref is not None:
+        hm_key, heights = ref.source, ref.heights
+        scale, offset = ref.scale, ref.offset
+        spacing = geo.width_m / scale
+        ox, oy = int(offset[0]), int(offset[1])
+        size = int(np.ceil(scale)) + 3
+        window = ref.heights[oy : oy + size, ox : ox + size]
+        if np.isfinite(window).any():
+            min_h, max_h = float(np.nanmin(window)), float(np.nanmax(window))
+    rgb = data.imagery_for(key)
+    if rgb is not None:
+        rgb = np.ascontiguousarray(rgb)
+    return PreparedNode(
+        key, geo, vertices, hm_key, heights, scale, offset, spacing, min_h, max_h, rgb
+    )
+
+
 # --- GPU resources -----------------------------------------------------------------------
 class _HeightmapTexture:
     def __init__(self, ctx: moderngl.Context, heights: np.ndarray) -> None:
@@ -125,6 +169,51 @@ class _HeightmapTexture:
         self.texture.release()
 
 
+class TexturePool:
+    """Recycles imagery textures of equal size instead of reallocating them."""
+
+    def __init__(self, ctx: moderngl.Context, max_free_per_size: int = 32) -> None:
+        self.ctx = ctx
+        self.max_free = max_free_per_size
+        self._free: dict[tuple[int, int], list[moderngl.Texture]] = {}
+
+    def acquire(self, rgb: np.ndarray) -> moderngl.Texture:
+        h, w, _ = rgb.shape
+        free = self._free.get((w, h))
+        if free:
+            tex = free.pop()
+            tex.write(rgb.tobytes())
+        else:
+            tex = self.ctx.texture((w, h), 3, rgb.tobytes())
+            tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+            tex.anisotropy = 16.0
+            tex.repeat_x = tex.repeat_y = False
+        tex.build_mipmaps()
+        return tex
+
+    def release(self, tex: moderngl.Texture) -> None:
+        free = self._free.setdefault(tex.size, [])
+        if len(free) < self.max_free:
+            free.append(tex)
+        else:
+            tex.release()
+
+    def clear(self) -> None:
+        for textures in self._free.values():
+            for tex in textures:
+                tex.release()
+        self._free.clear()
+
+
+def node_gpu_bytes(rgb_size: tuple[int, int] | None) -> int:
+    """Rough GPU memory of one node (vertex buffer + imagery with mipmaps, RGBA-padded)."""
+    vbo = ((MESH_GRID + 1) ** 2 + 4 * MESH_GRID) * 24
+    if rgb_size is None:
+        return vbo
+    w, h = rgb_size
+    return vbo + int(w * h * 4 * 4 / 3)
+
+
 @dataclass
 class _Node:
     key: TileKey
@@ -140,17 +229,23 @@ class _Node:
     vao: moderngl.VertexArray | None = None
     last_used: int = 0
 
+    @property
+    def gpu_bytes(self) -> int:
+        return node_gpu_bytes(self.imagery.size if self.imagery is not None else None)
+
 
 class TerrainLayer:
-    def __init__(self, ctx: moderngl.Context, shaders: ShaderLibrary) -> None:
+    def __init__(
+        self, ctx: moderngl.Context, shaders: ShaderLibrary, workers: int | None = None
+    ) -> None:
         self.ctx = ctx
         self.shaders = shaders
         self.visible = True
         self.exaggeration = 1.0
         self.debug_lod = False
         self.params = lod.LodParams()
-        self.max_resident_nodes = 700
-        self.load_budget_s = 0.012  # synchronous loading time per frame
+        self.memory_budget_mb = 3000
+        self.upload_budget_s = 0.006  # GPU upload time per frame
         self.frame: LocalFrame | None = None
         self.data: TerrainData | None = None
         self.nodes: lod.NodeSet | None = None
@@ -159,6 +254,10 @@ class TerrainLayer:
         self._bounds: dict[TileKey, lod.NodeBounds] = {}
         self._ibo = ctx.buffer(grid_indices().tobytes())
         self._shared = ctx.buffer(shared_grid_attributes().tobytes())
+        self._pool = TexturePool(ctx)
+        self._workers = workers or max(2, min(8, (os.cpu_count() or 4) - 1))
+        self._executor = ThreadPoolExecutor(self._workers, thread_name_prefix="terrain")
+        self._in_flight: dict[TileKey, Future] = {}
         self._program: moderngl.Program | None = None
         self._frame_no = 0
         self.last_selection: lod.Selection | None = None
@@ -173,6 +272,9 @@ class TerrainLayer:
         self.nodes = nodes
 
     def clear(self) -> None:
+        for future in self._in_flight.values():
+            future.cancel()
+        self._in_flight.clear()
         for node in list(self._resident.values()):
             self._release_node(node)
         self._resident.clear()
@@ -182,9 +284,22 @@ class TerrainLayer:
         self._bounds.clear()
         self.last_selection = None
 
+    def shutdown(self) -> None:
+        self.clear()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        self._pool.clear()
+
     @property
     def resident_count(self) -> int:
         return len(self._resident)
+
+    @property
+    def pending_count(self) -> int:
+        return len(self._in_flight)
+
+    @property
+    def gpu_bytes(self) -> int:
+        return sum(n.gpu_bytes for n in self._resident.values())
 
     # --- bounds -----------------------------------------------------------------------
     def node_bounds(self, key: TileKey) -> lod.NodeBounds:
@@ -219,51 +334,65 @@ class TerrainLayer:
         return lo, hi
 
     # --- loading ----------------------------------------------------------------------
-    def _load_node(self, key: TileKey) -> _Node:
+    def _submit(self, key: TileKey) -> None:
         assert self.frame is not None and self.data is not None
-        ref = self.data.heightmap_for(key)
-        geo = tile_geometry(self.frame, *key)
-        verts = np.hstack([geo.positions, geo.ups]).astype("f4")
-        vbo = self.ctx.buffer(verts.tobytes())
-        hm_key = None
-        min_h, max_h = 0.0, 0.0
-        scale, offset = float(GRID_INTERVALS), (0.0, 0.0)
-        spacing = geo.width_m / GRID_INTERVALS
-        if ref is not None:
-            hm_key = ref.source
-            hm = self._heightmaps.get(hm_key)
+        if key in self._in_flight or key in self._resident:
+            return
+        self._in_flight[key] = self._executor.submit(prepare_node, self.frame, self.data, key)
+
+    def _upload(self, prepared: PreparedNode) -> _Node:
+        vbo = self.ctx.buffer(prepared.vertices.tobytes())
+        if prepared.heightmap_key is not None:
+            hm = self._heightmaps.get(prepared.heightmap_key)
             if hm is None:
-                hm = _HeightmapTexture(self.ctx, ref.heights)
-                self._heightmaps[hm_key] = hm
+                hm = _HeightmapTexture(self.ctx, prepared.heights)
+                self._heightmaps[prepared.heightmap_key] = hm
             hm.refs += 1
-            scale, offset = ref.scale, ref.offset
-            spacing = geo.width_m / scale
-            ox, oy = int(offset[0]), int(offset[1])
-            size = int(np.ceil(scale)) + 3
-            window = ref.heights[oy : oy + size, ox : ox + size]
-            if np.isfinite(window).any():
-                min_h, max_h = float(np.nanmin(window)), float(np.nanmax(window))
-        rgb = self.data.imagery_for(key)
-        tex = None
-        if rgb is not None:
-            h, w, _ = rgb.shape
-            tex = self.ctx.texture((w, h), 3, np.ascontiguousarray(rgb).tobytes())
-            tex.build_mipmaps()
-            tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
-            tex.anisotropy = 16.0
-            tex.repeat_x = tex.repeat_y = False
-        node = _Node(key, geo, vbo, hm_key, scale, offset, spacing, min_h, max_h, tex)
-        node.last_used = self._frame_no
-        self._resident[key] = node
-        self._bounds.pop(key, None)  # recompute with real heights
+        tex = self._pool.acquire(prepared.rgb) if prepared.rgb is not None else None
+        node = _Node(
+            prepared.key,
+            prepared.geometry,
+            vbo,
+            prepared.heightmap_key,
+            prepared.hm_scale,
+            prepared.hm_offset,
+            prepared.sample_spacing_m,
+            prepared.min_h,
+            prepared.max_h,
+            tex,
+            last_used=self._frame_no,
+        )
+        old = self._resident.pop(prepared.key, None)
+        if old is not None:
+            self._release_node(old)
+        self._resident[prepared.key] = node
+        self._bounds.pop(prepared.key, None)  # recompute with real heights
         return node
+
+    def _collect(self, budget_s: float | None) -> None:
+        """Upload finished preparations (all of them if ``budget_s`` is None)."""
+        deadline = None if budget_s is None else time.perf_counter() + budget_s
+        for key, future in list(self._in_flight.items()):
+            if deadline is not None and time.perf_counter() > deadline:
+                break
+            if not future.done():
+                continue
+            del self._in_flight[key]
+            if future.cancelled():
+                continue
+            try:
+                prepared = future.result()
+            except Exception:
+                log.exception("preparing terrain node %s failed", key)
+                continue
+            self._upload(prepared)
 
     def _release_node(self, node: _Node) -> None:
         if node.vao is not None:
             node.vao.release()
         node.vbo.release()
         if node.imagery is not None:
-            node.imagery.release()
+            self._pool.release(node.imagery)
         if node.heightmap_key is not None:
             hm = self._heightmaps.get(node.heightmap_key)
             if hm is not None:
@@ -273,28 +402,30 @@ class TerrainLayer:
                     del self._heightmaps[node.heightmap_key]
 
     def _evict(self, protected: set[TileKey]) -> None:
-        excess = len(self._resident) - self.max_resident_nodes
-        if excess <= 0 or self.nodes is None:
+        if self.nodes is None:
+            return
+        budget = self.memory_budget_mb * 1024 * 1024
+        used = self.gpu_bytes
+        if used <= budget:
             return
         min_zoom = self.nodes.min_zoom
         candidates = sorted(
             (n for k, n in self._resident.items() if k not in protected and k[0] > min_zoom),
             key=lambda n: n.last_used,
         )
-        for node in candidates[:excess]:
+        for node in candidates:
+            if used <= budget:
+                break
+            used -= node.gpu_bytes
             self._release_node(node)
             del self._resident[node.key]
 
     # --- per frame --------------------------------------------------------------------
-    def update(
-        self, camera: Camera, view_proj, viewport_height: int, budget_s: float | None = None
-    ) -> lod.Selection | None:
-        if self.nodes is None or self.data is None or self.frame is None:
-            return None
-        self._frame_no += 1
+    def _select(self, camera: Camera, view_proj, viewport_height: int) -> lod.Selection:
+        assert self.nodes is not None
         planes = lod.frustum_planes(view_proj)
         ppr = viewport_height / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
-        sel = lod.select_nodes(
+        return lod.select_nodes(
             self.nodes,
             self.node_bounds,
             lambda k: k in self._resident,
@@ -303,12 +434,19 @@ class TerrainLayer:
             ppr,
             self.params,
         )
-        deadline = time.perf_counter() + (self.load_budget_s if budget_s is None else budget_s)
+
+    def update(self, camera: Camera, view_proj, viewport_height: int) -> lod.Selection | None:
+        """Select nodes, upload finished ones within the budget and request missing ones."""
+        if self.nodes is None or self.data is None or self.frame is None:
+            return None
+        self._frame_no += 1
+        self._collect(self.upload_budget_s)
+        sel = self._select(camera, view_proj, viewport_height)
+        max_in_flight = self._workers * 3
         for key in sel.request:
-            if time.perf_counter() > deadline:
+            if len(self._in_flight) >= max_in_flight:
                 break
-            if key not in self._resident:
-                self._load_node(key)
+            self._submit(key)
         for key in sel.draw:
             node = self._resident.get(key)
             if node is not None:
@@ -320,12 +458,35 @@ class TerrainLayer:
     def fully_loaded(self) -> bool:
         return self.last_selection is not None and not self.last_selection.request
 
+    def finish_loading(
+        self, camera: Camera, view_proj, viewport_height: int, timeout_s: float = 120.0
+    ) -> bool:
+        """Block until the view is loaded at full LOD (used by export and tests)."""
+        if self.nodes is None or self.data is None:
+            return True
+        deadline = time.perf_counter() + timeout_s
+        while time.perf_counter() < deadline:
+            sel = self._select(camera, view_proj, viewport_height)
+            self.last_selection = sel
+            if not sel.request:
+                return True
+            for key in sel.request:
+                self._submit(key)
+            for future in list(self._in_flight.values()):
+                with contextlib.suppress(Exception):
+                    future.result(timeout=max(0.0, deadline - time.perf_counter()))
+            self._collect(None)
+        return False
+
     def render(self, camera: Camera, view_proj, viewport_height: int) -> None:
         if not self.visible:
             return
         sel = self.update(camera, view_proj, viewport_height)
         if sel is None:
             return
+        self.draw(camera, view_proj, sel.draw)
+
+    def draw(self, camera: Camera, view_proj, keys: list[TileKey]) -> None:
         program = self.shaders.get("terrain")
         if program is not self._program:
             for node in self._resident.values():
@@ -339,7 +500,7 @@ class TerrainLayer:
         program["u_heightmap"] = 0
         program["u_imagery"] = 1
         program["u_debug_lod"] = self.debug_lod
-        for key in sel.draw:
+        for key in keys:
             node = self._resident.get(key)
             if node is None or node.heightmap_key is None:
                 continue

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 
 import numpy as np
 from PIL import Image
@@ -49,12 +50,19 @@ def load_tile_rgb(
 
 
 def compose_tile_texture(
-    cache: TileCache, provider: TileProvider, z: int, x: int, y: int, image_zoom: int
+    cache: TileCache,
+    provider: TileProvider,
+    z: int,
+    x: int,
+    y: int,
+    image_zoom: int,
+    ensure: Callable[[int, int, int], object] | None = None,
 ) -> np.ndarray | None:
     """RGB texture covering terrain tile (z, x, y) built from imagery tiles at ``image_zoom``.
 
     The result has (tile_size * 2**(image_zoom - z))^2 pixels. Returns None if no imagery at all
-    (including ancestors) is available.
+    (including ancestors) is available. ``ensure(z, x, y)`` is called for every wanted imagery
+    tile first, e.g. to download missing tiles on demand.
     """
     image_zoom = min(max(image_zoom, z), provider.max_zoom)
     d = image_zoom - z
@@ -68,6 +76,8 @@ def compose_tile_texture(
     any_found = False
     for j in range(n):
         for i in range(n):
+            if ensure is not None:
+                ensure(image_zoom, (x << d) + i, (y << d) + j)
             found = load_tile_rgb(cache, provider, image_zoom, (x << d) + i, (y << d) + j)
             if found is None:
                 continue

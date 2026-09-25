@@ -32,6 +32,7 @@ def configure_default_surface_format() -> None:
 
 class Viewport(QOpenGLWidget):
     fps_changed = pyqtSignal(float)
+    stats_changed = pyqtSignal(str)
     shader_error = pyqtSignal(str)
 
     def __init__(self, dev_mode: bool = False, parent=None) -> None:
@@ -87,6 +88,16 @@ class Viewport(QOpenGLWidget):
         self._outlines_visible = visible
         if self.renderer is not None:
             self.renderer.outlines.visible = visible
+
+    def set_on_demand(self, enabled: bool) -> None:
+        if self.renderer is not None and self.renderer.terrain.data is not None:
+            self.renderer.terrain.data.on_demand = enabled
+
+    def shutdown(self) -> None:
+        if self.renderer is not None:
+            self.makeCurrent()
+            self.renderer.terrain.shutdown()
+            self.doneCurrent()
 
     def set_debug_lod(self, enabled: bool) -> None:
         self._debug_lod = enabled
@@ -157,7 +168,17 @@ class Viewport(QOpenGLWidget):
         self._frames += 1
         now = time.perf_counter()
         if now - self._fps_timer >= 0.5:
-            self.fps_changed.emit(self._frames / (now - self._fps_timer))
+            fps = self._frames / (now - self._fps_timer)
+            self.fps_changed.emit(fps)
+            text = f"{fps:5.1f} fps"
+            if self.renderer is not None and self.renderer.terrain.nodes is not None:
+                t = self.renderer.terrain
+                drawn = len(t.last_selection.draw) if t.last_selection else 0
+                text = (
+                    f"terrain: {drawn} drawn, {t.resident_count} resident, "
+                    f"{t.pending_count} loading, {t.gpu_bytes / 2**20:.0f} MB  |  {text}"
+                )
+            self.stats_changed.emit(text)
             self._frames = 0
             self._fps_timer = now
 

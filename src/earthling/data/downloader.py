@@ -131,6 +131,15 @@ class TileDownloader:
             list(pool.map(work, todo))
         return progress
 
+    def fetch_one(self, z: int, x: int, y: int) -> bool:
+        """Download a single tile unless it is already known. True if it is cached afterwards."""
+        p = self.provider
+        if self.cache.has(p.id, z, x, y, p.ext):
+            return True
+        if self.cache.is_missing(p.id, z, x, y) or z > p.max_zoom:
+            return False
+        return self._fetch(z, x, y)[0] == "ok"
+
     def _fetch(self, z: int, x: int, y: int) -> tuple[str, int, str]:
         p = self.provider
         url = p.tile_url(z, x, y)

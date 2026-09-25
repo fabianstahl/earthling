@@ -67,12 +67,12 @@ def test_render_lod_terrain(gl_ctx):
     renderer.set_terrain_source(FakeTerrainData(), nodes)
     camera = Camera()
     fbo = gl_ctx.simple_framebuffer((96, 96))
-    renderer.render(fbo, 96, 96, camera)  # loads roots
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 96)  # roots
     lo, hi = renderer.scene_bounds()
     assert lo[2] == pytest.approx(1500) and hi[2] == pytest.approx(2500)
     OrbitController(camera).frame_bounds(lo, hi)
-    for _ in range(5):
-        renderer.render(fbo, 96, 96, camera)
+    assert renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 96)
+    renderer.render(fbo, 96, 96, camera)
     assert renderer.terrain.fully_loaded()
     img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(96, 96, 3).astype(int)
     green = (img[..., 1] > 150) & (img[..., 0] < 80)

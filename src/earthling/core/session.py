@@ -102,12 +102,16 @@ class Session:
         return lines
 
     # --- terrain ---------------------------------------------------------------------------
-    def terrain_data(self):
+    def terrain_data(self, on_demand: bool = True):
+        from earthling.data.downloader import TileDownloader
         from earthling.data.terrain_data import TerrainData
 
         if self.plan is None:
             return None
-        return TerrainData(self.cache, self.dem_source.id, self.imagery_provider, self.plan)
+        downloader = TileDownloader(self.imagery_provider, self.cache) if on_demand else None
+        return TerrainData(
+            self.cache, self.dem_source.id, self.imagery_provider, self.plan, downloader=downloader
+        )
 
     def terrain_nodes(self):
         from earthling.data.terrain_data import TEXEL_ZOOM_OFFSET

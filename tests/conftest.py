@@ -2,9 +2,13 @@ import moderngl
 import pytest
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def gl_ctx():
-    """Standalone OpenGL context for renderer tests; skipped where no GPU is available."""
+    """Standalone OpenGL context for renderer tests; skipped where no GPU is available.
+
+    Function-scoped: Qt widget tests make their own contexts current, which would leave a
+    shared standalone context unusable.
+    """
     try:
         ctx = moderngl.create_standalone_context(require=430)
     except Exception as exc:  # pragma: no cover - depends on machine

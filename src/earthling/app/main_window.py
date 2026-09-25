@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
         self._fps_label = QLabel()
         self.statusBar().addPermanentWidget(self._fps_label)
-        self.viewport.fps_changed.connect(lambda fps: self._fps_label.setText(f"{fps:5.1f} fps"))
+        self.viewport.stats_changed.connect(self._fps_label.setText)
         self.viewport.shader_error.connect(
             lambda msg: self.statusBar().showMessage(f"Shader error: {msg}", 10000)
         )
@@ -70,6 +70,9 @@ class MainWindow(QMainWindow):
         self.debug_lod_action = QAction("Debug: Show Terrain &LOD", self, checkable=True)
         self.debug_lod_action.toggled.connect(lambda v: self.viewport.set_debug_lod(v))
         self.view_menu.addAction(self.debug_lod_action)
+        self.on_demand_action = QAction("Download Missing Imagery &On Demand", self, checkable=True)
+        self.on_demand_action.setChecked(True)
+        self.on_demand_action.toggled.connect(lambda v: self.viewport.set_on_demand(v))
         self.show_outlines_action = QAction("Show &Area Outlines", self, checkable=True)
         self.show_outlines_action.setChecked(True)
         self.show_outlines_action.toggled.connect(lambda v: self.viewport.set_outlines_visible(v))
@@ -79,6 +82,7 @@ class MainWindow(QMainWindow):
         self.data_menu = bar.addMenu("&Data")
         self._add_action(self.data_menu, "Download &Plan…", self._show_plan)
         self._add_action(self.data_menu, "&Download Data…", self._show_download, "Ctrl+D")
+        self.data_menu.addAction(self.on_demand_action)
 
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
@@ -187,6 +191,10 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             title = f"{self.project.name} – Earthling"
         self.setWindowTitle(title)
+
+    def closeEvent(self, event) -> None:
+        self.viewport.shutdown()
+        super().closeEvent(event)
 
     def _show_about(self) -> None:
         QMessageBox.about(self, "About Earthling", f"Earthling {__version__}")
