@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
 from earthling.app.goto_dialog import GoToDialog
+from earthling.app.keyframing import KeyframeEditor
 from earthling.app.plan_dialog import PlanDialog
 from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
@@ -30,6 +31,7 @@ from earthling.core.gpx import Track
 from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
 from earthling.core.session import Session
 from earthling.data.jobs import download_jobs
+from earthling.ui.dope_sheet import KeyButton
 from earthling.ui.property_panel import PropertyPanel
 from earthling.ui.timeline_widget import TimelineWidget
 
@@ -48,6 +50,8 @@ class MainWindow(QMainWindow):
         self.scene.on_dirty_changed(lambda dirty: self._update_title())
         self.undo_stack = QUndoStack(self)
         self.undo_stack.cleanChanged.connect(lambda clean: self.scene.mark_dirty(not clean))
+        self.timeline = TimelineController(self.scene.animation, self)
+        self.keys = KeyframeEditor(self.scene.animation, self.timeline, self.undo_stack)
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
@@ -59,7 +63,11 @@ class MainWindow(QMainWindow):
             app.aboutToQuit.connect(self.viewport.shutdown)
         self.parameters_dock = QDockWidget("Parameters", self)
         self.parameters_dock.setObjectName("ParametersDock")
-        self.property_panel = PropertyPanel(self.scene.store, on_edit=self.set_property)
+        self.property_panel = PropertyPanel(
+            self.scene.store,
+            on_edit=self._on_panel_edit,
+            row_extra=lambda d: KeyButton(d.id, self.keys) if d.animatable else None,
+        )
         self.parameters_dock.setWidget(self.property_panel)
         self.parameters_dock.setMinimumWidth(340)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.parameters_dock)
@@ -70,10 +78,9 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.history_dock)
         self.history_dock.hide()
         self.view_menu.addAction(self.history_dock.toggleViewAction())
-        self.timeline = TimelineController(self.scene.animation, self)
         self.timeline_dock = QDockWidget("Timeline", self)
         self.timeline_dock.setObjectName("TimelineDock")
-        self.timeline_widget = TimelineWidget(self.timeline)
+        self.timeline_widget = TimelineWidget(self.timeline, self.keys)
         self.timeline_dock.setWidget(self.timeline_widget)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
         self.view_menu.addAction(self.timeline_dock.toggleViewAction())
@@ -172,6 +179,15 @@ class MainWindow(QMainWindow):
             shortcut = QShortcut(QKeySequence(key), self)
             shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
             shortcut.activated.connect(slot)
+
+    def _on_panel_edit(self, pid: str, value, interactive: bool) -> None:
+        """Panel edits: animated properties are keyed at the playhead (auto-key)."""
+        if self.keys.auto_key and self.scene.animation.is_animated(pid):
+            self.scene.store.set(pid, value)  # live preview while dragging
+            if not interactive:
+                self.keys.set_key(pid, value)
+            return
+        self.set_property(pid, value, interactive)
 
     def set_property(self, pid: str, value, interactive: bool = False) -> None:
         """All interactive property edits go through the undo stack."""

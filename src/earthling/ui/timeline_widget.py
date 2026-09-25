@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QSizePolicy,
     QToolButton,
     QVBoxLayout,
@@ -47,9 +48,10 @@ class TimeRuler(QWidget):
     scrubbed = pyqtSignal(float)
     MARGIN = 12
 
-    def __init__(self, controller: TimelineController, parent=None) -> None:
+    def __init__(self, controller: TimelineController, left_inset: int = 0, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
+        self.left_inset = left_inset  # room for the dope sheet's label column
         self.setMinimumHeight(42)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         controller.time_changed.connect(lambda t: self.update())
@@ -57,13 +59,17 @@ class TimeRuler(QWidget):
         self._dragging = False
 
     # coordinate mapping
+    def _span(self) -> tuple[float, float]:
+        left = self.left_inset + self.MARGIN
+        return left, max(1.0, self.width() - left - self.MARGIN)
+
     def time_to_x(self, t: float) -> float:
-        width = max(1, self.width() - 2 * self.MARGIN)
-        return self.MARGIN + t / max(self.controller.duration, 1e-6) * width
+        left, width = self._span()
+        return left + t / max(self.controller.duration, 1e-6) * width
 
     def x_to_time(self, x: float) -> float:
-        width = max(1, self.width() - 2 * self.MARGIN)
-        return (x - self.MARGIN) / width * self.controller.duration
+        left, width = self._span()
+        return (x - left) / width * self.controller.duration
 
     def paintEvent(self, event: QPaintEvent) -> None:
         p = QPainter(self)
@@ -71,7 +77,7 @@ class TimeRuler(QWidget):
         pal = self.palette()
         p.fillRect(self.rect(), pal.base())
         duration = self.controller.duration
-        pps = (self.width() - 2 * self.MARGIN) / max(duration, 1e-6)
+        pps = self._span()[1] / max(duration, 1e-6)
         step = nice_tick_step(pps)
         font = QFont(self.font())
         font.setPointSizeF(max(7.0, font.pointSizeF() - 1))
@@ -114,9 +120,11 @@ class TimeRuler(QWidget):
 
 
 class TimelineWidget(QWidget):
-    def __init__(self, controller: TimelineController, parent=None) -> None:
+    def __init__(self, controller: TimelineController, editor=None, parent=None) -> None:
+        """``editor``: optional KeyframeEditor; shows the dope sheet when given."""
         super().__init__(parent)
         self.controller = controller
+        self.editor = editor
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         bar = QHBoxLayout()
@@ -159,9 +167,28 @@ class TimelineWidget(QWidget):
             self.fps.addItem(f"{fps:g}", fps)
         self.fps.currentIndexChanged.connect(lambda i: controller.set_fps(self.fps.itemData(i)))
         bar.addWidget(self.fps)
+        if editor is not None:
+            self.auto_key = QToolButton()
+            self.auto_key.setText("● Auto-key")
+            self.auto_key.setToolTip("Editing an animated property updates its key at the playhead")
+            self.auto_key.setCheckable(True)
+            self.auto_key.setChecked(editor.auto_key)
+            self.auto_key.toggled.connect(lambda v: setattr(editor, "auto_key", v))
+            bar.insertWidget(bar.count() - 5, self.auto_key)
         layout.addLayout(bar)
-        self.ruler = TimeRuler(controller)
+        from earthling.ui.dope_sheet import LABEL_WIDTH, DopeSheet
+
+        self.ruler = TimeRuler(controller, left_inset=LABEL_WIDTH if editor is not None else 0)
         layout.addWidget(self.ruler)
+        self.dope_sheet = None
+        if editor is not None:
+            self.dope_sheet = DopeSheet(editor, self.ruler.time_to_x, self.ruler.x_to_time)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(self.dope_sheet)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            layout.addWidget(scroll, 1)
+            editor.changed.connect(self.ruler.update)
         controller.time_changed.connect(self._update_label)
         controller.playing_changed.connect(
             lambda playing: self.buttons["play"].setText("⏸" if playing else "▶")
