@@ -45,6 +45,10 @@ def section(title: str, *defs: PropertyDef) -> list[PropertyDef]:
 
 VIEW = section(
     "View",
+    PropertyDef("camera.pose", "Camera", PType.CAMERA, (0.0, -5000.0, 3000.0, 0.0, -30.0, 0.0),
+                tooltip="Animated camera position and orientation (keyed with 'Add camera key')"),
+    boolean("camera.constant_speed", "Constant camera speed", False,
+            tooltip="Travel the camera path at constant speed between the first and last key"),
     flt("view.fov", "Field of view", 50.0, 10.0, 120.0, step=0.5, decimals=1, unit="°"),
     boolean("view.show_outlines", "Area outlines", True, animatable=False,
             tooltip="Show the area of interest and resolution zone outlines"),

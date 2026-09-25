@@ -26,6 +26,7 @@ from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.undo import set_property
 from earthling.app.viewport import Viewport
+from earthling.core.camera_path import camera_path_lines
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
 from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
@@ -52,6 +53,7 @@ class MainWindow(QMainWindow):
         self.undo_stack.cleanChanged.connect(lambda clean: self.scene.mark_dirty(not clean))
         self.timeline = TimelineController(self.scene.animation, self)
         self.keys = KeyframeEditor(self.scene.animation, self.timeline, self.undo_stack)
+        self.keys.changed.connect(self._camera_keys_changed)
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
@@ -97,6 +99,7 @@ class MainWindow(QMainWindow):
         self.viewport.mode_changed.connect(
             lambda mode: self.fly_mode_action.setChecked(mode == self.viewport.FLY)
         )
+        self.viewport.animated_camera_changed.connect(self.animated_camera_action.setChecked)
         self._camera_label = QLabel()
         self.statusBar().addPermanentWidget(self._camera_label)
         self.viewport.camera_changed.connect(self._camera_label.setText)
@@ -150,6 +153,14 @@ class MainWindow(QMainWindow):
             lambda v: self.viewport.set_mode(self.viewport.FLY if v else self.viewport.ORBIT)
         )
         self.view_menu.addAction(self.fly_mode_action)
+        self.animated_camera_action = QAction("&Animated Camera (C)", self, checkable=True)
+        self.animated_camera_action.setShortcut(QKeySequence("C"))
+        self.animated_camera_action.setToolTip(
+            "Look through the keyframed camera; manual navigation switches back to the free camera"
+        )
+        self.animated_camera_action.toggled.connect(lambda v: self.viewport.set_animated_camera(v))
+        self.view_menu.addAction(self.animated_camera_action)
+        self._add_action(self.view_menu, "Add &Camera Key (K)", self.add_camera_key, "K")
         self.view_menu.addSeparator()
         self.view_menu.addAction(
             self._store_toggle("terrain.debug_lod", "Debug: Show Terrain &LOD")
@@ -167,6 +178,15 @@ class MainWindow(QMainWindow):
 
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
+
+    # --- camera animation ----------------------------------------------------------------
+    def add_camera_key(self) -> None:
+        """Key the current view at the playhead."""
+        self.keys.set_key("camera.pose", self.viewport.camera_pose())
+
+    def _camera_keys_changed(self) -> None:
+        curve = self.scene.animation.curves.get("camera.pose")
+        self.viewport.set_camera_path(camera_path_lines(curve))
 
     def _install_timeline_shortcuts(self) -> None:
         for key, slot in (
@@ -283,7 +303,10 @@ class MainWindow(QMainWindow):
         self.timeline.settings_changed.emit()
         self.timeline.set_time(0.0)
         self.scene.mark_dirty(False)
-        if self.scene.camera:
+        self._camera_keys_changed()
+        has_camera_keys = self.scene.animation.is_animated("camera.pose")
+        self.viewport.set_animated_camera(has_camera_keys)
+        if self.scene.camera and not has_camera_keys:
             self.viewport.restore_camera_state(self.scene.camera)
         self._restore_ui_state()
         self._update_title()

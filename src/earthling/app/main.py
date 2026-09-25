@@ -22,3 +22,7 @@ def run_gui(project: str | None = None, dev_mode: bool = False) -> int:
     if project:
         window.open_project(project)
     return app.exec()
+
+
+if __name__ == "__main__":  # allows running this file directly from an IDE
+    run_gui()

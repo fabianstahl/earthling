@@ -144,14 +144,21 @@ def test_window_key_buttons_and_auto_key(qtbot):
 
     window = MainWindow()
     qtbot.addWidget(window)
-    window.timeline.set_time(0.0)
-    button = window.property_panel.sections["View"].grid.itemAtPosition(0, 2).widget()
-    button.click()
-    assert window.scene.animation.is_animated("view.fov")
-    window.timeline.set_time(2.0)
-    window.property_panel.editors["view.fov"].spin.setValue(80.0)  # auto-key
-    assert window.scene.animation.curves["view.fov"].key_at(2.0).value == 80.0
-    window.timeline.set_time(1.0)
-    assert window.scene.store["view.fov"] == pytest.approx(65.0)
-    assert window.scene.dirty
-    window.undo_stack.setClean()  # no "unsaved changes" dialog when the test closes it
+    try:
+        window.timeline.set_time(0.0)
+        editor = window.property_panel.editors["view.fov"]
+        grid = window.property_panel.sections["View"].grid
+        row = next(
+            r for r in range(grid.rowCount()) if grid.itemAtPosition(r, 1).widget() is editor
+        )
+        grid.itemAtPosition(row, 2).widget().click()
+        assert window.scene.animation.is_animated("view.fov")
+        window.timeline.set_time(2.0)
+        editor.spin.setValue(80.0)  # auto-key
+        assert window.scene.animation.curves["view.fov"].key_at(2.0).value == 80.0
+        window.timeline.set_time(1.0)
+        assert window.scene.store["view.fov"] == pytest.approx(65.0)
+        assert window.scene.dirty
+    finally:
+        window.undo_stack.setClean()  # no "unsaved changes" dialog when the test closes it
+        window.scene.mark_dirty(False)

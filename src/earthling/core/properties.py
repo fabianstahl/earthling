@@ -24,6 +24,7 @@ class PType(StrEnum):
     COLOR = "color"  # (r, g, b) floats 0..1, sRGB
     VEC3 = "vec3"
     DATETIME = "datetime"  # naive local datetime
+    CAMERA = "camera"  # (x, y, z, heading, pitch, roll): ENU metres and degrees
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,11 @@ class PropertyDef:
             if t is PType.COLOR:
                 items = tuple(min(1.0, max(0.0, v)) for v in items)
             return items
+        if t is PType.CAMERA:
+            items = tuple(float(v) for v in value)
+            if len(items) != 6:
+                raise ValueError(f"{self.id}: expected 6 components")
+            return items
         if t is PType.DATETIME:
             if isinstance(value, datetime):
                 return value.replace(tzinfo=None, microsecond=0)
@@ -88,7 +94,7 @@ class PropertyDef:
     def to_json(self, value: Any) -> Any:
         if self.type is PType.DATETIME:
             return value.isoformat()
-        if self.type in (PType.COLOR, PType.VEC3):
+        if self.type in (PType.COLOR, PType.VEC3, PType.CAMERA):
             return list(value)
         return value
 
@@ -218,7 +224,7 @@ def bind_uniforms(program, store: PropertyStore) -> None:
             uniform.value = [v for v, _ in d.options].index(value)
         elif d.type is PType.COLOR:
             uniform.value = tuple(c**2.2 for c in value)  # linear for shading
-        elif d.type is PType.DATETIME:
+        elif d.type in (PType.DATETIME, PType.CAMERA):
             continue
         else:
             uniform.value = value

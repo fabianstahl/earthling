@@ -25,3 +25,14 @@ def _isolated_qsettings():
     QCoreApplication.setOrganizationName("EarthlingTests")
     QCoreApplication.setApplicationName("EarthlingTests")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_modal_dialogs(monkeypatch):
+    """Tests must never block on a message box (e.g. 'unsaved changes' on close)."""
+    from PyQt6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Discard)
+    for name in ("warning", "critical", "information"):
+        monkeypatch.setattr(QMessageBox, name, lambda *a, **k: QMessageBox.StandardButton.Ok)
+    yield

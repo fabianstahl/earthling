@@ -14,6 +14,9 @@ Type rules
 * vec3: per component
 * datetime: as continuous time
 * bool / enum: always step (hold until the next key)
+* camera: centripetal Catmull-Rom positions + quaternion squad rotations through all keys; the
+  key's interpolation shapes the timing within the segment. With ``constant_speed`` the keys
+  become waypoints travelled at constant speed between the first and last key time.
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import StrEnum
 from typing import Any
+
+import numpy as np
 
 from earthling.core.properties import PropertyDef, PropertyStore, PType
 
@@ -168,6 +173,27 @@ def _blend(definition: PropertyDef, a: Any, b: Any, f: float) -> Any:
 class Curve:
     definition: PropertyDef
     keys: list[Keyframe] = field(default_factory=list)
+    constant_speed: bool = False  # camera curves only
+    _spline_cache: tuple | None = field(default=None, repr=False, compare=False)
+
+    def _spline(self):
+        from earthling.core.camera_path import CameraSpline
+
+        signature = tuple((k.time, k.value) for k in self.keys)
+        if self._spline_cache is None or self._spline_cache[0] != signature:
+            spline = CameraSpline([k.value for k in self.keys])
+            self._spline_cache = (signature, spline, spline.arc_table())
+        return self._spline_cache[1], self._spline_cache[2]
+
+    def _evaluate_camera(self, time: float, i: int, f: float) -> Any:
+        spline, (g_table, lengths) = self._spline()
+        if self.constant_speed and len(self.keys) > 1 and lengths[-1] > 0:
+            t0, t1 = self.keys[0].time, self.keys[-1].time
+            s = (time - t0) / max(t1 - t0, 1e-9) * lengths[-1]
+            g = float(np.interp(s, lengths, g_table))
+            segment = min(int(g), len(self.keys) - 2)
+            return spline.pose(segment, g - segment)
+        return spline.pose(i, f)
 
     @property
     def pid(self) -> str:
@@ -226,6 +252,8 @@ class Curve:
             f = cubic_bezier_ease(x, ox, oy, 1.0 - ix, 1.0 - iy)
         else:
             f = cubic_bezier_ease(x, *PRESETS[k0.interp])
+        if self.definition.type is PType.CAMERA:
+            return self._evaluate_camera(time, i, f)
         return self.definition.coerce(_blend(self.definition, k0.value, k1.value, f))
 
     # --- serialisation ----------------------------------------------------------------
@@ -310,7 +338,13 @@ class Animation:
 
     # --- evaluation -------------------------------------------------------------------
     def values_at(self, time: float) -> dict[str, Any]:
-        return {pid: c.evaluate(time) for pid, c in self.curves.items() if c.keys}
+        constant = bool(self.store.get("camera.constant_speed", False))
+        out = {}
+        for pid, curve in self.curves.items():
+            if curve.keys:
+                curve.constant_speed = constant
+                out[pid] = curve.evaluate(time)
+        return out
 
     def apply(self, time: float, notify: bool = True) -> None:
         """Write all animated values at ``time`` into the store."""

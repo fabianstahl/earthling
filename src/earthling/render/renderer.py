@@ -122,6 +122,7 @@ class Renderer:
         self.terrain = TerrainLayer(ctx, self.shaders)
         self.tracks = TrackLayer(ctx, self.shaders)
         self.outlines = OutlineLayer(ctx, self.shaders)
+        self.camera_path = OutlineLayer(ctx, self.shaders)  # animated camera path gizmo
         self.marker = MarkerLayer(ctx, self.shaders)
         self.shadows = ShadowMaps(ctx)
         self.time = 0.0  # animation time in seconds (drives pulsing effects)
@@ -203,7 +204,8 @@ class Renderer:
             self.terrain.draw(camera, view_proj, selection.draw, extra_uniforms=extra)
         self._render_tracks(camera, view_proj, width, height)
         self.outlines.render(camera, view_proj)
-        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.DEPTH_TEST)  # the camera path is drawn on top
+        self.camera_path.render(camera, view_proj)
         bloom = self._render_glow(camera, view_proj, width, height)
         self._tonemap(fbo, width, height, bloom)
         self.reset_state()  # leave the context clean for Qt

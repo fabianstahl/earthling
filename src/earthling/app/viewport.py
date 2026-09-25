@@ -55,6 +55,7 @@ class Viewport(QOpenGLWidget):
     camera_changed = pyqtSignal(str)  # human readable camera position
     mode_changed = pyqtSignal(str)
     shader_error = pyqtSignal(str)
+    animated_camera_changed = pyqtSignal(bool)
 
     ORBIT, FLY = "orbit", "fly"
 
@@ -71,7 +72,9 @@ class Viewport(QOpenGLWidget):
         self._pending_scene: tuple[LocalFrame, list[Track]] | None = None
         self._pending_outlines = None
         self._pending_terrain = None
+        self._pending_camera_path = None
         self.store = None  # PropertyStore of the scene
+        self.animated_camera = False  # follow the "camera.pose" property (timeline playback)
         self.timezone = "UTC"
         self._shut_down = False
         self._camera_restored = False  # a saved camera must not be overridden by framing
@@ -132,9 +135,52 @@ class Viewport(QOpenGLWidget):
 
     def set_store(self, store) -> None:
         self.store = store
-        store.subscribe(lambda pid, value: self.request_render())
+        store.subscribe(self._on_store_changed)
         if self.renderer is not None:
             self.renderer.store = store
+
+    def _on_store_changed(self, pid: str, value) -> None:
+        if pid == "camera.pose" and self.animated_camera:
+            self.apply_pose(value)
+        self.request_render()
+
+    # --- animated camera ----------------------------------------------------------------
+    def camera_pose(self) -> tuple[float, float, float, float, float, float]:
+        c = self.camera
+        return (*(float(v) for v in c.position), c.heading, c.pitch, c.roll)
+
+    def apply_pose(self, pose) -> None:
+        x, y, z, heading, pitch, roll = pose
+        self.camera.position = np.array([x, y, z], dtype=np.float64)
+        self.camera.heading, self.camera.pitch, self.camera.roll = heading, pitch, roll
+        self.request_render()
+
+    def set_animated_camera(self, enabled: bool) -> None:
+        if enabled == self.animated_camera:
+            return
+        self.animated_camera = enabled
+        if enabled and self.store is not None:
+            self.apply_pose(self.store["camera.pose"])
+        if not enabled:
+            self.mode = self.FLY
+            self.mode_changed.emit(self.mode)
+        if self.renderer is not None:
+            self.renderer.camera_path.visible = not enabled
+        self.animated_camera_changed.emit(enabled)
+
+    def _take_manual_control(self) -> None:
+        """Manual navigation leaves the animated camera (like any 3D editor)."""
+        if self.animated_camera:
+            self.set_animated_camera(False)
+
+    def set_camera_path(self, lines) -> None:
+        if self.renderer is None:
+            self._pending_camera_path = lines
+            return
+        self.makeCurrent()
+        self.renderer.camera_path.set_lines(lines)
+        self.doneCurrent()
+        self.request_render()
 
     def shutdown(self) -> None:
         """Stop background terrain work (idempotent)."""
@@ -275,6 +321,10 @@ class Viewport(QOpenGLWidget):
         if self._pending_outlines is not None:
             self.renderer.outlines.set_lines(self._pending_outlines)
             self._pending_outlines = None
+        if self._pending_camera_path is not None:
+            self.renderer.camera_path.set_lines(self._pending_camera_path)
+            self._pending_camera_path = None
+        self.renderer.camera_path.visible = not self.animated_camera
         self.renderer.store = self.store
         self.renderer.timezone = self.timezone
 
@@ -300,6 +350,7 @@ class Viewport(QOpenGLWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self._last_mouse = event.position()
         self.setFocus()
+        self._take_manual_control()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self._last_mouse = None
@@ -327,6 +378,7 @@ class Viewport(QOpenGLWidget):
             self.orbit.pan(delta.x(), delta.y(), self.height())
 
     def wheelEvent(self, event: QWheelEvent) -> None:
+        self._take_manual_control()
         steps = event.angleDelta().y() / 120.0
         if self.mode == self.FLY:
             multiplier = self.fly.speed_multiplier * 1.25**steps
@@ -340,6 +392,7 @@ class Viewport(QOpenGLWidget):
             self.toggle_mode()
             return
         if key in FLY_KEYS and not event.isAutoRepeat():
+            self._take_manual_control()
             if self.mode != self.FLY:
                 self.set_mode(self.FLY)
             self.fly.pressed.add(FLY_KEYS[key])

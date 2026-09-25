@@ -103,7 +103,8 @@ class KeyframeEditor(QObject):
             self.set_key(pid)
 
     def set_key(self, pid: str, value: Any = None) -> None:
-        self.edit("Insert key", [pid], lambda: self.animation.set_key(pid, self.now, value))
+        label = "Insert camera key" if pid == "camera.pose" else "Insert key"
+        self.edit(label, [pid], lambda: self.animation.set_key(pid, self.now, value))
 
     def on_property_edited(self, pid: str, value: Any, interactive: bool) -> bool:
         """Auto-key: returns True if the edit was turned into a key edit."""

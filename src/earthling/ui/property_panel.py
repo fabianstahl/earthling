@@ -308,6 +308,9 @@ class PropertyPanel(QScrollArea):
         self.editors.clear()
         self.sections.clear()
         for title, defs in self.store.registry.sections():
+            defs = [d for d in defs if d.type in EDITORS]  # e.g. camera poses have no editor
+            if not defs:
+                continue
             section = CollapsibleSection(title)
             for row, d in enumerate(defs):
                 label = QLabel(d.label)
