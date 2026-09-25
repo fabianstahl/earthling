@@ -120,6 +120,20 @@ def _set(program: moderngl.Program, name: str, value) -> None:
         program[name] = value
 
 
+def skirt_depth(node, exaggeration: float) -> float:
+    """How far a node's skirt hangs below its edges (metres).
+
+    A neighbour of a different LOD level renders the shared edge from its own (coarser or
+    finer) samples of the same terrain line, so the edges can differ by up to the terrain's
+    height range along that line, which lies within this node's height range. Hanging the
+    skirt down by the full range (plus a few vertex spacings) closes every crack, also with
+    vertical exaggeration and neighbours several levels apart.
+    """
+    spacing = node.geometry.width_m / MESH_GRID
+    relief = max(node.max_h - node.min_h, 4.0 * spacing)
+    return relief * max(exaggeration, 1e-3) + 30.0
+
+
 # --- CPU preparation (runs on worker threads) ---------------------------------------------
 @dataclass
 class PreparedNode:
@@ -487,15 +501,19 @@ class TerrainLayer:
         assert self.nodes is not None
         planes = lod.frustum_planes(view_proj)
         ppr = viewport_height / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
-        return lod.select_nodes(
+        sel = lod.select_nodes(
             self.nodes,
             self.node_bounds,
-            lambda k: k in self._resident or k in self._failed,
+            # only resident nodes count as ready: a child that failed to load keeps its
+            # parent drawn instead of leaving a hole
+            lambda k: k in self._resident,
             camera.position,
             planes,
             ppr,
             self.params,
         )
+        sel.request = [k for k in sel.request if k not in self._failed]
+        return sel
 
     def update(self, camera: Camera, view_proj, viewport_height: int) -> lod.Selection | None:
         """Select nodes, upload finished ones within the budget and request missing ones."""
@@ -626,7 +644,7 @@ class TerrainLayer:
             _set(program, "u_offset", camera.relative(geo.origin))
             _set(program, "u_hm_scale", node.hm_scale)
             _set(program, "u_hm_offset", node.hm_offset)
-            _set(program, "u_skirt_depth", max(20.0, geo.width_m / MESH_GRID * 2.0))
+            _set(program, "u_skirt_depth", skirt_depth(node, self.exaggeration))
             self._heightmaps[node.heightmap_key].texture.use(0)
             if not shadow_pass:
                 _set(program, "u_sample_spacing", node.sample_spacing_m)

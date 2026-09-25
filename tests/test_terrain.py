@@ -173,3 +173,43 @@ def test_dense_fog_hides_terrain_contrast(gl_ctx):
     renderer.store.set("fog.falloff", 5000.0)
     renderer.store.set("fog.sun_scatter", 0.0)  # no view-dependent glow
     assert contrast() < 0.3 * clear
+
+
+def test_skirt_depth_covers_relief_and_exaggeration():
+    from types import SimpleNamespace
+
+    from earthling.render.terrain import skirt_depth
+
+    geometry = SimpleNamespace(width_m=6400.0)  # 100 m vertex spacing
+    steep = SimpleNamespace(geometry=geometry, min_h=1000.0, max_h=3500.0)
+    flat = SimpleNamespace(geometry=geometry, min_h=1000.0, max_h=1001.0)
+    assert skirt_depth(steep, 1.0) >= 2500.0
+    assert skirt_depth(steep, 2.5) >= 2.5 * 2500.0
+    assert skirt_depth(flat, 1.0) >= 400.0  # at least a few vertex spacings
+
+
+def test_failed_child_keeps_parent_drawn(gl_ctx):
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    x, y = int(tx), int(ty)
+    children = [(2 * x + dx, 2 * y + dy) for dx in (0, 1) for dy in (0, 1)]
+    nodes = lod.NodeSet({10: [(x, y)], 11: children})
+
+    class Flaky(FakeTerrainData):
+        def heightmap_for(self, key):
+            if key == (11, 2 * x, 2 * y):
+                raise RuntimeError("corrupt tile")
+            return super().heightmap_for(key)
+
+    renderer.set_terrain_source(Flaky(), nodes)
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 400)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.distance *= 0.3
+    orbit.apply()
+    assert renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 400, timeout_s=10)
+    drawn = renderer.terrain.last_selection.draw
+    assert (10, x, y) in drawn  # the parent still covers the failed quadrant
+    assert (11, 2 * x, 2 * y) not in drawn
