@@ -12,3 +12,13 @@ def test_main_window_opens(qtbot):
     qtbot.addWidget(window)
     window.show()
     assert window.windowTitle() == "Earthling"
+
+
+def test_open_project_updates_title(qtbot, tmp_path):
+    from earthling.core.config import Project
+
+    Project.create(tmp_path / "alps")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window.open_project(tmp_path / "alps")
+    assert window.windowTitle().startswith("alps")

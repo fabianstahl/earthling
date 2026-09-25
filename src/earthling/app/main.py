@@ -19,4 +19,6 @@ def run_gui(project: str | None = None, dev_mode: bool = False) -> int:
     app.setOrganizationName("Earthling")
     window = MainWindow(dev_mode=dev_mode)
     window.show()
+    if project:
+        window.open_project(project)
     return app.exec()
