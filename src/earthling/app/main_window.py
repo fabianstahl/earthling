@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from PyQt6.QtCore import QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import QFileDialog, QLabel, QMainWindow, QMessageBox
+from PyQt6.QtWidgets import QDockWidget, QFileDialog, QLabel, QMainWindow, QMessageBox
 
 from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
@@ -17,8 +17,10 @@ from earthling.app.tracks_dock import TracksDock
 from earthling.app.viewport import Viewport
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
+from earthling.core.scene import Scene
 from earthling.core.session import Session
 from earthling.data.jobs import download_jobs
+from earthling.ui.property_panel import PropertyPanel
 
 MAX_RECENT = 8
 
@@ -31,11 +33,20 @@ class MainWindow(QMainWindow):
     def __init__(self, dev_mode: bool = False) -> None:
         super().__init__()
         self.session: Session | None = None
+        self.scene = Scene()
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
         self.viewport = Viewport(dev_mode=dev_mode)
         self.setCentralWidget(self.viewport)
+        self.viewport.set_store(self.scene.store)
+        self.parameters_dock = QDockWidget("Parameters", self)
+        self.parameters_dock.setObjectName("ParametersDock")
+        self.property_panel = PropertyPanel(self.scene.store)
+        self.parameters_dock.setWidget(self.property_panel)
+        self.parameters_dock.setMinimumWidth(340)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.parameters_dock)
+        self.view_menu.addAction(self.parameters_dock.toggleViewAction())
         self.tracks_dock = TracksDock(self)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.tracks_dock)
         self.view_menu.addAction(self.tracks_dock.toggleViewAction())
@@ -83,16 +94,13 @@ class MainWindow(QMainWindow):
         )
         self.view_menu.addAction(self.fly_mode_action)
         self.view_menu.addSeparator()
-        self.debug_lod_action = QAction("Debug: Show Terrain &LOD", self, checkable=True)
-        self.debug_lod_action.toggled.connect(lambda v: self.viewport.set_debug_lod(v))
-        self.view_menu.addAction(self.debug_lod_action)
+        self.view_menu.addAction(
+            self._store_toggle("terrain.debug_lod", "Debug: Show Terrain &LOD")
+        )
         self.on_demand_action = QAction("Download Missing Imagery &On Demand", self, checkable=True)
         self.on_demand_action.setChecked(True)
         self.on_demand_action.toggled.connect(lambda v: self.viewport.set_on_demand(v))
-        self.show_outlines_action = QAction("Show &Area Outlines", self, checkable=True)
-        self.show_outlines_action.setChecked(True)
-        self.show_outlines_action.toggled.connect(lambda v: self.viewport.set_outlines_visible(v))
-        self.view_menu.addAction(self.show_outlines_action)
+        self.view_menu.addAction(self._store_toggle("view.show_outlines", "Show &Area Outlines"))
         self.view_menu.addSeparator()
 
         self.data_menu = bar.addMenu("&Data")
@@ -102,6 +110,19 @@ class MainWindow(QMainWindow):
 
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
+
+    def _store_toggle(self, pid: str, text: str) -> QAction:
+        """Checkable action mirroring a boolean scene property."""
+        action = QAction(text, self, checkable=True)
+        action.setChecked(bool(self.scene.store[pid]))
+        action.toggled.connect(lambda v: self.scene.store.set(pid, v))
+
+        def sync(changed: str, value) -> None:
+            if changed == pid and action.isChecked() != bool(value):
+                action.setChecked(bool(value))
+
+        self.scene.store.subscribe(sync)
+        return action
 
     def _add_action(self, menu, text, slot, shortcut=None) -> QAction:
         action = QAction(text, self)

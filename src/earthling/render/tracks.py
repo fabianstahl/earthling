@@ -57,6 +57,7 @@ class TrackLayer:
         self._gpu: list[_GpuTrack] = []
         self._program: moderngl.Program | None = None
         self.bounds: tuple[np.ndarray, np.ndarray] | None = None
+        self.visible = True
 
     def set_tracks(self, tracks: list[Track], frame: LocalFrame) -> None:
         self.release()
@@ -84,7 +85,7 @@ class TrackLayer:
         self.bounds = (lo, hi) if self._gpu else None
 
     def render(self, camera: Camera, view_proj) -> None:
-        if not self._gpu:
+        if not self._gpu or not self.visible:
             return
         program = self.shaders.get("track_line")
         if program is not self._program:

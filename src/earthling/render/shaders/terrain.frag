@@ -10,6 +10,10 @@ out vec4 f_color;
 uniform sampler2D u_imagery;
 uniform bool u_has_imagery;
 uniform bool u_debug_lod;
+uniform bool u_show_imagery = true;
+uniform vec3 u_light_dir = vec3(-0.5, 0.6, 0.6);
+uniform float u_ambient = 0.55;
+uniform float u_relief = 0.75;
 uniform int u_zoom;
 
 vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
@@ -36,9 +40,8 @@ void main() {
     if (valid_at(v_hm_uv) < 0.5) discard;
     write_log_depth(v_log_z);
     vec3 n = terrain_normal(v_hm_uv);
-    vec3 sun = normalize(vec3(-0.5, 0.6, 0.6));
-    float diffuse = max(dot(n, sun), 0.0);
-    vec3 albedo = u_has_imagery ? srgb_to_linear(texture(u_imagery, v_tile_uv).rgb)
+    float diffuse = max(dot(n, normalize(u_light_dir)), 0.0);
+    vec3 albedo = (u_has_imagery && u_show_imagery) ? srgb_to_linear(texture(u_imagery, v_tile_uv).rgb)
                                 : srgb_to_linear(elevation_ramp(v_height));
     if (u_debug_lod) {
         float edge = step(min(v_tile_uv.x, v_tile_uv.y), 0.004) + step(0.996, max(v_tile_uv.x, v_tile_uv.y));
@@ -46,6 +49,6 @@ void main() {
         albedo = mix(albedo, vec3(0.0), clamp(edge, 0.0, 1.0));
     }
     // Imagery already contains baked-in shading; only add moderate relief lighting.
-    vec3 color = albedo * (0.55 + 0.75 * diffuse);
+    vec3 color = albedo * (u_ambient + u_relief * diffuse);
     f_color = vec4(linear_to_srgb(color), 1.0);
 }

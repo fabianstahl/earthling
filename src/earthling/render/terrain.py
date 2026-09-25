@@ -27,6 +27,7 @@ from earthling.core.geo import (
     mercator_to_lonlat,
     tile_bounds_mercator,
 )
+from earthling.core.properties import bind_uniforms
 from earthling.data.dem import GRID_INTERVALS, HEIGHTMAP_SAMPLES
 from earthling.data.terrain_data import TerrainData
 from earthling.render import lod
@@ -39,6 +40,16 @@ MESH_GRID = 64  # intervals per tile edge
 DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0
 
 TileKey = tuple[int, int, int]
+
+
+def light_direction(azimuth_deg: float, elevation_deg: float) -> tuple[float, float, float]:
+    """Unit vector (ENU) pointing towards a light at the given azimuth/elevation."""
+    az, el = np.radians(azimuth_deg), np.radians(elevation_deg)
+    return (
+        float(np.sin(az) * np.cos(el)),
+        float(np.cos(az) * np.cos(el)),
+        float(np.sin(el)),
+    )
 
 
 # --- geometry ----------------------------------------------------------------------------
@@ -245,6 +256,7 @@ class TerrainLayer:
         self.debug_lod = False
         self.params = lod.LodParams()
         self.memory_budget_mb = 3000
+        self.store = None  # PropertyStore for automatic uniform binding
         self.upload_budget_s = 0.006  # GPU upload time per frame
         self.frame: LocalFrame | None = None
         self.data: TerrainData | None = None
@@ -500,6 +512,11 @@ class TerrainLayer:
         program["u_heightmap"] = 0
         program["u_imagery"] = 1
         program["u_debug_lod"] = self.debug_lod
+        if self.store is not None:
+            bind_uniforms(program, self.store)
+            program["u_light_dir"] = light_direction(
+                self.store["light.azimuth"], self.store["light.elevation"]
+            )
         for key in keys:
             node = self._resident.get(key)
             if node is None or node.heightmap_key is None:

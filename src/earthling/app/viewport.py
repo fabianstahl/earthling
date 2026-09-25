@@ -71,8 +71,7 @@ class Viewport(QOpenGLWidget):
         self._pending_scene: tuple[LocalFrame, list[Track]] | None = None
         self._pending_outlines = None
         self._pending_terrain = None
-        self._outlines_visible = True
-        self._debug_lod = False
+        self.store = None  # PropertyStore of the scene
         self._last_mouse: QPointF | None = None
         self._last_paint = time.perf_counter()
         self._frames = 0
@@ -112,19 +111,14 @@ class Viewport(QOpenGLWidget):
         self.renderer.outlines.set_lines(lines)
         self.doneCurrent()
 
-    def set_outlines_visible(self, visible: bool) -> None:
-        self._outlines_visible = visible
-        if self.renderer is not None:
-            self.renderer.outlines.visible = visible
-
     def set_on_demand(self, enabled: bool) -> None:
         if self.renderer is not None and self.renderer.terrain.data is not None:
             self.renderer.terrain.data.on_demand = enabled
 
-    def set_debug_lod(self, enabled: bool) -> None:
-        self._debug_lod = enabled
+    def set_store(self, store) -> None:
+        self.store = store
         if self.renderer is not None:
-            self.renderer.terrain.debug_lod = enabled
+            self.renderer.store = store
 
     def shutdown(self) -> None:
         if self.renderer is not None:
@@ -232,8 +226,7 @@ class Viewport(QOpenGLWidget):
         if self._pending_outlines is not None:
             self.renderer.outlines.set_lines(self._pending_outlines)
             self._pending_outlines = None
-        self.renderer.outlines.visible = self._outlines_visible
-        self.renderer.terrain.debug_lod = self._debug_lod
+        self.renderer.store = self.store
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:

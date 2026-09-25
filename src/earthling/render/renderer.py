@@ -13,6 +13,7 @@ import numpy as np
 
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
+from earthling.core.properties import PropertyStore
 from earthling.render.camera import Camera
 from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
@@ -66,6 +67,24 @@ class Renderer:
         self.terrain = TerrainLayer(ctx, self.shaders)
         self.tracks = TrackLayer(ctx, self.shaders)
         self.outlines = OutlineLayer(ctx, self.shaders)
+        self.store: PropertyStore | None = None
+
+    def apply_properties(self, camera: Camera) -> None:
+        """Push the current property values into the render layers."""
+        s = self.store
+        if s is None:
+            return
+        self.clear_color = (*s["view.background"], 1.0)
+        camera.fov_y = s["view.fov"]
+        if s["terrain.exaggeration"] != self.terrain.exaggeration:
+            self.terrain.exaggeration = s["terrain.exaggeration"]
+            self.terrain.invalidate_bounds()
+        self.terrain.params.pixel_threshold = s["terrain.detail"]
+        self.terrain.memory_budget_mb = s["terrain.memory_budget_mb"]
+        self.terrain.debug_lod = s["terrain.debug_lod"]
+        self.terrain.store = s
+        self.outlines.visible = s["view.show_outlines"]
+        self.tracks.visible = s["tracks.visible"]
 
     def set_scene(self, frame: LocalFrame, tracks: list[Track]) -> None:
         self.frame = frame
@@ -81,6 +100,7 @@ class Renderer:
         return self.terrain.bounds() or self.tracks.bounds
 
     def render(self, fbo: moderngl.Framebuffer, width: int, height: int, camera: Camera) -> None:
+        self.apply_properties(camera)
         target = self.target.ensure(width, height)
         target.use()
         self.ctx.viewport = (0, 0, width, height)
