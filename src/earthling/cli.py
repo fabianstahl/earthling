@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("project", help="project folder")
     fetch = sub.add_parser("fetch", help="download the tiles of a project into the cache")
     fetch.add_argument("project", help="project folder")
-    fetch.add_argument("--kind", choices=["imagery", "dem", "all"], default="all")
+    fetch.add_argument("--kind", choices=["imagery", "dem", "topo", "all"], default="all")
     fetch.add_argument("--max-zoom", type=int, default=None, help="limit the finest zoom level")
     return parser
 

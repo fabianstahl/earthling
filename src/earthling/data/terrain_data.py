@@ -12,6 +12,7 @@ import numpy as np
 from earthling.core.aoi import TilePlan
 from earthling.data.cache import TileCache
 from earthling.data.dem import GRID_INTERVALS, read_heightmap
+from earthling.data.downloader import TileDownloader
 from earthling.data.imagery import compose_tile_texture
 from earthling.data.providers import TileProvider
 
@@ -34,19 +35,27 @@ class HeightmapRef:
 
 
 class TerrainData:
+    """Heightmaps and textures for LOD nodes.
+
+    ``sources`` maps tile-source names used by texture layers ("imagery", "topo", ...) to
+    providers. All texture sources use the imagery zones of the tile plan (capped at each
+    provider's maximum zoom); missing tiles can be downloaded on demand from worker threads.
+    """
+
     def __init__(
         self,
         cache: TileCache,
         dem_id: str,
-        imagery: TileProvider,
+        sources: dict[str, TileProvider] | TileProvider,
         plan: TilePlan,
         max_heightmaps: int = 512,
-        downloader=None,
+        on_demand: bool = False,
     ) -> None:
-        """``downloader``: optional TileDownloader for on-demand fetching of missing imagery."""
+        if isinstance(sources, TileProvider):
+            sources = {"imagery": sources}
         self.cache = cache
         self.dem_id = dem_id
-        self.imagery = imagery
+        self.sources = dict(sources)
         self.plan = plan
         self._imagery_sets = {
             z: {(int(x), int(y)) for x, y in t} for z, t in plan.levels.get("imagery", {}).items()
@@ -54,8 +63,16 @@ class TerrainData:
         self._heightmaps: OrderedDict[TileKey, np.ndarray | None] = OrderedDict()
         self._max = max_heightmaps
         self._lock = threading.Lock()
-        self.downloader = downloader
-        self.on_demand = downloader is not None
+        self.downloaders = (
+            {name: TileDownloader(p, cache) for name, p in self.sources.items()}
+            if on_demand
+            else {}
+        )
+        self.on_demand = on_demand
+
+    @property
+    def imagery(self) -> TileProvider:
+        return self.sources["imagery"]
 
     def _heightmap(self, key: TileKey) -> np.ndarray | None:
         with self._lock:
@@ -85,38 +102,51 @@ class TerrainData:
             return HeightmapRef(src, heights, scale, offset)
         return None
 
-    def imagery_zoom_for(self, key: TileKey) -> int:
+    def texture_zoom_for(self, key: TileKey, provider: TileProvider) -> int:
         z, x, y = key
         for d in range(TEXEL_ZOOM_OFFSET, -1, -1):
             zi = z + d
-            if zi > self.imagery.max_zoom:
+            if zi > provider.max_zoom:
                 continue
             tiles = self._imagery_sets.get(zi)
             if tiles and ((x << d), (y << d)) in tiles:
                 return zi
-        return min(z + TEXEL_ZOOM_OFFSET, self.imagery.max_zoom)
+        return min(z + TEXEL_ZOOM_OFFSET, provider.max_zoom)
+
+    def imagery_zoom_for(self, key: TileKey) -> int:
+        return self.texture_zoom_for(key, self.imagery)
 
     def close(self) -> None:
         """Stop on-demand downloads so pending worker tasks finish quickly."""
         self.on_demand = False
-        if self.downloader is not None:
-            self.downloader.cancel()
+        for downloader in self.downloaders.values():
+            downloader.cancel()
 
-    def _ensure_imagery(self, z: int, x: int, y: int) -> None:
-        if (
-            self.on_demand
-            and self.downloader is not None
-            and (x, y) in self._imagery_sets.get(z, ())
-        ):
-            # network problems must never break rendering
-            with contextlib.suppress(Exception):
-                self.downloader.fetch_one(z, x, y)
+    def _ensurer(self, source: str):
+        downloader = self.downloaders.get(source)
+
+        def ensure(z: int, x: int, y: int) -> None:
+            if (
+                self.on_demand
+                and downloader is not None
+                and (x, y) in self._imagery_sets.get(z, ())
+            ):
+                # network problems must never break rendering
+                with contextlib.suppress(Exception):
+                    downloader.fetch_one(z, x, y)
+
+        return ensure
+
+    def texture_for(self, key: TileKey, source: str = "imagery") -> np.ndarray | None:
+        provider = self.sources.get(source)
+        if provider is None:
+            return None
+        z, x, y = key
+        zoom = self.texture_zoom_for(key, provider)
+        return compose_tile_texture(self.cache, provider, z, x, y, zoom, self._ensurer(source))
 
     def imagery_for(self, key: TileKey) -> np.ndarray | None:
-        z, x, y = key
-        return compose_tile_texture(
-            self.cache, self.imagery, z, x, y, self.imagery_zoom_for(key), self._ensure_imagery
-        )
+        return self.texture_for(key, "imagery")
 
     # --- height queries (CPU) ------------------------------------------------------------
     def height_at(self, lon: float, lat: float, z: int | None = None) -> float | None:

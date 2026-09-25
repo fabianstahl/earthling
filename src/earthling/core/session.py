@@ -32,6 +32,12 @@ class Session:
             raise ConfigError(f"sources.imagery: {exc.args[0]}") from exc
         if not self.imagery_providers:
             raise ConfigError("sources.imagery must name at least one provider")
+        try:
+            self.topo_providers: list[TileProvider] = [
+                get_provider(pid) for pid in self.config.sources.topo
+            ]
+        except KeyError as exc:
+            raise ConfigError(f"sources.topo: {exc.args[0]}") from exc
         from earthling.data.dem import DemSource, get_dem_source
 
         try:
@@ -113,15 +119,20 @@ class Session:
         return min(starts).replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
 
     # --- terrain ---------------------------------------------------------------------------
+    def tile_sources(self) -> dict[str, TileProvider]:
+        """Texture sources by layer tile-source name."""
+        sources = {"imagery": self.imagery_provider}
+        if self.topo_providers:
+            sources["topo"] = self.topo_providers[0]
+        return sources
+
     def terrain_data(self, on_demand: bool = True):
-        from earthling.data.downloader import TileDownloader
         from earthling.data.terrain_data import TerrainData
 
         if self.plan is None:
             return None
-        downloader = TileDownloader(self.imagery_provider, self.cache) if on_demand else None
         return TerrainData(
-            self.cache, self.dem_source.id, self.imagery_provider, self.plan, downloader=downloader
+            self.cache, self.dem_source.id, self.tile_sources(), self.plan, on_demand=on_demand
         )
 
     def terrain_nodes(self):

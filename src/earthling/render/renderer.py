@@ -21,7 +21,7 @@ from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.camera import Camera
-from earthling.render.layers import generate_glsl
+from earthling.render.layers import generate_glsl, required_tile_sources
 from earthling.render.lighting import (
     OPTICAL_DEPTH_UNIT,
     Lighting,
@@ -121,6 +121,9 @@ class Renderer:
         self.terrain.memory_budget_mb = s["terrain.memory_budget_mb"]
         self.terrain.debug_lod = s["terrain.debug_lod"]
         self.terrain.store = s
+        self.terrain.required_sources = required_tile_sources(
+            s["layers.a"], s["layers.b"], s["layers.mix"]
+        )
         self.outlines.visible = s["view.show_outlines"]
         self.tracks.visible = s["tracks.visible"]
         if self.frame is not None:

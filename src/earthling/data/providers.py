@@ -82,7 +82,26 @@ EOX_S2CLOUDLESS = TileProvider(
     max_requests_per_second=10.0,
 )
 
-PROVIDERS: dict[str, TileProvider] = {p.id: p for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS)}
+OPENTOPOMAP = TileProvider(
+    id="opentopomap",
+    name="OpenTopoMap",
+    kind="topo",
+    url_template="https://tile.opentopomap.org/{z}/{x}/{y}.png",
+    ext="png",
+    max_zoom=17,
+    license=License(
+        "CC BY-SA 3.0 (map style), ODbL (OpenStreetMap data)",
+        "Map data: (c) OpenStreetMap contributors, SRTM | Map style: (c) OpenTopoMap (CC-BY-SA)",
+        "https://opentopomap.org/about",
+    ),
+    # OpenTopoMap is run by volunteers: keep the load low
+    max_requests_per_second=2.0,
+    concurrency=2,
+)
+
+PROVIDERS: dict[str, TileProvider] = {
+    p.id: p for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP)
+}
 
 
 def register(provider: TileProvider) -> None:

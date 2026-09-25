@@ -60,8 +60,8 @@ def test_ridge_casts_shadow(gl_ctx):
         def heightmap_for(self, key):
             return HeightmapRef(key, self.heights, 256.0, (0.0, 0.0))
 
-        def imagery_for(self, key):
-            return np.full((64, 64, 3), 150, dtype=np.uint8)
+        def texture_for(self, key, source="imagery"):
+            return np.full((64, 64, 3), 150, dtype=np.uint8) if source == "imagery" else None
 
     renderer = Renderer(gl_ctx)
     renderer.set_scene(frame, [])

@@ -32,6 +32,7 @@ zones = [
 [sources]
 imagery = ["esri_world_imagery"]   # priority order
 dem     = ["copernicus_glo30"]
+topo    = ["opentopomap"]          # topographic map layer (downloaded on demand)
 """
 
 
@@ -99,6 +100,7 @@ class AreaSection(_Model):
 class SourcesSection(_Model):
     imagery: tuple[str, ...] = ("esri_world_imagery",)
     dem: tuple[str, ...] = ("copernicus_glo30",)
+    topo: tuple[str, ...] = ("opentopomap",)
 
 
 class Config(_Model):

@@ -37,6 +37,8 @@ from earthling.render.shader_library import ShaderLibrary
 log = logging.getLogger(__name__)
 
 MESH_GRID = 64  # intervals per tile edge
+# texture unit per tile source (0 = heightmap, 2 = optical depth LUT, 3 = shadow atlas)
+TEXTURE_UNITS = {"imagery": 1, "topo": 4}
 DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0
 
 TileKey = tuple[int, int, int]
@@ -131,10 +133,15 @@ class PreparedNode:
     sample_spacing_m: float
     min_h: float
     max_h: float
-    rgb: np.ndarray | None
+    textures: dict[str, np.ndarray | None]  # per tile source ("imagery", "topo", ...)
 
 
-def prepare_node(frame: LocalFrame, data: TerrainData, key: TileKey) -> PreparedNode:
+def prepare_node(
+    frame: LocalFrame,
+    data: TerrainData,
+    key: TileKey,
+    sources: frozenset[str] = frozenset({"imagery"}),
+) -> PreparedNode:
     ref = data.heightmap_for(key)
     geo = tile_geometry(frame, *key)
     vertices = np.hstack([geo.positions, geo.ups]).astype("f4")
@@ -151,11 +158,12 @@ def prepare_node(frame: LocalFrame, data: TerrainData, key: TileKey) -> Prepared
         window = ref.heights[oy : oy + size, ox : ox + size]
         if np.isfinite(window).any():
             min_h, max_h = float(np.nanmin(window)), float(np.nanmax(window))
-    rgb = data.imagery_for(key)
-    if rgb is not None:
-        rgb = np.ascontiguousarray(rgb)
+    textures: dict[str, np.ndarray | None] = {}
+    for source in sorted(sources):
+        rgb = data.texture_for(key, source)
+        textures[source] = None if rgb is None else np.ascontiguousarray(rgb)
     return PreparedNode(
-        key, geo, vertices, hm_key, heights, scale, offset, spacing, min_h, max_h, rgb
+        key, geo, vertices, hm_key, heights, scale, offset, spacing, min_h, max_h, textures
     )
 
 
@@ -232,13 +240,21 @@ class _Node:
     sample_spacing_m: float
     min_h: float
     max_h: float
-    imagery: moderngl.Texture | None
+    textures: dict[str, moderngl.Texture | None]  # per tile source; None = unavailable
     vaos: dict[int, moderngl.VertexArray] = field(default_factory=dict)  # per program
     last_used: int = 0
 
     @property
     def gpu_bytes(self) -> int:
-        return node_gpu_bytes(self.imagery.size if self.imagery is not None else None)
+        total = node_gpu_bytes(None)
+        for tex in self.textures.values():
+            if tex is not None:
+                total += node_gpu_bytes(tex.size) - node_gpu_bytes(None)
+        return total
+
+    @property
+    def imagery(self) -> moderngl.Texture | None:
+        return self.textures.get("imagery")
 
 
 class TerrainLayer:
@@ -253,6 +269,7 @@ class TerrainLayer:
         self.params = lod.LodParams()
         self.memory_budget_mb = 3000
         self.store = None  # PropertyStore for automatic uniform binding
+        self.required_sources: frozenset[str] = frozenset({"imagery"})
         self.lighting_uniforms: dict[str, object] = {}
         self.upload_budget_s = 0.006  # GPU upload time per frame
         self.frame: LocalFrame | None = None
@@ -267,6 +284,7 @@ class TerrainLayer:
         self._workers = workers or max(2, min(8, (os.cpu_count() or 4) - 1))
         self._executor = ThreadPoolExecutor(self._workers, thread_name_prefix="terrain")
         self._in_flight: dict[TileKey, Future] = {}
+        self._failed: set[TileKey] = set()
         self._programs: dict[str, moderngl.Program] = {}
         self._frame_no = 0
         self.last_selection: lod.Selection | None = None
@@ -293,6 +311,7 @@ class TerrainLayer:
             hm.release()
         self._heightmaps.clear()
         self._bounds.clear()
+        self._failed.clear()
         self.last_selection = None
 
     def shutdown(self) -> None:
@@ -345,11 +364,16 @@ class TerrainLayer:
         return lo, hi
 
     # --- loading ----------------------------------------------------------------------
-    def _submit(self, key: TileKey) -> None:
+    def _submit(self, key: TileKey, refresh: bool = False) -> None:
         assert self.frame is not None and self.data is not None
-        if key in self._in_flight or key in self._resident:
+        if key in self._in_flight or key in self._failed or (key in self._resident and not refresh):
             return
-        self._in_flight[key] = self._executor.submit(prepare_node, self.frame, self.data, key)
+        self._in_flight[key] = self._executor.submit(
+            prepare_node, self.frame, self.data, key, self.required_sources
+        )
+
+    def _needs_refresh(self, node: _Node) -> bool:
+        return not self.required_sources <= node.textures.keys()
 
     def _upload(self, prepared: PreparedNode) -> _Node:
         vbo = self.ctx.buffer(prepared.vertices.tobytes())
@@ -359,7 +383,10 @@ class TerrainLayer:
                 hm = _HeightmapTexture(self.ctx, prepared.heights)
                 self._heightmaps[prepared.heightmap_key] = hm
             hm.refs += 1
-        tex = self._pool.acquire(prepared.rgb) if prepared.rgb is not None else None
+        textures = {
+            name: (self._pool.acquire(rgb) if rgb is not None else None)
+            for name, rgb in prepared.textures.items()
+        }
         node = _Node(
             prepared.key,
             prepared.geometry,
@@ -370,7 +397,7 @@ class TerrainLayer:
             prepared.sample_spacing_m,
             prepared.min_h,
             prepared.max_h,
-            tex,
+            textures,
             last_used=self._frame_no,
         )
         old = self._resident.pop(prepared.key, None)
@@ -395,6 +422,7 @@ class TerrainLayer:
                 prepared = future.result()
             except Exception:
                 log.exception("preparing terrain node %s failed", key)
+                self._failed.add(key)  # do not retry forever (and never block export)
                 continue
             self._upload(prepared)
 
@@ -403,8 +431,10 @@ class TerrainLayer:
             vao.release()
         node.vaos.clear()
         node.vbo.release()
-        if node.imagery is not None:
-            self._pool.release(node.imagery)
+        for tex in node.textures.values():
+            if tex is not None:
+                self._pool.release(tex)
+        node.textures = {}
         if node.heightmap_key is not None:
             hm = self._heightmaps.get(node.heightmap_key)
             if hm is not None:
@@ -440,7 +470,7 @@ class TerrainLayer:
         return lod.select_nodes(
             self.nodes,
             self.node_bounds,
-            lambda k: k in self._resident,
+            lambda k: k in self._resident or k in self._failed,
             camera.position,
             planes,
             ppr,
@@ -463,12 +493,19 @@ class TerrainLayer:
             node = self._resident.get(key)
             if node is not None:
                 node.last_used = self._frame_no
+                if self._needs_refresh(node) and len(self._in_flight) < max_in_flight:
+                    self._submit(key, refresh=True)  # e.g. a layer needs another texture
         self._evict(set(sel.draw))
         self.last_selection = sel
         return sel
 
     def fully_loaded(self) -> bool:
-        return self.last_selection is not None and not self.last_selection.request
+        sel = self.last_selection
+        if sel is None or sel.request:
+            return False
+        return not any(
+            self._needs_refresh(self._resident[k]) for k in sel.draw if k in self._resident
+        )
 
     def finish_loading(
         self, camera: Camera, view_proj, viewport_height: int, timeout_s: float = 120.0
@@ -480,10 +517,17 @@ class TerrainLayer:
         while time.perf_counter() < deadline:
             sel = self._select(camera, view_proj, viewport_height)
             self.last_selection = sel
-            if not sel.request:
+            stale = [
+                k
+                for k in sel.draw
+                if k in self._resident and self._needs_refresh(self._resident[k])
+            ]
+            if not sel.request and not stale:
                 return True
             for key in sel.request:
                 self._submit(key)
+            for key in stale:
+                self._submit(key, refresh=True)
             for future in list(self._in_flight.values()):
                 with contextlib.suppress(Exception):
                     future.result(timeout=max(0.0, deadline - time.perf_counter()))
@@ -541,7 +585,8 @@ class TerrainLayer:
         _set(program, "u_heightmap", 0)
         if not shadow_pass:
             _set(program, "u_log_depth_coef", camera.log_depth_coef)
-            _set(program, "u_imagery", 1)
+            for name, unit in TEXTURE_UNITS.items():
+                _set(program, f"u_{name}", unit)
             _set(program, "u_debug_lod", self.debug_lod)
             if self.store is not None:
                 bind_uniforms(program, self.store)
@@ -569,9 +614,11 @@ class TerrainLayer:
                 if "u_tangent" in program:
                     program["u_tangent"].write(geo.tangent.astype("f4").tobytes())
                 _set(program, "u_zoom", key[0])
-                if node.imagery is not None:
-                    node.imagery.use(1)
-                _set(program, "u_has_imagery", node.imagery is not None)
+                for name, unit in TEXTURE_UNITS.items():
+                    tex = node.textures.get(name)
+                    if tex is not None:
+                        tex.use(unit)
+                    _set(program, f"u_has_{name}", tex is not None)
             vao.render(moderngl.TRIANGLES)
 
     # --- shadows ------------------------------------------------------------------------

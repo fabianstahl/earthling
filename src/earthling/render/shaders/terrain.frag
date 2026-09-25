@@ -12,6 +12,14 @@ out vec4 f_color;
 
 uniform sampler2D u_imagery;
 uniform bool u_has_imagery;
+uniform sampler2D u_topo;
+uniform bool u_has_topo;
+uniform bool u_contours_overlay = false;
+uniform float u_contour_interval = 100.0;
+uniform float u_contour_major = 5.0;
+uniform float u_contour_width = 1.0;
+uniform vec3 u_contour_color = vec3(0.35, 0.2, 0.1);
+uniform float u_contour_opacity = 0.8;
 uniform bool u_debug_lod;
 uniform vec3 u_sun_radiance = vec3(1.4);         // linear, 0 below the horizon
 uniform vec3 u_sky_ambient = vec3(0.2, 0.24, 0.35);
@@ -31,7 +39,21 @@ struct LayerInput {
     float slope;        // degrees
     float aspect;       // degrees clockwise from north (direction the slope faces)
     vec3 imagery;       // sRGB of the node's imagery texture (fallback: hypsometric tint)
+    vec3 topo;          // sRGB of the topographic map texture (fallback: light grey)
 };
+
+// Anti-aliased contour line coverage (0..1) for a height in metres.
+float contour_lines(float height, float interval, float major_every, float width_px) {
+    float f = height / max(interval, 0.1);
+    float fw = max(fwidth(f), 1e-5);
+    float d = abs(fract(f - 0.5) - 0.5) / fw;  // distance to the nearest line in pixels
+    float major = abs(fract(f / max(major_every, 1.0) - 0.5 / max(major_every, 1.0)) - 0.5);
+    float is_major = step(major * max(major_every, 1.0), 0.5);
+    float w = width_px * mix(0.6, 1.4, is_major);
+    // lines fade out where they would get denser than ~3 px
+    float fade = 1.0 - smoothstep(0.25, 0.4, fw);
+    return (1.0 - smoothstep(w * 0.5 - 0.5, w * 0.5 + 0.5, d)) * fade;
+}
 
 #include "layers_generated.glsl"
 
@@ -63,6 +85,7 @@ void main() {
     li.aspect = mod(degrees(atan(li.normal_local.x, li.normal_local.y)) + 360.0, 360.0);
     li.imagery = u_has_imagery ? texture(u_imagery, v_tile_uv).rgb
                                : ramp_hypsometric((v_height - 500.0) / 4000.0);
+    li.topo = u_has_topo ? texture(u_topo, v_tile_uv).rgb : vec3(0.85);
 
     // Hemispherical ambient (sky from above, bounce light from below) + direct sun.
     vec3 ambient = mix(u_ground_ambient, u_sky_ambient, n.z * 0.5 + 0.5);
@@ -76,6 +99,11 @@ void main() {
         vec3 albedo_b = srgb_to_linear(layer_albedo(u_layer_b, li)) * layer_gain(u_layer_b);
         vec3 color_b = albedo_b * mix(flat_light, lit, layer_shading(u_layer_b));
         color = mix(color, color_b, u_layer_mix);
+    }
+    if (u_contours_overlay) {
+        float c = contour_lines(v_height, u_contour_interval, u_contour_major, u_contour_width);
+        vec3 line = srgb_to_linear(u_contour_color) * mix(flat_light, lit, 0.5) * 0.5;
+        color = mix(color, line, c * u_contour_opacity);
     }
     if (u_debug_lod) {
         float edge = step(min(v_tile_uv.x, v_tile_uv.y), 0.004)

@@ -33,18 +33,22 @@ def download_jobs(
     if plan is None:
         return jobs
     if "imagery" in kinds:
-        jobs.append(_imagery_job(session, plan, max_zoom))
+        jobs.append(_tile_job(session.imagery_provider, session, plan, max_zoom))
+    if "topo" in kinds and session.topo_providers:
+        jobs.append(_tile_job(session.topo_providers[0], session, plan, max_zoom))
     if "dem" in kinds:
         jobs.extend(_dem_jobs(session, plan, max_zoom))
     return jobs
 
 
-def _imagery_job(session: Session, plan: TilePlan, max_zoom: int | None) -> DownloadJob:
-    provider = session.imagery_provider
+def _tile_job(provider, session: Session, plan: TilePlan, max_zoom: int | None) -> DownloadJob:
+    """Download the imagery-zone tiles of ``provider`` (capped at its maximum zoom)."""
     tiles = [t for t in plan.tiles("imagery") if max_zoom is None or t[0] <= max_zoom]
     downloader = TileDownloader(provider, session.cache)
     return DownloadJob(
-        f"Imagery ({provider.name})", lambda cb: downloader.run(tiles, cb), downloader.cancel
+        f"{provider.kind.capitalize()} ({provider.name})",
+        lambda cb: downloader.run(tiles, cb),
+        downloader.cancel,
     )
 
 

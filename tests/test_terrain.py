@@ -53,6 +53,9 @@ class FakeTerrainData:
     def heightmap_for(self, key):
         return HeightmapRef(key, self.heights, 256.0, (0.0, 0.0))
 
+    def texture_for(self, key, source="imagery"):
+        return self.imagery_for(key) if source == "imagery" else None
+
     def imagery_for(self, key):
         rgb = np.zeros((64, 64, 3), dtype=np.uint8)
         rgb[..., 1] = 200

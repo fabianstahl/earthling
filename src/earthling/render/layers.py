@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from earthling.core.properties import PropertyDef, PType
-from earthling.render.parameters import boolean, enum, flt, section
+from earthling.render.parameters import boolean, color, enum, flt, section
 
 RAMPS = [("hypsometric", "Hypsometric"), ("viridis", "Viridis"), ("turbo", "Turbo"),
          ("grayscale", "Grayscale")]  # fmt: skip
@@ -65,6 +65,27 @@ LAYERS: list[Layer] = [
         flt("layer_satellite.saturation", "Saturation", 1.0, 0.0, 2.5, uniform="u_sat_saturation"),
         gain=1.0,
         tile_source="imagery",
+    ),
+    _layer(
+        "topo",
+        "Topographic map",
+        """
+    vec3 c = li.topo;
+    float grey = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    return clamp(mix(vec3(grey), c, u_topo_saturation), 0.0, 1.0);""",
+        flt("layer_topo.saturation", "Saturation", 1.0, 0.0, 2.0, uniform="u_topo_saturation"),
+        shading=0.5,
+        gain=0.6,
+        tile_source="topo",
+    ),
+    _layer(
+        "contours",
+        "Contour map",
+        """
+    float c = contour_lines(li.height, u_contour_interval, u_contour_major, u_contour_width);
+    return mix(u_cmap_paper, u_contour_color, c);""",
+        color("layer_contours.paper", "Paper colour", (0.96, 0.94, 0.88), uniform="u_cmap_paper"),
+        shading=0.7,
     ),
     _layer(
         "elevation",
@@ -183,6 +204,31 @@ LAYERS: list[Layer] = [
 LAYER_IDS = [layer.id for layer in LAYERS]
 
 
+CONTOURS = section(
+    "Contour Lines",
+    boolean("contours.overlay", "Overlay on any layer", False, uniform="u_contours_overlay"),
+    flt("contours.interval", "Interval", 100.0, 5.0, 1000.0, step=5.0, decimals=0, unit="m",
+        logarithmic=True, uniform="u_contour_interval"),
+    flt("contours.major", "Major line every", 5.0, 1.0, 20.0, step=1.0, decimals=0,
+        uniform="u_contour_major"),
+    flt("contours.width", "Line width", 1.2, 0.3, 5.0, step=0.1, decimals=1, unit="px",
+        uniform="u_contour_width"),
+    color("contours.color", "Line colour", (0.45, 0.25, 0.12), uniform="u_contour_color"),
+    flt("contours.opacity", "Overlay opacity", 0.8, 0.0, 1.0, uniform="u_contour_opacity"),
+)  # fmt: skip
+
+
+def required_tile_sources(layer_a: str, layer_b: str, mix: float) -> frozenset[str]:
+    """Tile sources the terrain nodes must provide for the current slot selection."""
+    by_id = {layer.id: layer for layer in LAYERS}
+    needed = {"imagery"}  # also the fallback colour of several layers
+    for layer_id, active in ((layer_a, mix < 1.0), (layer_b, mix > 0.0)):
+        source = by_id[layer_id].tile_source if layer_id in by_id else None
+        if active and source:
+            needed.add(source)
+    return frozenset(needed)
+
+
 def layer_properties() -> list[PropertyDef]:
     options = [(layer.id, layer.label) for layer in LAYERS]
     slots = section(
@@ -191,7 +237,7 @@ def layer_properties() -> list[PropertyDef]:
         enum("layers.b", "Layer B", "elevation", options, uniform="u_layer_b"),
         flt("layers.mix", "Blend A → B", 0.0, 0.0, 1.0, uniform="u_layer_mix"),
     )
-    props = list(slots)
+    props = list(slots) + list(CONTOURS)
     for layer in LAYERS:
         props.extend(layer.properties)
     return props

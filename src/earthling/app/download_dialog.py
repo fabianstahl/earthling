@@ -83,8 +83,14 @@ class DownloadDialog(QDialog):
             f"(≈ {format_bytes(plan.estimated_bytes('dem'))})"
         )
         self.dem_box.setChecked(True)
+        self.topo_box = QCheckBox(
+            "Topographic map tiles (otherwise downloaded on demand, slowly: max 2 requests/s)"
+        )
+        self.topo_box.setChecked(False)
+        self.topo_box.setEnabled(bool(session.topo_providers))
         layout.addWidget(self.imagery_box)
         layout.addWidget(self.dem_box)
+        layout.addWidget(self.topo_box)
         layout.addWidget(QLabel(f"Cache: {session.cache.root}"))
         self.status = QLabel("Idle")
         layout.addWidget(self.status)
@@ -114,6 +120,8 @@ class DownloadDialog(QDialog):
             kinds.add("imagery")
         if self.dem_box.isChecked():
             kinds.add("dem")
+        if self.topo_box.isChecked():
+            kinds.add("topo")
         jobs = self.jobs_factory(kinds)
         if not jobs:
             return
