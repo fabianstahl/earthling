@@ -115,12 +115,14 @@ class Viewport(QOpenGLWidget):
         if reframe:
             self.frame_all()
 
-    def set_terrain_source(self, data, nodes) -> None:
+    def set_terrain_source(self, data, nodes, labels=None) -> None:
+        """``labels``: LabelData of the area (optional)."""
         if self.renderer is None:
-            self._pending_terrain = (data, nodes)
+            self._pending_terrain = (data, nodes, labels)
             return
         self.makeCurrent()
         self.renderer.set_terrain_source(data, nodes)
+        self.renderer.set_labels(labels)
         self.doneCurrent()
         self.request_render()
 
@@ -343,7 +345,9 @@ class Viewport(QOpenGLWidget):
             if not self._camera_restored:
                 self.frame_all()
         if self._pending_terrain is not None:
-            self.renderer.set_terrain_source(*self._pending_terrain)
+            data, nodes, labels = self._pending_terrain
+            self.renderer.set_terrain_source(data, nodes)
+            self.renderer.set_labels(labels)
             self._pending_terrain = None
         if self._pending_outlines is not None:
             self.renderer.outlines.set_lines(self._pending_outlines)
@@ -489,6 +493,8 @@ class Viewport(QOpenGLWidget):
             and s["progress.head"] < 1
         ):
             return True  # the pulsing marker is animated
+        if self.renderer is not None and self.renderer.labels.loading:
+            return True  # labels appear when their download finishes
         t = self.renderer.terrain if self.renderer is not None else None
         return (
             t is not None and t.nodes is not None and (t.pending_count > 0 or not t.fully_loaded())

@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("project", help="project folder")
     fetch = sub.add_parser("fetch", help="download the tiles of a project into the cache")
     fetch.add_argument("project", help="project folder")
-    fetch.add_argument("--kind", choices=["imagery", "dem", "topo", "all"], default="all")
+    fetch.add_argument("--kind", choices=["imagery", "dem", "topo", "labels", "all"], default="all")
     fetch.add_argument("--max-zoom", type=int, default=None, help="limit the finest zoom level")
     render = sub.add_parser("render", help="render the animation of a scene to a video file")
     render.add_argument("project", help="project folder")
@@ -128,6 +128,7 @@ def cmd_render(args) -> int:
     renderer.set_terrain_source(session.terrain_data(), session.terrain_nodes())
     renderer.store = scene.store
     renderer.timezone = session.config.project.timezone
+    renderer.set_labels(session.labels, session)
     frames = FrameRenderer(renderer, anim)
     started = time.monotonic()
 
@@ -194,7 +195,7 @@ def cmd_fetch(project_dir: str, kind: str, max_zoom: int | None) -> int:
     session = _load_session(project_dir)
     if session is None:
         return 1
-    kinds = {"imagery", "dem"} if kind == "all" else {kind}
+    kinds = {"imagery", "dem", "labels"} if kind == "all" else {kind}
     status = 0
     print(f"cache: {session.cache.root}")
     for job in download_jobs(session, kinds, max_zoom):

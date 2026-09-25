@@ -166,6 +166,15 @@ class Session:
         return "\n".join(lines)
 
     @cached_property
+    def labels(self):
+        """OpenStreetMap label features of the area (loaded on demand)."""
+        from earthling.data.labels import LabelData
+
+        if self.aoi is None:
+            return None
+        return LabelData(self.cache, self.aoi.bounds)
+
+    @cached_property
     def borders(self):
         from earthling.data.borders import BorderData
 

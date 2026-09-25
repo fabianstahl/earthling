@@ -22,6 +22,7 @@ from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.bloom import Bloom
 from earthling.render.camera import Camera
+from earthling.render.labels import LabelLayer
 from earthling.render.layers import generate_glsl, required_tile_sources
 from earthling.render.lighting import (
     OPTICAL_DEPTH_UNIT,
@@ -124,6 +125,7 @@ class Renderer:
         self.outlines = OutlineLayer(ctx, self.shaders)
         self.camera_path = OutlineLayer(ctx, self.shaders)  # animated camera path gizmo
         self.marker = MarkerLayer(ctx, self.shaders)
+        self.labels = LabelLayer(ctx, self.shaders)
         self.shadows = ShadowMaps(ctx)
         self.time = 0.0  # animation time in seconds (drives pulsing effects)
         # temporary replacements of property values (preview / export quality)
@@ -149,6 +151,15 @@ class Renderer:
         if self.frame is None:
             return
         self.terrain.set_source(self.frame, data, nodes)
+
+    def set_labels(self, data, session=None) -> None:
+        """Label features (LabelData) plus what enriches them: DEM heights and the tracks."""
+        self.labels.data = data
+        if data is not None:  # the Data > on-demand switch also covers the label download
+            data.allow_download = bool(getattr(self.terrain.data, "on_demand", True))
+        self.labels.enricher = self.labels.make_enricher(
+            self.frame, self.terrain.data, self.tracks.tracks
+        )
 
     def scene_bounds(self):
         return self.terrain.bounds() or self.tracks.bounds
@@ -198,6 +209,8 @@ class Renderer:
         so an exported frame never shows lower-resolution tiles or pop-in."""
         self.reset_state()
         self.apply_properties(camera)
+        if self.store is not None and self.store["labels.visible"]:
+            self.labels.load_sync()
         if not self.terrain.visible:
             return True
         view_proj = camera.view_projection(width / max(1, height))
@@ -251,6 +264,8 @@ class Renderer:
         self.camera_path.render(camera, view_proj)
         bloom = self._render_glow(camera, view_proj, width, height)
         self._tonemap(fbo, *output, bloom)
+        self.labels.render(fbo, camera, view_proj, self.frame, self.terrain.exaggeration,
+                           *output, self.target.depth, (width, height), self.store)  # fmt: skip
         self.reset_state()  # leave the context clean for Qt
 
     def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:

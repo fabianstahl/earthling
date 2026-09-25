@@ -39,6 +39,26 @@ def download_jobs(
                 jobs.append(_tile_job(provider, session, _flatten(tiles, max_zoom)))
             if kind == "topo":
                 break  # further topo providers are fallbacks only (downloaded on demand)
+    if "labels" in kinds and session.labels is not None:
+        labels = session.labels
+
+        def fetch_labels(cb):
+            from earthling.data.downloader import DownloadProgress
+            from earthling.data.labels import download_labels
+
+            progress = DownloadProgress(total=1)
+            try:
+                path = download_labels(session.cache, labels.bounds)
+                progress.downloaded, progress.bytes = 1, path.stat().st_size
+            except Exception as exc:
+                progress.failed = 1
+                progress.errors.append(f"Overpass: {exc}")
+            progress.done = 1
+            if cb:
+                cb(progress)
+            return progress
+
+        jobs.append(DownloadJob("Labels (OpenStreetMap)", fetch_labels, lambda: None))
     if "dem" in kinds:
         for source, tiles in session.provider_tiles("dem"):
             if tiles:

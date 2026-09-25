@@ -236,6 +236,35 @@ GLOW = section(
 )  # fmt: skip
 
 
+LABELS = section(
+    "Labels",
+    boolean("labels.visible", "Show labels", True,
+            tooltip="Peaks, passes, places and huts from OpenStreetMap"),
+    flt("labels.opacity", "Opacity", 1.0, 0.0, 1.0),
+    boolean("labels.peaks", "Peaks", True),
+    boolean("labels.passes", "Passes", True),
+    boolean("labels.places", "Places", True),
+    boolean("labels.huts", "Huts", False),
+    flt("labels.min_elevation", "Minimum elevation", 0.0, 0.0, 5000.0, step=50.0, decimals=0,
+        unit="m", tooltip="Hide peaks, passes and huts below this elevation"),
+    flt("labels.min_prominence", "Minimum prominence", 150.0, 0.0, 2000.0, step=10.0,
+        decimals=0, unit="m",
+        tooltip="Hide minor peaks (estimated drop to the nearest higher peak)"),
+    flt("labels.max_track_distance", "Maximum distance to the track", 0.0, 0.0, 50.0, step=0.5,
+        decimals=1, unit="km", tooltip="Only features near the tracks (0 = no limit)"),
+    flt("labels.max_distance", "Fade-out distance", 30.0, 1.0, 300.0, step=1.0, decimals=0,
+        unit="km", tooltip="Labels fade out towards this distance from the camera"),
+    integer("labels.max_count", "Maximum labels", 40, 1, 300),
+    flt("labels.size", "Text size", 18.0, 6.0, 72.0, step=0.5, decimals=1, unit="px",
+        tooltip="At 1080p; scales with the output resolution"),
+    boolean("labels.elevations", "Show elevations", True),
+    flt("labels.leader", "Leader line", 36.0, 0.0, 200.0, step=1.0, decimals=0, unit="px"),
+    color("labels.color", "Colour", (1.0, 1.0, 1.0)),
+    color("labels.outline_color", "Outline colour", (0.06, 0.06, 0.07)),
+    flt("labels.outline", "Outline", 2.0, 0.0, 8.0, step=0.1, decimals=1, unit="px"),
+)  # fmt: skip
+
+
 def build_registry() -> PropertyRegistry:
     from earthling.render.layers import layer_properties
 
@@ -254,6 +283,7 @@ def build_registry() -> PropertyRegistry:
         TRACKS,
         PROGRESS,
         GLOW,
+        LABELS,
     ):
         registry.extend(group)
     registry.extend(layer_properties())
