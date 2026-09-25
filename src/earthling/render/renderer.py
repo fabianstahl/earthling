@@ -1,21 +1,32 @@
 """Top level scene renderer, independent of Qt.
 
-The scene is drawn into the renderer's own offscreen target (color + depth texture) and then
-copied to the output framebuffer. The viewport widget passes the widget's framebuffer, the
-exporter an offscreen one. Having our own depth texture also makes picking independent of the
-windowing system.
+Frame structure:
+
+1. sky pass (single-scattering atmosphere, sun disc, stars) into the HDR target
+2. scene geometry (terrain, tracks, overlays) into the HDR target (linear radiance)
+3. tonemap pass (exposure, ACES/Reinhard, sRGB, dithering) into the output framebuffer
+
+The viewport passes the widget's framebuffer as output, the exporter an offscreen one. The HDR
+target's depth texture also serves depth picking independent of the windowing system.
 """
 
 from __future__ import annotations
 
 import moderngl
 import numpy as np
+from pyglm import glm
 
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
-from earthling.core.properties import PropertyStore
+from earthling.core.properties import PropertyStore, bind_uniforms
+from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.camera import Camera
-from earthling.render.lighting import Lighting, compute_lighting, lighting_uniforms
+from earthling.render.lighting import (
+    Lighting,
+    compute_lighting,
+    enu_to_celestial,
+    lighting_uniforms,
+)
 from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.terrain import TerrainLayer
@@ -23,7 +34,7 @@ from earthling.render.tracks import TrackLayer
 
 
 class SceneTarget:
-    """Offscreen color + depth render target that follows the output size."""
+    """Offscreen HDR color + depth render target that follows the output size."""
 
     def __init__(self, ctx: moderngl.Context) -> None:
         self.ctx = ctx
@@ -36,7 +47,7 @@ class SceneTarget:
         size = (max(1, width), max(1, height))
         if size != self.size or self.fbo is None:
             self.release()
-            self.color = self.ctx.texture(size, 4)
+            self.color = self.ctx.texture(size, 4, dtype="f2")  # linear HDR radiance
             self.depth = self.ctx.depth_texture(size)
             self.fbo = self.ctx.framebuffer([self.color], self.depth)
             self.size = size
@@ -62,7 +73,7 @@ class Renderer:
     def __init__(self, ctx: moderngl.Context) -> None:
         self.ctx = ctx
         self.shaders = ShaderLibrary(ctx)
-        self.clear_color = (0.55, 0.68, 0.82, 1.0)
+        self.clear_color = (0.0, 0.0, 0.0, 1.0)
         self.frame: LocalFrame | None = None
         self.target = SceneTarget(ctx)
         self.terrain = TerrainLayer(ctx, self.shaders)
@@ -71,27 +82,14 @@ class Renderer:
         self.store: PropertyStore | None = None
         self.timezone = "UTC"
         self.lighting: Lighting | None = None
+        self.camera_height = 1500.0
+        self._fullscreen: dict[str, tuple[moderngl.Program, moderngl.VertexArray]] = {}
+        lut = optical_depth_lut()
+        self.optical_depth = ctx.texture((lut.shape[1], lut.shape[0]), 3, lut.tobytes(), dtype="f4")
+        self.optical_depth.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.optical_depth.repeat_x = self.optical_depth.repeat_y = False
 
-    def apply_properties(self, camera: Camera) -> None:
-        """Push the current property values into the render layers."""
-        s = self.store
-        if s is None:
-            return
-        self.clear_color = (*s["view.background"], 1.0)
-        camera.fov_y = s["view.fov"]
-        if s["terrain.exaggeration"] != self.terrain.exaggeration:
-            self.terrain.exaggeration = s["terrain.exaggeration"]
-            self.terrain.invalidate_bounds()
-        self.terrain.params.pixel_threshold = s["terrain.detail"]
-        self.terrain.memory_budget_mb = s["terrain.memory_budget_mb"]
-        self.terrain.debug_lod = s["terrain.debug_lod"]
-        self.terrain.store = s
-        self.outlines.visible = s["view.show_outlines"]
-        self.tracks.visible = s["tracks.visible"]
-        if self.frame is not None:
-            self.lighting = compute_lighting(s, self.frame.lat, self.frame.lon, self.timezone)
-            self.terrain.lighting_uniforms = lighting_uniforms(self.lighting)
-
+    # --- scene setup ------------------------------------------------------------------
     def set_scene(self, frame: LocalFrame, tracks: list[Track]) -> None:
         self.frame = frame
         self.tracks.set_tracks(tracks, frame)
@@ -105,19 +103,86 @@ class Renderer:
     def scene_bounds(self):
         return self.terrain.bounds() or self.tracks.bounds
 
+    def apply_properties(self, camera: Camera) -> None:
+        """Push the current property values into the render layers."""
+        s = self.store
+        if s is None:
+            return
+        camera.fov_y = s["view.fov"]
+        if s["terrain.exaggeration"] != self.terrain.exaggeration:
+            self.terrain.exaggeration = s["terrain.exaggeration"]
+            self.terrain.invalidate_bounds()
+        self.terrain.params.pixel_threshold = s["terrain.detail"]
+        self.terrain.memory_budget_mb = s["terrain.memory_budget_mb"]
+        self.terrain.debug_lod = s["terrain.debug_lod"]
+        self.terrain.store = s
+        self.outlines.visible = s["view.show_outlines"]
+        self.tracks.visible = s["tracks.visible"]
+        if self.frame is not None:
+            height = float(self.frame.enu_to_geodetic(camera.position)[2])
+            self.camera_height = height
+            self.lighting = compute_lighting(
+                s, self.frame.lat, self.frame.lon, self.timezone, camera_height=height
+            )
+            self.terrain.lighting_uniforms = lighting_uniforms(self.lighting)
+
+    # --- frame ------------------------------------------------------------------------
     def render(self, fbo: moderngl.Framebuffer, width: int, height: int, camera: Camera) -> None:
         self.apply_properties(camera)
         target = self.target.ensure(width, height)
         target.use()
         self.ctx.viewport = (0, 0, width, height)
         target.clear(*self.clear_color, depth=1.0)
-        self.ctx.enable(moderngl.DEPTH_TEST)
         view_proj = camera.view_projection(width / max(1, height))
+        self._render_sky(camera, view_proj, height)
+        self.ctx.enable(moderngl.DEPTH_TEST)
         self.terrain.render(camera, view_proj, height)
         self.tracks.render(camera, view_proj)
         self.outlines.render(camera, view_proj)
-        self.ctx.copy_framebuffer(fbo, target)
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self._tonemap(fbo, width, height)
 
     def read_depth(self, px: int, py: int) -> float | None:
         """Log depth of the last frame at pixel (px, py) (GL convention, y up)."""
         return self.target.read_depth(px, py)
+
+    # --- passes -----------------------------------------------------------------------
+    def _fullscreen_pass(self, name: str) -> moderngl.Program:
+        """Program for a fullscreen triangle; the empty VAO is rebuilt after hot reload."""
+        program = self.shaders.get(name, vertex="fullscreen")
+        cached = self._fullscreen.get(name)
+        if cached is None or cached[0] is not program:
+            self._fullscreen[name] = (program, self.ctx.vertex_array(program, []))
+        return program
+
+    def _draw_fullscreen(self, name: str) -> None:
+        self._fullscreen[name][1].render(moderngl.TRIANGLES, vertices=3)
+
+    def _render_sky(self, camera: Camera, view_proj, height: int) -> None:
+        if self.lighting is None or self.frame is None:
+            return
+        program = self._fullscreen_pass("sky")
+        program["u_inv_view_proj"].write(glm.inverse(view_proj))
+        program["u_sun_dir"] = self.lighting.sun_direction
+        program["u_camera_height"] = self.camera_height
+        program["u_night"] = self.lighting.night
+        program["u_pixel_angle"] = float(np.radians(camera.fov_y)) / max(1, height)
+        m = enu_to_celestial(self.lighting.when, self.frame.lat, self.frame.lon)
+        program["u_to_celestial"].write(m.T.astype("f4").tobytes())  # column-major
+        self.optical_depth.use(2)
+        program["u_optical_depth"] = 2
+        if self.store is not None:
+            bind_uniforms(program, self.store)
+        self._draw_fullscreen("sky")
+
+    def _tonemap(self, fbo: moderngl.Framebuffer, width: int, height: int) -> None:
+        program = self._fullscreen_pass("tonemap")
+        fbo.use()
+        self.ctx.viewport = (0, 0, width, height)
+        assert self.target.color is not None
+        self.target.color.use(0)
+        program["u_hdr"] = 0
+        if self.store is not None:
+            bind_uniforms(program, self.store)
+            program["u_exposure"] = 2.0 ** self.store["post.exposure"]
+        self._draw_fullscreen("tonemap")

@@ -5,5 +5,5 @@ out vec4 f_color;
 
 void main() {
     write_log_depth(v_log_z);
-    f_color = u_color;
+    f_color = vec4(pow(u_color.rgb, vec3(2.2)), u_color.a);  // sRGB -> linear
 }

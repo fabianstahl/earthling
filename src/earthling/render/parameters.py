@@ -48,7 +48,6 @@ VIEW = section(
     flt("view.fov", "Field of view", 50.0, 10.0, 120.0, step=0.5, decimals=1, unit="°"),
     boolean("view.show_outlines", "Area outlines", True, animatable=False,
             tooltip="Show the area of interest and resolution zone outlines"),
-    color("view.background", "Background", (0.55, 0.68, 0.82)),
 )  # fmt: skip
 
 TERRAIN = section(
@@ -80,8 +79,30 @@ SUN = section(
 LIGHT = section(
     "Lighting",
     flt("light.ambient", "Sky ambient", 0.45, 0.0, 3.0),
+    flt("light.night_ambient", "Night ambient", 1.0, 0.0, 10.0,
+        tooltip="Brightness of moon/starlight on the terrain at night"),
     color("light.sky_color", "Sky ambient color", (0.62, 0.72, 0.92)),
     color("light.ground_color", "Ground bounce color", (0.45, 0.4, 0.33)),
+)  # fmt: skip
+
+SKY = section(
+    "Sky & Atmosphere",
+    flt("sky.illuminance", "Sky brightness", 20.0, 0.0, 100.0, step=0.5, decimals=1,
+        uniform="u_sun_illuminance"),
+    flt("sky.rayleigh", "Air density", 1.0, 0.0, 4.0, uniform="u_rayleigh_scale",
+        tooltip="Rayleigh scattering: blue sky, red sunsets"),
+    flt("sky.haze", "Haze", 1.0, 0.0, 10.0, uniform="u_mie_scale",
+        tooltip="Mie scattering by aerosols: whitish haze and glow around the sun"),
+    flt("sky.sun_disc", "Sun disc", 1.0, 0.0, 5.0, uniform="u_sun_disc"),
+    flt("sky.stars", "Star brightness", 1.0, 0.0, 10.0, uniform="u_star_brightness"),
+)  # fmt: skip
+
+POST = section(
+    "Camera & Tonemapping",
+    flt("post.exposure", "Exposure", 0.0, -8.0, 8.0, step=0.1, decimals=1, unit="EV"),
+    enum("post.tonemap", "Tonemapping", "aces",
+         [("aces", "ACES filmic"), ("reinhard", "Reinhard"), ("none", "None (clip)")],
+         uniform="u_tonemap"),
 )  # fmt: skip
 
 TRACKS = section(
@@ -92,6 +113,6 @@ TRACKS = section(
 
 def build_registry() -> PropertyRegistry:
     registry = PropertyRegistry()
-    for group in (VIEW, TERRAIN, SUN, LIGHT, TRACKS):
+    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SKY, TRACKS):
         registry.extend(group)
     return registry

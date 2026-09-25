@@ -18,7 +18,6 @@ uniform vec3 u_ground_ambient = vec3(0.1, 0.08, 0.06);
 uniform int u_zoom;
 
 vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
-vec3 linear_to_srgb(vec3 c) { return pow(max(c, 0.0), vec3(1.0 / 2.2)); }
 
 vec3 elevation_ramp(float h) {
     const vec3 c0 = vec3(0.18, 0.35, 0.18);  //  500 m
@@ -52,5 +51,5 @@ void main() {
     // Hemispherical ambient (sky from above, bounce light from below) + direct sun.
     vec3 ambient = mix(u_ground_ambient, u_sky_ambient, n.z * 0.5 + 0.5);
     vec3 color = albedo * (ambient + u_sun_radiance * diffuse);
-    f_color = vec4(linear_to_srgb(color), 1.0);
+    f_color = vec4(color, 1.0);  // linear HDR radiance
 }

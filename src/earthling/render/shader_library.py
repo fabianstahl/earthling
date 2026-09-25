@@ -61,6 +61,7 @@ def preprocess(
 class _Entry:
     name: str
     defines: dict[str, object]
+    vertex: str | None = None  # use <vertex>.vert instead of <name>.vert
     program: moderngl.Program | None = None
     deps: set[Path] = field(default_factory=set)
     listeners: list[Callable[[moderngl.Program], None]] = field(default_factory=list)
@@ -70,19 +71,21 @@ class ShaderLibrary:
     def __init__(self, ctx: moderngl.Context, shader_dir: Path = SHADER_DIR) -> None:
         self.ctx = ctx
         self.shader_dir = shader_dir
-        self._entries: dict[tuple[str, tuple], _Entry] = {}
+        self._entries: dict[tuple, _Entry] = {}
 
     def get(
         self,
         name: str,
         defines: dict[str, object] | None = None,
         on_reload: Callable[[moderngl.Program], None] | None = None,
+        vertex: str | None = None,
     ) -> moderngl.Program:
+        """``vertex``: share another program's vertex shader (e.g. "fullscreen")."""
         defines = dict(defines or {})
-        key = (name, tuple(sorted(defines.items())))
+        key = (name, vertex, tuple(sorted(defines.items())))
         entry = self._entries.get(key)
         if entry is None:
-            entry = _Entry(name, defines)
+            entry = _Entry(name, defines, vertex)
             entry.program = self._compile(entry)
             self._entries[key] = entry
         if on_reload is not None:
@@ -98,7 +101,8 @@ class ShaderLibrary:
             ("fragment_shader", "frag"),
             ("geometry_shader", "geom"),
         ):
-            path = self.shader_dir / f"{entry.name}.{ext}"
+            base = entry.vertex if (ext == "vert" and entry.vertex) else entry.name
+            path = self.shader_dir / f"{base}.{ext}"
             if not path.exists():
                 continue
             deps.add(path.resolve())
