@@ -255,7 +255,7 @@ class CollapsibleSection(QWidget):
         layout.setContentsMargins(0, 0, 0, 4)
         layout.setSpacing(2)
         self.header = QToolButton()
-        self.header.setText(title)
+        self.header.setText(title.replace("&", "&&"))  # no mnemonics
         self.header.setCheckable(True)
         self.header.setChecked(True)
         self.header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)

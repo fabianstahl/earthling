@@ -14,6 +14,7 @@ def test_roundtrip(tmp_path):
     scene = Scene()
     scene.store.set("terrain.exaggeration", 2.5)
     scene.camera = {"position": [1, 2, 3], "heading": 10, "pitch": -5}
+    scene.mark_dirty()
     assert scene.dirty
     path = scene.save(tmp_path / "s.json")
     assert not scene.dirty
@@ -68,7 +69,7 @@ def test_window_saves_and_restores_scene(qtbot, tmp_path):
     window = MainWindow()
     qtbot.addWidget(window)
     assert window.open_project(project)
-    window.scene.store.set("sun.azimuth_offset", 42.0)
+    window.set_property("sun.azimuth_offset", 42.0)
     window.viewport.camera.position = np.array([10.0, 20.0, 3000.0])
     window.viewport.camera.heading = 77.0
     window.viewport.mode = window.viewport.FLY

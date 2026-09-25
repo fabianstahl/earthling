@@ -54,7 +54,8 @@ class Scene:
         self.path: Path | None = None
         self.dirty = False
         self._dirty_listeners: list[Callable[[bool], None]] = []
-        self.store.subscribe(lambda pid, value: self.mark_dirty())
+        # Note: store changes do not mark the scene dirty by themselves (animation playback
+        # changes the store all the time); editors mark it via the undo stack / mark_dirty().
 
     # --- dirty state ------------------------------------------------------------------
     def mark_dirty(self, dirty: bool = True) -> None:

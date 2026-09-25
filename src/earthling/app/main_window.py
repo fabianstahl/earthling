@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from PyQt6.QtCore import QByteArray, QSettings, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QKeySequence, QUndoStack
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack
 from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -21,6 +21,7 @@ from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
 from earthling.app.goto_dialog import GoToDialog
 from earthling.app.plan_dialog import PlanDialog
+from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.undo import set_property
 from earthling.app.viewport import Viewport
@@ -30,6 +31,7 @@ from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
 from earthling.core.session import Session
 from earthling.data.jobs import download_jobs
 from earthling.ui.property_panel import PropertyPanel
+from earthling.ui.timeline_widget import TimelineWidget
 
 MAX_RECENT = 8
 
@@ -68,8 +70,19 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.history_dock)
         self.history_dock.hide()
         self.view_menu.addAction(self.history_dock.toggleViewAction())
+        self.timeline = TimelineController(self.scene.animation, self)
+        self.timeline_dock = QDockWidget("Timeline", self)
+        self.timeline_dock.setObjectName("TimelineDock")
+        self.timeline_widget = TimelineWidget(self.timeline)
+        self.timeline_dock.setWidget(self.timeline_widget)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
+        self.view_menu.addAction(self.timeline_dock.toggleViewAction())
+        self.timeline.settings_changed.connect(lambda: self.scene.mark_dirty())
         self.tracks_dock = TracksDock(self)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.tracks_dock)
+        self.tabifyDockWidget(self.timeline_dock, self.tracks_dock)
+        self.timeline_dock.raise_()
+        self._install_timeline_shortcuts()
         self.view_menu.addAction(self.tracks_dock.toggleViewAction())
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
         self.tracks_changed.connect(self.viewport.request_render)
@@ -148,6 +161,18 @@ class MainWindow(QMainWindow):
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
 
+    def _install_timeline_shortcuts(self) -> None:
+        for key, slot in (
+            ("Space", self.timeline.toggle),
+            (",", lambda: self.timeline.step(-1)),
+            (".", lambda: self.timeline.step(1)),
+            ("Ctrl+Home", self.timeline.go_start),
+            ("Ctrl+End", self.timeline.go_end),
+        ):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(slot)
+
     def set_property(self, pid: str, value, interactive: bool = False) -> None:
         """All interactive property edits go through the undo stack."""
         set_property(self.undo_stack, self.scene.store, pid, value, interactive)
@@ -210,6 +235,9 @@ class MainWindow(QMainWindow):
         else:
             self.scene.reset(scene_path)
             self._init_new_scene(session)
+            self.timeline.settings_changed.emit()
+            self.timeline.set_time(0.0)
+            self.scene.mark_dirty(False)
             self.undo_stack.clear()
             self._update_title()
         self.statusBar().showMessage(
@@ -235,6 +263,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Cannot open scene", str(exc))
             return False
         self.undo_stack.clear()
+        self.timeline.pause()
+        self.timeline.settings_changed.emit()
+        self.timeline.set_time(0.0)
+        self.scene.mark_dirty(False)
         if self.scene.camera:
             self.viewport.restore_camera_state(self.scene.camera)
         self._restore_ui_state()
