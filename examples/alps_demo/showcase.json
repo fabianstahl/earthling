@@ -3,6 +3,7 @@
   "properties": {
     "view.fov": 50.0,
     "view.show_outlines": false,
+    "view.preview": false,
     "camera.pose": [
       0.0,
       -5000.0,
@@ -24,6 +25,9 @@
     "follow.angle": 0.0,
     "follow.lag": 1.0,
     "follow.look_ahead": 300.0,
+    "export.resolution": "3840x2160",
+    "export.detail": 0.75,
+    "export.shadow_resolution": "8192",
     "post.exposure": 0.0,
     "post.tonemap": "aces",
     "terrain.exaggeration": 1.0,
@@ -109,6 +113,59 @@
     "glow.intensity": 0.8,
     "glow.radius": 1.0,
     "glow.levels": 6,
+    "labels.visible": true,
+    "labels.opacity": 1.0,
+    "labels.peaks": true,
+    "labels.passes": true,
+    "labels.places": true,
+    "labels.huts": false,
+    "labels.min_elevation": 0.0,
+    "labels.min_prominence": 150.0,
+    "labels.max_track_distance": 0.0,
+    "labels.max_distance": 30.0,
+    "labels.max_count": 40,
+    "labels.size": 18.0,
+    "labels.elevations": true,
+    "labels.leader": 36.0,
+    "labels.color": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "labels.outline_color": [
+      0.06,
+      0.06,
+      0.07
+    ],
+    "labels.outline": 2.0,
+    "stats.visible": true,
+    "stats.opacity": 1.0,
+    "stats.position": "bottom_left",
+    "stats.scale": 1.0,
+    "stats.scope": "hike",
+    "stats.show_day": true,
+    "stats.show_date": true,
+    "stats.show_time": true,
+    "stats.date_format": "long",
+    "stats.show_distance": true,
+    "stats.show_ascent": true,
+    "stats.show_elevation": true,
+    "stats.profile": true,
+    "stats.profile_width": 420.0,
+    "stats.profile_height": 90.0,
+    "stats.text_color": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "stats.accent_color": [
+      1.0,
+      0.55,
+      0.2
+    ],
+    "stats.background": 0.35,
+    "stats.outline": 0.6,
+    "stats.attribution": true,
     "layers.a": "satellite",
     "layers.b": "elevation",
     "layers.mix": 0.0,
@@ -387,6 +444,23 @@
           "t": 28.0,
           "v": 4.0,
           "interp": "linear"
+        }
+      ],
+      "stats.opacity": [
+        {
+          "t": 0.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 1.0,
+          "v": 0.0,
+          "interp": "ease_in_out"
+        },
+        {
+          "t": 2.5,
+          "v": 1.0,
+          "interp": "ease_in_out"
         }
       ]
     }

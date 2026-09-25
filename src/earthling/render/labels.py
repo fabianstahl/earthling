@@ -213,6 +213,12 @@ class LabelLayer:
         self.enricher = None  # callable(features) run once after loading (DEM, tracks)
         self.last_drawn = 0  # labels drawn in the last frame (tests, status)
 
+    def get_atlas(self) -> FontAtlas:
+        """The font atlas (shared with the stats overlay)."""
+        if self.atlas is None:
+            self.atlas = FontAtlas(self.ctx)
+        return self.atlas
+
     # --- data ---------------------------------------------------------------------------
     @property
     def loading(self) -> bool:

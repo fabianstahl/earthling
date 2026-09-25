@@ -152,6 +152,20 @@ class Session:
             out.append((provider, tiles))
         return out
 
+    def attribution(self) -> str:
+        """Credits of the data sources in use (for the stats overlay)."""
+        parts = []
+        for kind in ("imagery", "dem"):
+            for provider, tiles in self.provider_tiles(kind):
+                text = provider.license.attribution
+                if tiles and text and text not in parts:
+                    parts.append(text)
+        if self.labels is not None:
+            from earthling.data.labels import ATTRIBUTION
+
+            parts.append(ATTRIBUTION)
+        return " · ".join(parts)
+
     def provider_report(self) -> str:
         from earthling.core.aoi import AVG_TILE_BYTES, format_bytes
 

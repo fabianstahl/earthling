@@ -29,6 +29,32 @@ def haversine_m(lat1, lon1, lat2, lon2) -> np.ndarray:
     return 2 * EARTH_RADIUS_M * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
 
 
+def cumulative_ascent_descent(
+    elevation: np.ndarray, threshold: float = ELEVATION_HYSTERESIS_M
+) -> tuple[np.ndarray, np.ndarray]:
+    """Running totals of ascent and descent per point (same hysteresis as
+    :func:`ascent_descent`; NaN elevations are skipped)."""
+    n = len(elevation)
+    ascent = np.zeros(n)
+    descent = np.zeros(n)
+    up = down = 0.0
+    ref = None
+    for i, value in enumerate(elevation):
+        if np.isfinite(value):
+            if ref is None:
+                ref = value
+            else:
+                delta = value - ref
+                if delta >= threshold:
+                    up += delta
+                    ref = value
+                elif delta <= -threshold:
+                    down -= delta
+                    ref = value
+        ascent[i], descent[i] = up, down
+    return ascent, descent
+
+
 def ascent_descent(elevation: np.ndarray, threshold: float = ELEVATION_HYSTERESIS_M):
     """Total ascent and descent using a hysteresis filter against GPS noise."""
     ele = elevation[~np.isnan(elevation)]

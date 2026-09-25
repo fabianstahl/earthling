@@ -22,6 +22,7 @@ from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.bloom import Bloom
 from earthling.render.camera import Camera
+from earthling.render.hud import HudLayer
 from earthling.render.labels import LabelLayer
 from earthling.render.layers import generate_glsl, required_tile_sources
 from earthling.render.lighting import (
@@ -126,6 +127,7 @@ class Renderer:
         self.camera_path = OutlineLayer(ctx, self.shaders)  # animated camera path gizmo
         self.marker = MarkerLayer(ctx, self.shaders)
         self.labels = LabelLayer(ctx, self.shaders)
+        self.hud = HudLayer(ctx, self.shaders, self.labels.get_atlas)
         self.shadows = ShadowMaps(ctx)
         self.time = 0.0  # animation time in seconds (drives pulsing effects)
         # temporary replacements of property values (preview / export quality)
@@ -266,6 +268,8 @@ class Renderer:
         self._tonemap(fbo, *output, bloom)
         self.labels.render(fbo, camera, view_proj, self.frame, self.terrain.exaggeration,
                            *output, self.target.depth, (width, height), self.store)  # fmt: skip
+        self.hud.render(fbo, *output, self.store, self.tracks.path, self.tracks.head_m,
+                        self.timezone)  # fmt: skip
         self.reset_state()  # leave the context clean for Qt
 
     def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:

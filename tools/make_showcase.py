@@ -66,6 +66,12 @@ def build(frame) -> Scene:
         anim.set_key("fog.density", t, value, Interp.EASE_IN_OUT)
     for t, value in ((0.0, 1.0), (22.0, 1.0), (28.0, 4.0)):
         anim.set_key("tracks.glow", t, value)
+    # overlays: labels (on by default), stats fading in once the hike starts, credits
+    store.set("stats.visible", True)
+    store.set("stats.show_time", True)
+    store.set("stats.attribution", True)
+    for t, value in ((0.0, 0.0), (1.0, 0.0), (2.5, 1.0)):
+        anim.set_key("stats.opacity", t, value, Interp.EASE_IN_OUT)
     return scene
 
 

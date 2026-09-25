@@ -453,7 +453,10 @@ class MainWindow(QMainWindow):
         if self.session is None:
             return
         self.viewport.set_terrain_source(
-            self.session.terrain_data(), self.session.terrain_nodes(), self.session.labels
+            self.session.terrain_data(),
+            self.session.terrain_nodes(),
+            self.session.labels,
+            self.session.attribution(),
         )
         if reframe:
             self.viewport.frame_all()

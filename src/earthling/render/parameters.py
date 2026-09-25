@@ -265,6 +265,39 @@ LABELS = section(
 )  # fmt: skip
 
 
+STATS = section(
+    "Stats Overlay",
+    boolean("stats.visible", "Show stats", False,
+            tooltip="Day, date, distance, ascent, elevation and profile at the hike progress"),
+    flt("stats.opacity", "Opacity", 1.0, 0.0, 1.0),
+    enum("stats.position", "Position", "bottom_left",
+         [("bottom_left", "Bottom left"), ("bottom_right", "Bottom right"),
+          ("top_left", "Top left"), ("top_right", "Top right")]),
+    flt("stats.scale", "Size", 1.0, 0.4, 3.0, step=0.05),
+    enum("stats.scope", "Totals and profile", "hike",
+         [("hike", "Whole hike"), ("day", "Current day")]),
+    boolean("stats.show_day", "Day number", True),
+    boolean("stats.show_date", "Date", True),
+    boolean("stats.show_time", "Time of day", False),
+    enum("stats.date_format", "Date format", "long",
+         [("long", "14 July 2026"), ("short", "14 Jul"), ("iso", "2026-07-14")]),
+    boolean("stats.show_distance", "Distance", True),
+    boolean("stats.show_ascent", "Ascent", True),
+    boolean("stats.show_elevation", "Elevation", True),
+    boolean("stats.profile", "Elevation profile", True),
+    flt("stats.profile_width", "Profile width", 420.0, 100.0, 1600.0, step=10.0, decimals=0,
+        unit="px"),
+    flt("stats.profile_height", "Profile height", 90.0, 30.0, 400.0, step=5.0, decimals=0,
+        unit="px"),
+    color("stats.text_color", "Text colour", (1.0, 1.0, 1.0)),
+    color("stats.accent_color", "Accent colour", (1.0, 0.55, 0.2)),
+    flt("stats.background", "Background", 0.35, 0.0, 1.0),
+    flt("stats.outline", "Text shadow", 0.6, 0.0, 1.0),
+    boolean("stats.attribution", "Data attribution", False,
+            tooltip="Credits for the imagery, elevation and label data (bottom right)"),
+)  # fmt: skip
+
+
 def build_registry() -> PropertyRegistry:
     from earthling.render.layers import layer_properties
 
@@ -284,6 +317,7 @@ def build_registry() -> PropertyRegistry:
         PROGRESS,
         GLOW,
         LABELS,
+        STATS,
     ):
         registry.extend(group)
     registry.extend(layer_properties())

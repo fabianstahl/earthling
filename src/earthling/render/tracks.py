@@ -85,8 +85,10 @@ class TrackGeometryOptions:
 @dataclass
 class TrackSegmentGeometry:
     enu: np.ndarray  # (n, 3) float64
-    dist: np.ndarray  # (n,) metres along the track
+    dist: np.ndarray  # (n,) metres along the drawn (exaggerated) track
     time: np.ndarray  # (n,) seconds since the epoch, NaN where unknown
+    ele: np.ndarray | None = None  # (n,) true elevation (no exaggeration / offset)
+    ground: np.ndarray | None = None  # (n,) metres actually walked (3D, true heights)
 
 
 def build_track_positions(
@@ -98,6 +100,7 @@ def build_track_positions(
     """
     result = []
     distance_offset = 0.0
+    ground_offset = 0.0
     for seg in track.segments:
         idx = resample_indices(seg.lat, seg.lon, options.spacing_m)
         lat, lon, ele = seg.lat[idx], seg.lon[idx], seg.ele[idx]
@@ -117,12 +120,21 @@ def build_track_positions(
         lon = smooth(lon, options.smoothing)
         if options.elevation_source != "dem":
             h = smooth(h, options.smoothing)
+        true_h = h
         h = h * options.exaggeration + options.height_offset_m
         enu = frame.geodetic_to_enu(lat, lon, h)
         steps = np.linalg.norm(np.diff(enu, axis=0), axis=1)
         dist = distance_offset + np.concatenate([[0.0], np.cumsum(steps)])
         distance_offset = float(dist[-1])
-        result.append(TrackSegmentGeometry(enu, dist, seconds))
+        if options.exaggeration != 1.0:
+            true_steps = np.linalg.norm(
+                np.diff(frame.geodetic_to_enu(lat, lon, true_h), axis=0), axis=1
+            )
+        else:
+            true_steps = steps
+        ground = ground_offset + np.concatenate([[0.0], np.cumsum(true_steps)])
+        ground_offset = float(ground[-1])
+        result.append(TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground))
     return result
 
 
@@ -165,6 +177,8 @@ class _GpuTrack:
     enu: np.ndarray | None = None  # all points (float64), for head positions
     dist: np.ndarray | None = None
     time: np.ndarray | None = None
+    ele: np.ndarray | None = None  # true elevations
+    ground: np.ndarray | None = None  # walked distance within the track
 
 
 class ProgressPath:
@@ -173,12 +187,22 @@ class ProgressPath:
     def __init__(self, tracks: list[_GpuTrack]) -> None:
         self.tracks = tracks
         self.total_m = tracks[-1].offset_m + tracks[-1].length_m if tracks else 0.0
-        dists, times = [], []
+        dists, times, eles, grounds, owners = [], [], [], [], []
+        ground_offset = 0.0
         for g in tracks:
             dists.append(g.dist + g.offset_m)
             times.append(g.time)
+            n = len(g.dist)
+            eles.append(g.ele if g.ele is not None else np.full(n, np.nan))
+            ground = g.ground if g.ground is not None else g.dist
+            grounds.append(ground + ground_offset)
+            ground_offset += float(ground[-1]) if n else 0.0
+            owners.append(np.full(n, g.index))
         self.dist = np.concatenate(dists) if dists else np.zeros(0)
         self.time = np.concatenate(times) if times else np.zeros(0)
+        self.ele = np.concatenate(eles) if eles else np.zeros(0)  # true elevation per point
+        self.ground = np.concatenate(grounds) if grounds else np.zeros(0)  # walked metres
+        self.track_index = np.concatenate(owners) if owners else np.zeros(0, dtype=int)
         valid = np.isfinite(self.time)
         # time mode needs monotonic timestamps; otherwise fall back to distance
         self.has_time = bool(valid.sum() >= 2) and bool(np.all(np.diff(self.time[valid]) >= 0))
@@ -273,6 +297,8 @@ class TrackLayer:
                 enu=np.vstack([s.enu for s in segments]),
                 dist=np.concatenate([s.dist for s in segments]),
                 time=np.concatenate([s.time for s in segments]),
+                ele=np.concatenate([s.ele for s in segments]),
+                ground=np.concatenate([s.ground for s in segments]),
             )
             offset += gpu.length_m
             self._gpu.append(gpu)
