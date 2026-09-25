@@ -34,12 +34,22 @@ def preprocess(
     defines: dict[str, object] | None = None,
     deps: set[Path] | None = None,
     _stack: tuple[Path, ...] = (),
+    virtual: dict[str, str] | None = None,
 ) -> str:
-    """Resolve includes recursively and prepend the version line and defines."""
+    """Resolve includes recursively and prepend the version line and defines.
+
+    ``virtual`` maps include names to generated sources (checked before the file system).
+    """
 
     def resolve(text: str, stack: tuple[Path, ...]) -> str:
         def repl(match: re.Match[str]) -> str:
-            path = (base_dir / match.group(1)).resolve()
+            name = match.group(1)
+            if virtual and name in virtual:
+                marker = Path(f"<virtual>/{name}")
+                if marker in stack:
+                    raise ShaderError(f"recursive include of {name}")
+                return resolve(virtual[name], (*stack, marker))
+            path = (base_dir / name).resolve()
             if path in stack:
                 raise ShaderError(f"recursive include of {path.name}")
             if not path.exists():
@@ -72,6 +82,11 @@ class ShaderLibrary:
         self.ctx = ctx
         self.shader_dir = shader_dir
         self._entries: dict[tuple, _Entry] = {}
+        self.virtual: dict[str, str] = {}
+
+    def register_virtual(self, name: str, source: str) -> None:
+        """Provide a generated include file (e.g. layer dispatch code)."""
+        self.virtual[name] = source
 
     def get(
         self,
@@ -107,7 +122,11 @@ class ShaderLibrary:
                 continue
             deps.add(path.resolve())
             stages[stage] = preprocess(
-                path.read_text(encoding="utf-8"), self.shader_dir, entry.defines, deps
+                path.read_text(encoding="utf-8"),
+                self.shader_dir,
+                entry.defines,
+                deps,
+                virtual=self.virtual,
             )
         if "vertex_shader" not in stages:
             raise ShaderError(f"shader program '{entry.name}' has no vertex shader")

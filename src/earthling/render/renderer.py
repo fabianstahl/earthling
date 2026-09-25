@@ -21,6 +21,7 @@ from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.camera import Camera
+from earthling.render.layers import generate_glsl
 from earthling.render.lighting import (
     OPTICAL_DEPTH_UNIT,
     Lighting,
@@ -75,6 +76,7 @@ class Renderer:
     def __init__(self, ctx: moderngl.Context) -> None:
         self.ctx = ctx
         self.shaders = ShaderLibrary(ctx)
+        self.shaders.register_virtual("layers_generated.glsl", generate_glsl())
         self.clear_color = (0.0, 0.0, 0.0, 1.0)
         self.frame: LocalFrame | None = None
         self.target = SceneTarget(ctx)

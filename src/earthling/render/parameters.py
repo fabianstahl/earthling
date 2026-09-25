@@ -54,7 +54,6 @@ TERRAIN = section(
     "Terrain",
     flt("terrain.exaggeration", "Vertical exaggeration", 1.0, 0.1, 5.0, step=0.05, unit="×",
         uniform="u_exaggeration"),
-    boolean("terrain.imagery", "Show imagery", True, uniform="u_show_imagery"),
     flt("terrain.detail", "Detail threshold", 1.0, 0.25, 8.0, step=0.05, unit="px/texel",
         logarithmic=True, animatable=False,
         tooltip="Refine terrain until one imagery texel covers at most this many screen pixels"),
@@ -146,7 +145,10 @@ TRACKS = section(
 
 
 def build_registry() -> PropertyRegistry:
+    from earthling.render.layers import layer_properties
+
     registry = PropertyRegistry()
     for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SHADOWS, SKY, FOG, TRACKS):
         registry.extend(group)
+    registry.extend(layer_properties())
     return registry

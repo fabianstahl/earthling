@@ -47,5 +47,6 @@ ignore = ["N802"]  # Qt overrides use camelCase
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 qt_api = "pyqt6"
 filterwarnings = ["ignore::PendingDeprecationWarning:rasterio.*"]
