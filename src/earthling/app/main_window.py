@@ -6,14 +6,22 @@ from pathlib import Path
 
 import numpy as np
 from PyQt6.QtCore import QByteArray, QSettings, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import QDockWidget, QFileDialog, QLabel, QMainWindow, QMessageBox
+from PyQt6.QtGui import QAction, QKeySequence, QUndoStack
+from PyQt6.QtWidgets import (
+    QDockWidget,
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QUndoView,
+)
 
 from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
 from earthling.app.goto_dialog import GoToDialog
 from earthling.app.plan_dialog import PlanDialog
 from earthling.app.tracks_dock import TracksDock
+from earthling.app.undo import set_property
 from earthling.app.viewport import Viewport
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
@@ -35,6 +43,8 @@ class MainWindow(QMainWindow):
         self.session: Session | None = None
         self.scene = Scene()
         self.scene.on_dirty_changed(lambda dirty: self._update_title())
+        self.undo_stack = QUndoStack(self)
+        self.undo_stack.cleanChanged.connect(lambda clean: self.scene.mark_dirty(not clean))
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
@@ -43,11 +53,17 @@ class MainWindow(QMainWindow):
         self.viewport.set_store(self.scene.store)
         self.parameters_dock = QDockWidget("Parameters", self)
         self.parameters_dock.setObjectName("ParametersDock")
-        self.property_panel = PropertyPanel(self.scene.store)
+        self.property_panel = PropertyPanel(self.scene.store, on_edit=self.set_property)
         self.parameters_dock.setWidget(self.property_panel)
         self.parameters_dock.setMinimumWidth(340)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.parameters_dock)
         self.view_menu.addAction(self.parameters_dock.toggleViewAction())
+        self.history_dock = QDockWidget("History", self)
+        self.history_dock.setObjectName("HistoryDock")
+        self.history_dock.setWidget(QUndoView(self.undo_stack))
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.history_dock)
+        self.history_dock.hide()
+        self.view_menu.addAction(self.history_dock.toggleViewAction())
         self.tracks_dock = TracksDock(self)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.tracks_dock)
         self.view_menu.addAction(self.tracks_dock.toggleViewAction())
@@ -93,6 +109,14 @@ class MainWindow(QMainWindow):
         self._add_action(self.file_menu, "&Quit", self.close, QKeySequence.StandardKey.Quit)
         self._rebuild_recent_menu()
 
+        edit_menu = bar.addMenu("&Edit")
+        undo = self.undo_stack.createUndoAction(self, "&Undo")
+        undo.setShortcut(QKeySequence.StandardKey.Undo)
+        redo = self.undo_stack.createRedoAction(self, "&Redo")
+        redo.setShortcuts([QKeySequence.StandardKey.Redo, QKeySequence("Ctrl+Y")])
+        edit_menu.addAction(undo)
+        edit_menu.addAction(redo)
+
         self.view_menu = bar.addMenu("&View")
         self._add_action(self.view_menu, "&Frame All", lambda: self.viewport.frame_all(), "Home")
         self._add_action(self.view_menu, "&Go To Coordinate…", self._go_to, "Ctrl+G")
@@ -119,11 +143,15 @@ class MainWindow(QMainWindow):
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
 
+    def set_property(self, pid: str, value, interactive: bool = False) -> None:
+        """All interactive property edits go through the undo stack."""
+        set_property(self.undo_stack, self.scene.store, pid, value, interactive)
+
     def _store_toggle(self, pid: str, text: str) -> QAction:
         """Checkable action mirroring a boolean scene property."""
         action = QAction(text, self, checkable=True)
         action.setChecked(bool(self.scene.store[pid]))
-        action.toggled.connect(lambda v: self.scene.store.set(pid, v))
+        action.toggled.connect(lambda v: self.set_property(pid, v))
 
         def sync(changed: str, value) -> None:
             if changed == pid and action.isChecked() != bool(value):
@@ -174,6 +202,7 @@ class MainWindow(QMainWindow):
             self.load_scene(scene_path)
         else:
             self.scene.reset(scene_path)
+            self.undo_stack.clear()
             self._update_title()
         self.statusBar().showMessage(
             f"Opened project {project.folder} – {len(session.tracks)} track(s)", 5000
@@ -190,6 +219,7 @@ class MainWindow(QMainWindow):
         except SceneError as exc:
             QMessageBox.critical(self, "Cannot open scene", str(exc))
             return False
+        self.undo_stack.clear()
         if self.scene.camera:
             self.viewport.restore_camera_state(self.scene.camera)
         self._restore_ui_state()
@@ -208,6 +238,7 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.critical(self, "Cannot save scene", str(exc))
             return False
+        self.undo_stack.setClean()
         self._update_title()
         self.statusBar().showMessage(f"Saved {saved}", 4000)
         return True
