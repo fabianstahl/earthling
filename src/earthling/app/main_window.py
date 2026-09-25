@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
             lambda msg: self.statusBar().showMessage(f"Shader error: {msg}", 10000)
         )
         self._update_title()
+        self.data_changed.connect(self._reload_terrain)
         self.statusBar().showMessage("Ready")
 
     # --- menus -------------------------------------------------------------------------
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
         self.tracks_dock.set_tracks(session.tracks)
         self.viewport.set_scene(session.frame, session.tracks)
         self.viewport.set_outlines(session.outline_lines())
+        self._reload_terrain(reframe=True)
         self.statusBar().showMessage(
             f"Opened project {project.folder} – {len(session.tracks)} track(s)", 5000
         )
@@ -120,6 +122,13 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "GPX problems", "\n".join(session.load_errors))
         self.project_changed.emit(project)
         self.tracks_changed.emit()
+
+    def _reload_terrain(self, reframe: bool = False) -> None:
+        if self.session is None:
+            return
+        self.viewport.set_terrain(self.session.load_static_terrain())
+        if reframe:
+            self.viewport.frame_all()
 
     def _show_plan(self) -> None:
         if self.session is None or self.session.plan is None:

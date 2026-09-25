@@ -100,3 +100,23 @@ class Session:
             enu = self.frame.geodetic_to_enu(ring[:, 1], ring[:, 0], h)
             lines.append((enu, (1.0, 1.0, 1.0, 0.9), True))
         return lines
+
+    # --- terrain ---------------------------------------------------------------------------
+    @property
+    def static_terrain_zoom(self) -> int:
+        """Zoom used for the (pre-LOD) static terrain: the outer zone's DEM zoom."""
+        return self.config.area.zones[-1].dem_zoom
+
+    def load_static_terrain(self):
+        """Heightmaps of all cached DEM tiles at :attr:`static_terrain_zoom`."""
+        from earthling.data.dem import read_heightmap
+
+        if self.plan is None:
+            return []
+        z = self.static_terrain_zoom
+        out = []
+        for x, y in self.plan.levels["dem"].get(z, []):
+            heights = read_heightmap(self.cache, self.dem_source.id, z, int(x), int(y))
+            if heights is not None:
+                out.append((z, int(x), int(y), heights))
+        return out

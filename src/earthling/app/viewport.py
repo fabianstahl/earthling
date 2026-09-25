@@ -43,6 +43,7 @@ class Viewport(QOpenGLWidget):
         self.orbit = OrbitController(self.camera)
         self._pending_scene: tuple[LocalFrame, list[Track]] | None = None
         self._pending_outlines = None
+        self._pending_terrain = None
         self._outlines_visible = True
         self._last_mouse: QPointF | None = None
         self._frames = 0
@@ -65,6 +66,14 @@ class Viewport(QOpenGLWidget):
         if reframe:
             self.frame_all()
 
+    def set_terrain(self, tiles) -> None:
+        if self.renderer is None:
+            self._pending_terrain = tiles
+            return
+        self.makeCurrent()
+        self.renderer.set_terrain(tiles)
+        self.doneCurrent()
+
     def set_outlines(self, lines) -> None:
         if self.renderer is None:
             self._pending_outlines = lines
@@ -79,8 +88,9 @@ class Viewport(QOpenGLWidget):
             self.renderer.outlines.visible = visible
 
     def frame_all(self) -> None:
-        if self.renderer is not None and self.renderer.tracks.bounds is not None:
-            self.orbit.frame_bounds(*self.renderer.tracks.bounds)
+        bounds = self.renderer.scene_bounds() if self.renderer is not None else None
+        if bounds is not None:
+            self.orbit.frame_bounds(*bounds)
 
     # --- Qt GL hooks -------------------------------------------------------------------
     def initializeGL(self) -> None:
@@ -95,9 +105,14 @@ class Viewport(QOpenGLWidget):
             self._pending_scene = None
             self.renderer.set_scene(frame, tracks)
             self.frame_all()
+        if self._pending_terrain is not None:
+            self.renderer.set_terrain(self._pending_terrain)
+            self._pending_terrain = None
+            self.frame_all()
         if self._pending_outlines is not None:
             self.renderer.outlines.set_lines(self._pending_outlines)
             self._pending_outlines = None
+        self._pending_terrain = None
         self.renderer.outlines.visible = self._outlines_visible
 
     def paintGL(self) -> None:
