@@ -132,8 +132,30 @@ IGN_BDORTHO = TileProvider(
     coverage="france",
 )
 
+# --- Switzerland: swisstopo --------------------------------------------------------------
+SWISSTOPO_SWISSIMAGE = TileProvider(
+    id="swisstopo_swissimage",
+    name="swisstopo SWISSIMAGE (Switzerland)",
+    kind="imagery",
+    url_template=(
+        "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/"
+        "{z}/{x}/{y}.jpeg"
+    ),
+    ext="jpg",
+    max_zoom=19,  # 10 cm orthophotos
+    license=License(
+        "swisstopo terms of use for free geodata (open use with source attribution)",
+        "Orthophotos: © swisstopo – SWISSIMAGE",
+        "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices",
+        commercial_use=True,
+    ),
+    max_requests_per_second=8.0,
+    coverage="switzerland",  # tiles beyond the border exist but are not SWISSIMAGE quality
+)
+
 PROVIDERS: dict[str, TileProvider] = {
-    p.id: p for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP, IGN_BDORTHO)
+    p.id: p
+    for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP, IGN_BDORTHO, SWISSTOPO_SWISSIMAGE)
 }
 
 

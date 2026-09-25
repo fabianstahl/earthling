@@ -31,7 +31,8 @@ zones = [
 
 [sources]
 # Priority order: regional sources are used within their coverage (blended at the edge),
-# the worldwide ones everywhere else. Regional: ign_bdortho / ign_rgealti (France).
+# the worldwide ones everywhere else. Regional: ign_bdortho / ign_rgealti (France),
+# swisstopo_swissimage / swisstopo_alti3d (Switzerland).
 imagery = ["esri_world_imagery"]
 dem     = ["copernicus_glo30"]
 topo    = ["opentopomap"]          # topographic map layer (downloaded on demand)

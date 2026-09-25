@@ -70,22 +70,21 @@ def _dem_jobs(session: Session, source, tiles: list[tuple[int, int, int]]) -> li
     coverage = source.coverage_area
     if coverage is not None:
         area = area.intersection(coverage.lonlat)
-    files = [
-        f for f in source.files_for_bounds(area.bounds) if shapely.box(*f.bounds).intersects(area)
-    ]
     cancel = threading.Event()
     baker = DemBaker(source, session.cache)
     jobs = []
     if not source.direct:  # direct sources (WMS) are fetched per heightmap tile
-        jobs.append(
-            DownloadJob(
-                f"DEM sources ({source.name})",
-                lambda cb: download_sources(
-                    source, files, session.cache, on_progress=cb, cancel=cancel
-                ),
-                cancel.set,
-            )
-        )
+
+        def download(cb):
+            # listing may need the network (STAC catalogues): done when the job runs
+            files = [
+                f
+                for f in source.files_for_bounds(area.bounds)
+                if shapely.box(*f.bounds).intersects(area)
+            ]
+            return download_sources(source, files, session.cache, on_progress=cb, cancel=cancel)
+
+        jobs.append(DownloadJob(f"DEM sources ({source.name})", download, cancel.set))
     jobs.append(
         DownloadJob(
             f"DEM heightmap tiles ({source.name})",

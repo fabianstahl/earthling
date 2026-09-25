@@ -14,8 +14,10 @@ Value 0 marks "no data".
 from __future__ import annotations
 
 import io
+import json
 import logging
 import math
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -103,6 +105,8 @@ class DemSource:
     feather_m: float = 300.0
     # direct sources serve heightmap tiles per request (e.g. a WMS) instead of source files
     direct: bool = False
+    # the file list comes from a remote catalogue: downloads keep a local index for baking
+    listed_remotely: bool = False
     concurrency: int = 1
     max_requests_per_second: float = 0.0
 
@@ -112,8 +116,22 @@ class DemSource:
 
         return get_coverage(self.coverage, self.feather_m)
 
-    def files_for_bounds(self, bounds: tuple[float, float, float, float]) -> list[SourceFile]:
+    def files_for_bounds(
+        self, bounds: tuple[float, float, float, float], client: httpx.Client | None = None
+    ) -> list[SourceFile]:
         raise NotImplementedError
+
+    def local_files(self, folder: Path, bounds: tuple[float, float, float, float]):
+        """Downloaded files overlapping ``bounds`` (no network)."""
+        if not self.listed_remotely:
+            return [f for f in self.files_for_bounds(bounds) if (folder / f.filename).exists()]
+        west, south, east, north = bounds
+        return [
+            f
+            for f in read_index(folder)
+            if f.bounds[0] < east and f.bounds[2] > west and f.bounds[1] < north
+            and f.bounds[3] > south and (folder / f.filename).exists()
+        ]  # fmt: skip
 
     def fetch_tile(self, z: int, x: int, y: int, client: httpx.Client) -> np.ndarray | None:
         """Heightmap samples of one tile (direct sources); None where there is no data."""
@@ -136,7 +154,7 @@ class WmsDemSource(DemSource):
     # pixel; averaging finer pixels shrinks that error (see tools/check_dem_alignment.py).
     oversample: int = 1
 
-    def files_for_bounds(self, bounds):
+    def files_for_bounds(self, bounds, client=None):
         return []
 
     def request_params(self, z: int, x: int, y: int) -> dict[str, str]:
@@ -202,7 +220,7 @@ class CopernicusGlo30(DemSource):
     )
     BASE_URL = "https://copernicus-dem-30m.s3.amazonaws.com"
 
-    def files_for_bounds(self, bounds):
+    def files_for_bounds(self, bounds, client=None):
         west, south, east, north = bounds
         files = []
         for lat in range(math.floor(south), math.floor(north) + 1):
@@ -220,7 +238,83 @@ class CopernicusGlo30(DemSource):
         return files
 
 
-DEM_SOURCES: dict[str, DemSource] = {s.id: s for s in (CopernicusGlo30(), IgnRgeAlti())}
+class StacDemSource(DemSource):
+    """Raster files listed by a STAC API collection (one item per map sheet and edition).
+
+    ``asset_suffix`` selects the asset (e.g. the resolution) and ``sheet_pattern`` extracts
+    (edition, sheet) from the item id so only the newest edition of every sheet is used."""
+
+    listed_remotely = True
+    items_url = ""
+    asset_suffix = ""
+    sheet_pattern = re.compile(r"_(\d{4})_([^_]+)$")
+    page_size = 100
+
+    def _sheet(self, name: str) -> tuple[str, str]:
+        stem = name.removesuffix(self.asset_suffix)
+        match = self.sheet_pattern.search(stem)
+        return (match.group(1), match.group(2)) if match else ("", stem)
+
+    def files_for_bounds(self, bounds, client=None):
+        own = client is None
+        client = client or http_client()
+        newest: dict[str, tuple[str, SourceFile]] = {}
+        try:
+            url: str | None = self.items_url
+            params: dict | None = {
+                "bbox": ",".join(f"{v:.6f}" for v in bounds),
+                "limit": self.page_size,
+            }
+            while url:
+                response = client.get(url, params=params)
+                response.raise_for_status()
+                page = response.json()
+                for item in page.get("features", []):
+                    for name, asset in item.get("assets", {}).items():
+                        if not name.endswith(self.asset_suffix):
+                            continue
+                        edition, sheet = self._sheet(name)
+                        entry = SourceFile(asset["href"], name, tuple(item["bbox"][:4]))
+                        if sheet not in newest or edition > newest[sheet][0]:
+                            newest[sheet] = (edition, entry)
+                url = next(
+                    (link["href"] for link in page.get("links", []) if link.get("rel") == "next"),
+                    None,
+                )
+                params = None  # the next link carries the query
+        finally:
+            if own:
+                client.close()
+        return [entry for _, entry in newest.values()]
+
+    def local_files(self, folder, bounds):
+        files = super().local_files(folder, bounds)
+        newest: dict[str, tuple[str, SourceFile]] = {}
+        for f in files:
+            edition, sheet = self._sheet(f.filename)
+            if sheet not in newest or edition > newest[sheet][0]:
+                newest[sheet] = (edition, f)
+        return [f for _, f in newest.values()]
+
+
+class SwissAlti3d(StacDemSource):
+    id = "swisstopo_alti3d"
+    name = "swisstopo swissALTI3D (Switzerland)"
+    native_resolution_m = 2.0
+    items_url = "https://data.geo.admin.ch/api/stac/v0.9/collections/ch.swisstopo.swissalti3d/items"
+    asset_suffix = "_2_2056_5728.tif"  # 2 m GeoTIFF (COG) in LV95 / LN02
+    coverage = "switzerland"
+    license = License(
+        "swisstopo terms of use for free geodata (open use with source attribution)",
+        "Elevation: © swisstopo – swissALTI3D",
+        "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices",
+        commercial_use=True,
+    )
+
+
+DEM_SOURCES: dict[str, DemSource] = {
+    s.id: s for s in (CopernicusGlo30(), IgnRgeAlti(), SwissAlti3d())
+}
 
 
 def get_dem_source(source_id: str) -> DemSource:
@@ -236,6 +330,27 @@ def source_dir(cache: TileCache, source: DemSource) -> Path:
     return cache.root / "_sources" / source.id
 
 
+INDEX_NAME = "index.json"
+
+
+def read_index(folder: Path) -> list[SourceFile]:
+    path = folder / INDEX_NAME
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [SourceFile(e["url"], e["filename"], tuple(e["bounds"])) for e in data]
+
+
+def update_index(folder: Path, files: Iterable[SourceFile]) -> None:
+    entries = {f.filename: f for f in read_index(folder)}
+    entries.update({f.filename: f for f in files})
+    data = [
+        {"url": f.url, "filename": f.filename, "bounds": list(f.bounds)}
+        for f in sorted(entries.values(), key=lambda f: f.filename)
+    ]
+    write_atomic(folder / INDEX_NAME, json.dumps(data, indent=0).encode("utf-8"))
+
+
 def download_sources(
     source: DemSource,
     files: list[SourceFile],
@@ -247,6 +362,8 @@ def download_sources(
     client = client or http_client()
     folder = source_dir(cache, source)
     folder.mkdir(parents=True, exist_ok=True)
+    if source.listed_remotely:
+        update_index(folder, files)
     progress = DownloadProgress(total=len(files))
     for f in files:
         if cancel is not None and cancel.is_set():
@@ -398,13 +515,9 @@ class DemBaker:
             return self._fetch_direct(z, x, y)
         west, south, east, north = tile_bounds_lonlat(z, x, y)
         margin = (east - west) / GRID_INTERVALS * 2
-        files = [
-            f
-            for f in self.source.files_for_bounds(
-                (west - margin, south - margin, east + margin, north + margin)
-            )
-            if (self.folder / f.filename).exists()
-        ]
+        files = self.source.local_files(
+            self.folder, (west - margin, south - margin, east + margin, north + margin)
+        )
         if not files:
             return None
         mx, my = sample_positions_mercator(z, x, y)
