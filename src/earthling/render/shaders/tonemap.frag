@@ -4,6 +4,9 @@ out vec4 f_color;
 uniform sampler2D u_hdr;
 uniform float u_exposure = 1.0;  // linear multiplier (2^EV)
 uniform int u_tonemap = 0;       // 0 ACES, 1 Reinhard, 2 none (clamp)
+uniform sampler2D u_bloom;
+uniform bool u_has_bloom = false;
+uniform float u_bloom_intensity = 1.0;
 
 vec3 aces(vec3 x) {
     // Narkowicz 2015 fit
@@ -22,7 +25,9 @@ float dither(vec2 p) {
 }
 
 void main() {
-    vec3 hdr = max(texture(u_hdr, v_uv).rgb, 0.0) * u_exposure;
+    vec3 hdr = max(texture(u_hdr, v_uv).rgb, 0.0);
+    if (u_has_bloom) hdr += texture(u_bloom, v_uv).rgb * u_bloom_intensity;
+    hdr *= u_exposure;
     vec3 mapped;
     if (u_tonemap == 0) mapped = aces(hdr);
     else if (u_tonemap == 1) mapped = hdr / (1.0 + hdr);

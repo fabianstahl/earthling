@@ -73,6 +73,7 @@ def test_ribbon_renders_with_pixel_width(gl_ctx):
     renderer.store.set("tracks.elevation", "gpx")
     renderer.store.set("tracks.height_offset", 0.0)
     renderer.store.set("tracks.width", 6.0)
+    renderer.store.set("glow.enabled", False)  # the halo would widen the measured line
     renderer.store.set("haze.aerial", 0.0)
     renderer.timezone = "UTC"
     # look straight down on the track from 3 km above its middle
@@ -85,3 +86,41 @@ def test_ribbon_renders_with_pixel_width(gl_ctx):
     row = red[100]
     assert 4 <= row.sum() <= 9  # ~6 px wide
     assert red[:, 100].sum() > 60  # 1.1 km seen from 3 km with 50 deg fov ~ 78 px
+
+
+def test_glow_adds_a_halo_and_leaves_clean_state(gl_ctx):
+    import moderngl
+
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.renderer import Renderer
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [straight_track()])
+    renderer.store = Scene().store
+    for pid, value in (
+        ("tracks.elevation", "gpx"),
+        ("tracks.height_offset", 0.0),
+        ("tracks.width", 6.0),
+        ("haze.aerial", 0.0),
+        ("tracks.glow", 5.0),
+    ):
+        renderer.store.set(pid, value)  # fmt: skip
+    renderer.timezone = "UTC"
+    mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
+    camera = Camera(position=mid + np.array([0.0, 0.0, 3000.0]), heading=0.0, pitch=-89.9)
+    fbo = gl_ctx.simple_framebuffer((200, 200))
+
+    def red_width(glow):
+        renderer.store.set("glow.enabled", glow)
+        # simulate a compositor that leaves additive blending enabled between frames
+        gl_ctx.enable(moderngl.BLEND)
+        gl_ctx.blend_func = moderngl.ONE, moderngl.ONE
+        renderer.render(fbo, 200, 200, camera)
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3)
+        img = img.astype(int)
+        return int(((img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80))[100].sum())
+
+    plain = red_width(False)
+    assert 4 <= plain <= 9  # the leaked blend state did not wash out the frame
+    assert red_width(True) > plain + 4  # halo around the line

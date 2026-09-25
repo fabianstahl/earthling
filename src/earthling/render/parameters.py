@@ -162,6 +162,17 @@ TRACKS = section(
         tooltip="0 = lit by sun and sky, 1 = glows on its own (visible at night)"),
     flt("tracks.outline", "Outline", 1.0, 0.0, 5.0, step=0.1, decimals=1, unit="px",
         uniform="u_track_outline"),
+    flt("tracks.glow", "Glow emission", 1.2, 0.0, 20.0, step=0.1, decimals=1,
+        uniform="u_track_glow", tooltip="Light the track emits into the glow effect"),
+)  # fmt: skip
+
+GLOW = section(
+    "Glow",
+    boolean("glow.enabled", "Glow (bloom)", True),
+    flt("glow.intensity", "Intensity", 0.8, 0.0, 5.0, uniform="u_bloom_intensity"),
+    flt("glow.radius", "Spread", 1.0, 0.3, 3.0),
+    integer("glow.levels", "Size", 6, 1, 7, animatable=False,
+            tooltip="Number of blur levels: larger values give a wider halo"),
 )  # fmt: skip
 
 
@@ -169,7 +180,7 @@ def build_registry() -> PropertyRegistry:
     from earthling.render.layers import layer_properties
 
     registry = PropertyRegistry()
-    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SHADOWS, SKY, FOG, TRACKS):
+    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SHADOWS, SKY, FOG, TRACKS, GLOW):
         registry.extend(group)
     registry.extend(layer_properties())
     return registry

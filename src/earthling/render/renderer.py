@@ -20,6 +20,7 @@ from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.render.atmosphere import optical_depth_lut
+from earthling.render.bloom import Bloom
 from earthling.render.camera import Camera
 from earthling.render.layers import generate_glsl, required_tile_sources
 from earthling.render.lighting import (
@@ -36,6 +37,26 @@ from earthling.render.terrain import TerrainLayer
 from earthling.render.tracks import TrackGeometryOptions, TrackLayer
 
 
+class FullscreenPasses:
+    """Fullscreen-triangle programs sharing one vertex shader: ``passes(name)`` returns the
+    program, ``passes.draw(name)`` draws it. Empty VAOs are rebuilt after hot reloads."""
+
+    def __init__(self, ctx: moderngl.Context, shaders: ShaderLibrary) -> None:
+        self.ctx = ctx
+        self.shaders = shaders
+        self._cache: dict[str, tuple[moderngl.Program, moderngl.VertexArray]] = {}
+
+    def __call__(self, name: str) -> moderngl.Program:
+        program = self.shaders.get(name, vertex="fullscreen")
+        cached = self._cache.get(name)
+        if cached is None or cached[0] is not program:
+            self._cache[name] = (program, self.ctx.vertex_array(program, []))
+        return program
+
+    def draw(self, name: str) -> None:
+        self._cache[name][1].render(moderngl.TRIANGLES, vertices=3)
+
+
 class SceneTarget:
     """Offscreen HDR color + depth render target that follows the output size."""
 
@@ -45,6 +66,9 @@ class SceneTarget:
         self.color: moderngl.Texture | None = None
         self.depth: moderngl.Texture | None = None
         self.fbo: moderngl.Framebuffer | None = None
+        self.glow: moderngl.Texture | None = None
+        self.glow_fbo: moderngl.Framebuffer | None = None  # emissive objects, shares depth
+        self.glow_clear_fbo: moderngl.Framebuffer | None = None
 
     def ensure(self, width: int, height: int) -> moderngl.Framebuffer:
         size = (max(1, width), max(1, height))
@@ -53,6 +77,13 @@ class SceneTarget:
             self.color = self.ctx.texture(size, 4, dtype="f2")  # linear HDR radiance
             self.depth = self.ctx.depth_texture(size)
             self.fbo = self.ctx.framebuffer([self.color], self.depth)
+            self.glow = self.ctx.texture(size, 4, dtype="f2")
+            self.glow.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self.glow.repeat_x = self.glow.repeat_y = False
+            # drawing: shares the scene depth (glowing objects redraw at their own depth,
+            # so depth writes are harmless); clearing: colour only
+            self.glow_fbo = self.ctx.framebuffer([self.glow], self.depth)
+            self.glow_clear_fbo = self.ctx.framebuffer([self.glow])
             self.size = size
         return self.fbo
 
@@ -66,10 +97,17 @@ class SceneTarget:
         return float(np.frombuffer(raw, dtype="f4")[0])
 
     def release(self) -> None:
-        for obj in (self.fbo, self.color, self.depth):
+        for obj in (
+            self.glow_clear_fbo,
+            self.glow_fbo,
+            self.glow,
+            self.fbo,
+            self.color,
+            self.depth,
+        ):
             if obj is not None:
                 obj.release()
-        self.fbo = self.color = self.depth = None
+        self.fbo = self.color = self.depth = self.glow = self.glow_fbo = self.glow_clear_fbo = None
 
 
 class Renderer:
@@ -88,7 +126,8 @@ class Renderer:
         self.timezone = "UTC"
         self.lighting: Lighting | None = None
         self.camera_height = 1500.0
-        self._fullscreen: dict[str, tuple[moderngl.Program, moderngl.VertexArray]] = {}
+        self.fullscreen = FullscreenPasses(ctx, self.shaders)
+        self.bloom = Bloom(ctx)
         lut = optical_depth_lut()
         self.optical_depth = ctx.texture((lut.shape[1], lut.shape[0]), 3, lut.tobytes(), dtype="f4")
         self.optical_depth.filter = (moderngl.LINEAR, moderngl.LINEAR)
@@ -135,7 +174,15 @@ class Renderer:
             self.terrain.lighting_uniforms = lighting_uniforms(self.lighting)
 
     # --- frame ------------------------------------------------------------------------
+    def reset_state(self) -> None:
+        """Known GL state: the context is shared with Qt's widget compositing, which leaves
+        blending enabled between frames."""
+        self.ctx.enable_only(moderngl.NOTHING)
+        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        self.ctx.depth_func = "<"
+
     def render(self, fbo: moderngl.Framebuffer, width: int, height: int, camera: Camera) -> None:
+        self.reset_state()
         self.apply_properties(camera)
         view_proj = camera.view_projection(width / max(1, height))
         # the camera selection comes first so shadow casters never starve the view
@@ -154,7 +201,9 @@ class Renderer:
         self._render_tracks(camera, view_proj, width, height)
         self.outlines.render(camera, view_proj)
         self.ctx.disable(moderngl.DEPTH_TEST)
-        self._tonemap(fbo, width, height)
+        bloom = self._render_glow(camera, view_proj, width, height)
+        self._tonemap(fbo, width, height, bloom)
+        self.reset_state()  # leave the context clean for Qt
 
     def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:
         s = self.store
@@ -207,21 +256,10 @@ class Renderer:
         return self.target.read_depth(px, py)
 
     # --- passes -----------------------------------------------------------------------
-    def _fullscreen_pass(self, name: str) -> moderngl.Program:
-        """Program for a fullscreen triangle; the empty VAO is rebuilt after hot reload."""
-        program = self.shaders.get(name, vertex="fullscreen")
-        cached = self._fullscreen.get(name)
-        if cached is None or cached[0] is not program:
-            self._fullscreen[name] = (program, self.ctx.vertex_array(program, []))
-        return program
-
-    def _draw_fullscreen(self, name: str) -> None:
-        self._fullscreen[name][1].render(moderngl.TRIANGLES, vertices=3)
-
     def _render_sky(self, camera: Camera, view_proj, height: int) -> None:
         if self.lighting is None or self.frame is None:
             return
-        program = self._fullscreen_pass("sky")
+        program = self.fullscreen("sky")
         program["u_inv_view_proj"].write(glm.inverse(view_proj))
         for name, value in lighting_uniforms(self.lighting).items():
             if name in program:
@@ -233,16 +271,47 @@ class Renderer:
         self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         if self.store is not None:
             bind_uniforms(program, self.store)
-        self._draw_fullscreen("sky")
+        self.fullscreen.draw("sky")
 
-    def _tonemap(self, fbo: moderngl.Framebuffer, width: int, height: int) -> None:
-        program = self._fullscreen_pass("tonemap")
+    def _render_glow(self, camera: Camera, view_proj, width: int, height: int):
+        """Emissive objects into the glow buffer, then bloom. Returns the bloom texture."""
+        s = self.store
+        if s is None or not s["glow.enabled"] or self.target.glow_fbo is None:
+            return None
+        self.target.glow_clear_fbo.clear(0.0, 0.0, 0.0, 0.0)
+        glow_fbo = self.target.glow_fbo
+        glow_fbo.use()
+        self.ctx.viewport = (0, 0, width, height)
+        self.ctx.enable(moderngl.DEPTH_TEST)  # test against the scene depth ...
+        self.ctx.depth_func = "<="  # ... which already contains the tracks themselves
+        self.tracks.render(camera, view_proj, width, height, s, glow_pass=True)
+        self.ctx.depth_func = "<"
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        assert self.target.glow is not None
+        return self.bloom_pass(self.target.glow, width, height)
+
+    def bloom_pass(self, source: moderngl.Texture, width: int, height: int) -> moderngl.Texture:
+        s = self.store
+        self.bloom.ensure(width, height)
+        return self.bloom.run(source, self.fullscreen, s["glow.radius"], s["glow.levels"])
+
+    def _tonemap(self, fbo: moderngl.Framebuffer, width: int, height: int, bloom=None) -> None:
+        program = self.fullscreen("tonemap")
         fbo.use()
         self.ctx.viewport = (0, 0, width, height)
         assert self.target.color is not None
         self.target.color.use(0)
         program["u_hdr"] = 0
+        if bloom is not None:
+            bloom.use(1)
+        _set(program, "u_bloom", 1)
+        _set(program, "u_has_bloom", bloom is not None)
         if self.store is not None:
             bind_uniforms(program, self.store)
             program["u_exposure"] = 2.0 ** self.store["post.exposure"]
-        self._draw_fullscreen("tonemap")
+        self.fullscreen.draw("tonemap")
+
+
+def _set(program: moderngl.Program, name: str, value) -> None:
+    if name in program:
+        program[name] = value

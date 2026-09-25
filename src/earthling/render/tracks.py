@@ -207,10 +207,15 @@ class TrackLayer:
             )
         self._built_key = key
 
-    def render(self, camera: Camera, view_proj, width: int, height: int, store=None) -> None:
+    def render(
+        self, camera: Camera, view_proj, width: int, height: int, store=None, glow_pass=False
+    ) -> None:
         if not self._gpu or not self.visible:
             return
-        program = self.shaders.get("track")
+        if glow_pass:
+            program = self.shaders.get("track", defines={"GLOW_PASS": 1})
+        else:
+            program = self.shaders.get("track")
         program["u_view_proj"].write(view_proj)
         _set(program, "u_log_depth_coef", camera.log_depth_coef)
         _set(program, "u_viewport", (float(width), float(height)))
@@ -223,7 +228,10 @@ class TrackLayer:
         for name, value in self.uniforms.items():
             _set(program, name, value)
         self.ctx.enable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        if glow_pass:
+            self.ctx.blend_func = moderngl.ONE, moderngl.ONE  # emission adds up
+        else:
+            self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         single = store is not None and store["tracks.color_mode"] == "single"
         for g in self._gpu:
             if not g.track.visible:
@@ -248,12 +256,13 @@ class TrackLayer:
                     skip_errors=True,  # attributes a shader variant does not use
                 )
                 g.vaos[program.glo] = vao
-            program["u_offset"] = camera.relative(g.origin)
+            _set(program, "u_offset", camera.relative(g.origin))
             color = store["tracks.color"] if single else track_color(g.index)
             _set(program, "u_color", tuple(c**2.2 for c in color))
             _set(program, "u_track_length", g.length_m)
             vao.render(moderngl.TRIANGLE_STRIP)
         self.ctx.disable(moderngl.BLEND)
+        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 
     def release(self) -> None:
         for g in self._gpu:
