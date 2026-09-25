@@ -39,6 +39,7 @@ def test_every_layer_renders_differently(gl_ctx):
     renderer = Renderer(gl_ctx)
     renderer.set_scene(LocalFrame(46.0, 7.0, 0.0), [])
     renderer.store = Scene().store
+    renderer.store.set("haze.aerial", 0.0)  # seen from 57 km up, the haze would mask the layers
     renderer.timezone = "Europe/Paris"
     tx, ty = lonlat_to_tile(7.0, 46.0, 10)
     renderer.set_terrain_source(SlopeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))

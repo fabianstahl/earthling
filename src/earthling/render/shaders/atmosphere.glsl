@@ -1,4 +1,4 @@
-// Single-scattering atmosphere (Rayleigh + Mie), raymarched in real time.
+// Atmosphere medium (Rayleigh + Mie + ozone), shared by the LUT passes (atmosphere_lut.glsl).
 // Coordinates: metres, planet centre at origin, local "up" = +z.
 // Constants and the optical depth LUT layout must match render/atmosphere.py.
 const float PLANET_RADIUS = 6371e3;
@@ -28,6 +28,11 @@ vec2 ray_sphere(vec3 origin, vec3 dir, float radius) {
     return vec2(-b - d, -b + d);
 }
 
+// True if the ray really hits the sphere in front of its origin (not a miss, not behind).
+bool hits_ahead(vec2 hit) {
+    return hit.x <= hit.y && hit.x > 0.0;
+}
+
 float phase_rayleigh(float mu) {
     return 3.0 / (16.0 * 3.14159265) * (1.0 + mu * mu);
 }
@@ -55,53 +60,4 @@ vec3 extinction(vec3 od) {
     return exp(-min(RAYLEIGH_BETA * u_rayleigh_scale * od.x
                     + MIE_BETA * MIE_EXTINCTION * u_mie_scale * od.y
                     + OZONE_BETA * u_rayleigh_scale * od.z, vec3(80.0)));
-}
-
-// In-scattered radiance along the ray segment [0, max_dist] (unit sun irradiance) and the
-// transmittance of that segment.
-vec3 scatter_steps(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, int SAMPLES,
-                   out vec3 transmittance) {
-    vec3 beta_r = RAYLEIGH_BETA * u_rayleigh_scale;
-    float beta_m = MIE_BETA * u_mie_scale;
-    vec2 hit = ray_sphere(origin, dir, ATMOSPHERE_RADIUS);
-    transmittance = vec3(1.0);
-    if (hit.x > hit.y) return vec3(0.0);
-    float t0 = max(hit.x, 0.0);
-    float t1 = min(hit.y, max_dist);
-    vec2 ground = ray_sphere(origin, dir, PLANET_RADIUS);
-    if (ground.x > 0.0) t1 = min(t1, ground.x);
-    if (t1 <= t0) return vec3(0.0);
-    float span = t1 - t0;
-    vec3 od_view = vec3(0.0);
-    vec3 sum_r = vec3(0.0), sum_m = vec3(0.0);
-    for (int i = 0; i < SAMPLES; ++i) {
-        // quadratic spacing: dense near the camera where the air is densest
-        float s = (float(i) + 0.5) / float(SAMPLES);
-        float t = t0 + span * s * s;
-        float dt = span * 2.0 * s / float(SAMPLES);
-        vec3 p = origin + dir * t;
-        float r = length(p);
-        float h = r - PLANET_RADIUS;
-        float dr = exp(-h / RAYLEIGH_SCALE_HEIGHT) * dt;
-        float dm = exp(-h / MIE_SCALE_HEIGHT) * dt;
-        vec3 d_od = vec3(dr, dm, ozone_density(h) * dt);
-        od_view += d_od * 0.5;  // half step before, half after the sample
-        vec3 od_sun = optical_depth_to_sky(h, dot(p / r, sun_dir));
-        vec3 att = extinction(od_view + od_sun);
-        sum_r += dr * att;
-        sum_m += dm * att;
-        od_view += d_od * 0.5;
-    }
-    transmittance = extinction(od_view);
-    float mu = dot(dir, sun_dir);
-    return sum_r * beta_r * phase_rayleigh(mu) + sum_m * beta_m * phase_mie(mu);
-}
-
-vec3 scatter(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, out vec3 transmittance) {
-    return scatter_steps(origin, dir, max_dist, sun_dir, 32, transmittance);
-}
-
-// Cheaper variant for aerial perspective (short segments near the ground).
-vec3 scatter_short(vec3 origin, vec3 dir, float max_dist, vec3 sun_dir, out vec3 transmittance) {
-    return scatter_steps(origin, dir, max_dist, sun_dir, 10, transmittance);
 }

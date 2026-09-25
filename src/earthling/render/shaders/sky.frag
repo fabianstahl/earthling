@@ -1,4 +1,4 @@
-#include "atmosphere.glsl"
+#include "atmosphere_lut.glsl"
 #include "fog.glsl"
 in vec2 v_ndc;
 out vec4 f_color;
@@ -9,6 +9,7 @@ uniform float u_star_brightness = 1.0;
 uniform float u_night = 0.0;      // 0 day .. 1 full night (stars fade in)
 uniform mat3 u_to_celestial;      // ENU -> equatorial frame (for the star field)
 uniform float u_pixel_angle;      // radians per pixel (star size)
+uniform sampler2D u_skyview_lut;
 
 float hash13(vec3 p) {
     p = fract(p * 0.1031);
@@ -48,11 +49,18 @@ vec3 stars(vec3 dir) {
 void main() {
     vec4 far = u_inv_view_proj * vec4(v_ndc, 1.0, 1.0);
     vec3 dir = normalize(far.xyz / far.w);
-    vec3 origin = vec3(0.0, 0.0, PLANET_RADIUS + max(u_camera_height, 1.0));
+    float r = PLANET_RADIUS + max(u_camera_height, 1.0);
+    vec3 origin = vec3(0.0, 0.0, r);
     vec3 sun = normalize(u_sun_dir);
-    vec3 trans;
-    vec3 radiance = scatter(origin, dir, 1e9, sun, trans) * u_sun_illuminance;
-    bool below_horizon = ray_sphere(origin, dir, PLANET_RADIUS).x > 0.0;
+    bool below_horizon = hits_ahead(ray_sphere(origin, dir, PLANET_RADIUS));
+    // the sky-view LUT is symmetric around the sun's azimuth
+    float light_view_cos = 1.0;
+    if (length(dir.xy) > 1e-5 && length(sun.xy) > 1e-5) {
+        light_view_cos = dot(normalize(dir.xy), normalize(sun.xy));
+    }
+    vec2 lut_uv = skyview_uv(r, dir.z, light_view_cos, below_horizon);
+    vec3 radiance = texture(u_skyview_lut, lut_uv).rgb * u_sun_illuminance;
+    vec3 trans = below_horizon ? vec3(0.0) : transmittance_to_top(r, dir.z);
     // sun disc (angular radius ~0.27 deg) with limb darkening
     float cos_d = dot(dir, sun);
     float disc_edge = cos(radians(0.27));

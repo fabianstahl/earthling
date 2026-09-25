@@ -1,6 +1,6 @@
 #include "terrain_common.glsl"
 #include "logdepth.glsl"
-#include "atmosphere.glsl"
+#include "atmosphere_lut.glsl"
 #include "fog.glsl"
 #include "shadows.glsl"
 in vec2 v_hm_uv;

@@ -108,6 +108,22 @@ class ShaderLibrary:
         assert entry.program is not None
         return entry.program
 
+    def compute(self, name: str) -> moderngl.ComputeShader:
+        """A compute shader from ``<name>.comp`` (compiled once)."""
+        cache = self.__dict__.setdefault("_compute", {})
+        shader = cache.get(name)
+        if shader is None:
+            path = self.shader_dir / f"{name}.comp"
+            source = preprocess(
+                path.read_text(encoding="utf-8"), self.shader_dir, None, set(), virtual=self.virtual
+            )
+            try:
+                shader = self.ctx.compute_shader(source)
+            except moderngl.Error as exc:
+                raise ShaderError(f"{name}: {exc}") from exc
+            cache[name] = shader
+        return shader
+
     def _compile(self, entry: _Entry) -> moderngl.Program:
         deps: set[Path] = set()
         stages: dict[str, str] = {}

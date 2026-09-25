@@ -1,5 +1,5 @@
 #include "logdepth.glsl"
-#include "atmosphere.glsl"
+#include "atmosphere_lut.glsl"
 #include "fog.glsl"
 in float v_side;
 in float v_dist;

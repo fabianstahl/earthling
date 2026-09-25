@@ -1,4 +1,5 @@
-// Aerial perspective and exponential height fog. Requires atmosphere.glsl.
+// Aerial perspective (precomputed volume, see atmosphere_lut.glsl) and exponential height
+// fog. Requires atmosphere_lut.glsl.
 uniform float u_camera_height;        // metres above sea level
 uniform vec3 u_sun_dir = vec3(-0.5, 0.6, 0.6);  // ENU, towards the sun
 uniform float u_sun_illuminance;      // sky radiance scale (shared with the sky pass)
@@ -10,6 +11,10 @@ uniform float u_fog_falloff = 300.0;  // height scale in metres
 uniform vec3 u_fog_ambient;           // linear radiance of fog lit by the sky
 uniform vec3 u_fog_sun;               // linear radiance of fog lit by the sun (before phase)
 uniform float u_fog_glow = 0.6;       // forward scattering anisotropy (0 .. 0.95)
+uniform sampler3D u_ap_inscatter;     // aerial perspective volume: (screen uv, sqrt(d / max))
+uniform sampler3D u_ap_transmittance;
+uniform vec2 u_ap_screen = vec2(1.0);  // render target size (froxels span the screen)
+uniform float u_ap_max_dist = 300e3;
 
 float phase_hg(float mu, float g) {
     float gg = g * g;
@@ -31,10 +36,13 @@ vec3 apply_atmosphere(vec3 color, vec3 dir, float dist) {
     vec3 origin = vec3(0.0, 0.0, PLANET_RADIUS + max(u_camera_height, 1.0));
     vec3 sun = normalize(u_sun_dir);
     if (u_aerial_strength > 0.0) {
-        vec3 trans;
-        vec3 inscatter = scatter_short(origin, dir, dist, sun, trans) * u_sun_illuminance;
-        vec3 t = mix(vec3(1.0), trans, u_aerial_strength);
-        color = color * t + inscatter * u_aerial_strength;
+        vec2 uv = gl_FragCoord.xy / u_ap_screen;
+        float w = sqrt(clamp(dist / u_ap_max_dist, 0.0, 1.0));
+        vec3 ap = vec3(uv, w);
+        float fade = clamp(w * 64.0, 0.0, 1.0);  // nothing at the camera (first slice at w=1/64)
+        vec3 inscatter = texture(u_ap_inscatter, ap).rgb * fade * u_sun_illuminance;
+        vec3 trans = mix(vec3(1.0), texture(u_ap_transmittance, ap).rgb, fade);
+        color = color * mix(vec3(1.0), trans, u_aerial_strength) + inscatter * u_aerial_strength;
     }
     if (u_fog_enabled && u_fog_density > 0.0) {
         float tau = min(fog_optical_depth(dir, dist), 60.0);

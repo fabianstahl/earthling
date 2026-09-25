@@ -36,6 +36,7 @@ from earthling.render.marker import MarkerLayer
 from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.shadows import SHADOW_UNIT, ShadowMaps, compute_cascades
+from earthling.render.sky_luts import AtmosphereLuts
 from earthling.render.terrain import TerrainLayer
 from earthling.render.tracks import TrackGeometryOptions, TrackLayer
 
@@ -138,6 +139,8 @@ class Renderer:
         self.lighting: Lighting | None = None
         self.camera_height = 1500.0
         self.fullscreen = FullscreenPasses(ctx, self.shaders)
+        self.atmosphere = AtmosphereLuts(ctx, self.shaders, self.fullscreen)
+        self._atmosphere_uniforms: dict[str, object] = {}
         self.bloom = Bloom(ctx)
         lut = optical_depth_lut()
         self.optical_depth = ctx.texture((lut.shape[1], lut.shape[0]), 3, lut.tobytes(), dtype="f4")
@@ -255,6 +258,7 @@ class Renderer:
         # the camera selection comes first so shadow casters never starve the view
         selection = self.terrain.update(camera, view_proj, height) if self.terrain.visible else None
         shadow_uniforms = self._render_shadows(camera, width, height)
+        self._update_atmosphere(view_proj, width, height)
         target = self.target.ensure(width, height)
         target.use()
         self.ctx.viewport = (0, 0, width, height)
@@ -278,6 +282,27 @@ class Renderer:
         self.hud.render(fbo, *output, self.store, self.tracks.path, self.tracks.head_m,
                         self.timezone)  # fmt: skip
         self.reset_state()  # leave the context clean for Qt
+
+    def _update_atmosphere(self, view_proj, width: int, height: int) -> None:
+        """Sky-view LUT and aerial perspective volume of this frame (see sky_luts)."""
+        if self.lighting is None or self.store is None:
+            self._atmosphere_uniforms = {}
+            return
+        self.atmosphere.update(
+            self.value("sky.rayleigh"),
+            self.value("sky.haze"),
+            self.lighting.camera_height,
+            self.lighting.sun_direction,
+            glm.inverse(view_proj),
+        )
+        self._atmosphere_uniforms = {
+            **self.atmosphere.uniforms(),
+            "u_ap_screen": (float(width), float(height)),
+        }
+        self.terrain.lighting_uniforms = {
+            **self.terrain.lighting_uniforms,
+            **self._atmosphere_uniforms,
+        }
 
     def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:
         s = self.store
@@ -323,7 +348,7 @@ class Renderer:
         self.tracks.ensure_built(options, dem_version=id(data))
         self._update_progress()
         if self.lighting is not None:
-            self.tracks.uniforms = {**lighting_uniforms(self.lighting)}
+            self.tracks.uniforms = {**lighting_uniforms(self.lighting), **self._atmosphere_uniforms}
         self.tracks.render(camera, view_proj, width, height, s)
         if self.tracks.visible:
             self.marker.render(camera, view_proj, width, height, self.time, s)
@@ -354,7 +379,10 @@ class Renderer:
             return
         program = self.fullscreen("sky")
         program["u_inv_view_proj"].write(glm.inverse(view_proj))
-        for name, value in lighting_uniforms(self.lighting).items():
+        for name, value in {
+            **lighting_uniforms(self.lighting),
+            **self._atmosphere_uniforms,
+        }.items():
             if name in program:
                 program[name] = value
         program["u_night"] = self.lighting.night
