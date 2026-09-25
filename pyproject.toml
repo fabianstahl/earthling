@@ -9,10 +9,12 @@ dependencies = [
     "httpx>=0.28.1",
     "moderngl>=5.12.0",
     "numpy>=2.5.3",
+    "pillow>=12.3.0",
     "pydantic>=2.13.5",
     "pyglm>=2.8.3",
     "pyproj>=3.8.0",
     "PyQt6>=6.7",
+    "rasterio>=1.5.1",
     "shapely>=2.1.2",
     "tzdata>=2026.4",
 ]
@@ -46,3 +48,4 @@ ignore = ["N802"]  # Qt overrides use camelCase
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 qt_api = "pyqt6"
+filterwarnings = ["ignore::PendingDeprecationWarning:rasterio.*"]

@@ -27,7 +27,7 @@ from earthling.core.gpx import Track
 MIN_PLAN_ZOOM = 5
 
 # Rough average on-disk sizes used for estimates (bytes per tile).
-AVG_TILE_BYTES = {"imagery": 22_000, "dem": 150_000}
+AVG_TILE_BYTES = {"imagery": 22_000, "dem": 80_000}
 
 
 @dataclass

@@ -1,0 +1,348 @@
+"""Elevation data: source rasters -> baked Web Mercator heightmap tiles.
+
+Heightmap tile format
+---------------------
+Each tile stores a grid of ``HEIGHTMAP_SAMPLES`` x ``HEIGHTMAP_SAMPLES`` elevation samples
+placed at the *corners* of a 256-interval grid over the tile, plus one border sample on every
+side: sample ``i`` (``-1 <= i <= 257``) lies at ``tile_min + i * tile_size / 256``. Samples 0 and
+256 coincide with the neighbouring tiles' edge samples, so meshes are seamless; the border is
+used for normals. Samples are stored in a 16-bit grayscale PNG as
+``elevation_m = value * HEIGHT_SCALE + HEIGHT_OFFSET`` (0.2 m steps, -1000 .. 12107 m).
+Value 0 marks "no data".
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+import math
+import threading
+from collections import OrderedDict
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from pathlib import Path
+
+import httpx
+import numpy as np
+import rasterio
+from PIL import Image
+from pyproj import Transformer
+from rasterio.enums import Resampling
+
+from earthling.core.geo import (
+    MERCATOR_HALF,
+    mercator_to_lonlat,
+    tile_bounds_lonlat,
+    tile_bounds_mercator,
+)
+from earthling.data.cache import TileCache, write_atomic
+from earthling.data.downloader import DownloadProgress, http_client
+from earthling.data.providers import License
+
+log = logging.getLogger(__name__)
+
+GRID_INTERVALS = 256
+HEIGHTMAP_SAMPLES = GRID_INTERVALS + 3  # 259
+HEIGHT_SCALE = 0.2
+HEIGHT_OFFSET = -1000.0
+NODATA_VALUE = 0
+
+ProgressCallback = Callable[[DownloadProgress], None]
+
+
+# --- encoding ----------------------------------------------------------------------------
+def encode_heightmap(heights: np.ndarray) -> bytes:
+    values = np.round((heights - HEIGHT_OFFSET) / HEIGHT_SCALE)
+    values = np.clip(values, 1, 65535)
+    values[~np.isfinite(heights)] = NODATA_VALUE
+    img = Image.fromarray(values.astype(np.uint16))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", compress_level=6)
+    return buf.getvalue()
+
+
+def decode_heightmap(data: bytes) -> np.ndarray:
+    """Returns float32 heights, NaN where no data."""
+    values = np.asarray(Image.open(io.BytesIO(data)), dtype=np.float32)
+    heights = values * HEIGHT_SCALE + HEIGHT_OFFSET
+    heights[values == NODATA_VALUE] = np.nan
+    return heights
+
+
+def sample_positions_mercator(z: int, x: int, y: int) -> tuple[np.ndarray, np.ndarray]:
+    """Mercator x/y (1-D arrays, west->east and north->south) of the heightmap samples."""
+    min_x, min_y, max_x, max_y = tile_bounds_mercator(z, x, y)
+    step = (max_x - min_x) / GRID_INTERVALS
+    idx = np.arange(-1, GRID_INTERVALS + 2, dtype=np.float64)
+    return min_x + idx * step, max_y - idx * step
+
+
+def sample_spacing_m(z: int, lat: float) -> float:
+    """Ground distance between heightmap samples at zoom ``z``."""
+    return 2 * MERCATOR_HALF / (2**z) / GRID_INTERVALS * math.cos(math.radians(lat))
+
+
+# --- source rasters ----------------------------------------------------------------------
+@dataclass(frozen=True)
+class SourceFile:
+    url: str
+    filename: str
+    bounds: tuple[float, float, float, float]  # west, south, east, north (lon/lat)
+
+
+class DemSource:
+    """Base class for DEM sources consisting of downloadable raster files."""
+
+    id: str = ""
+    name: str = ""
+    native_resolution_m: float = 30.0
+    license: License = License("unknown", "")
+
+    def files_for_bounds(self, bounds: tuple[float, float, float, float]) -> list[SourceFile]:
+        raise NotImplementedError
+
+
+class CopernicusGlo30(DemSource):
+    id = "copernicus_glo30"
+    name = "Copernicus DEM GLO-30"
+    native_resolution_m = 30.0
+    license = License(
+        "Copernicus DEM licence (free, attribution required)",
+        "Copernicus DEM GLO-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH "
+        "2014-2018 provided under COPERNICUS by the European Union and ESA",
+        "https://spacedata.copernicus.eu/documents/20126/0/CSCDA_ESA_Mission-specific+Annex.pdf",
+        commercial_use=True,
+    )
+    BASE_URL = "https://copernicus-dem-30m.s3.amazonaws.com"
+
+    def files_for_bounds(self, bounds):
+        west, south, east, north = bounds
+        files = []
+        for lat in range(math.floor(south), math.floor(north) + 1):
+            for lon in range(math.floor(west), math.floor(east) + 1):
+                ns = f"{'N' if lat >= 0 else 'S'}{abs(lat):02d}"
+                ew = f"{'E' if lon >= 0 else 'W'}{abs(lon):03d}"
+                stem = f"Copernicus_DSM_COG_10_{ns}_00_{ew}_00_DEM"
+                files.append(
+                    SourceFile(
+                        f"{self.BASE_URL}/{stem}/{stem}.tif",
+                        f"{stem}.tif",
+                        (lon, lat, lon + 1, lat + 1),
+                    )
+                )
+        return files
+
+
+DEM_SOURCES: dict[str, DemSource] = {s.id: s for s in (CopernicusGlo30(),)}
+
+
+def get_dem_source(source_id: str) -> DemSource:
+    try:
+        return DEM_SOURCES[source_id]
+    except KeyError:
+        known = ", ".join(sorted(DEM_SOURCES))
+        raise KeyError(f"unknown DEM source '{source_id}' (known: {known})") from None
+
+
+# --- download ----------------------------------------------------------------------------
+def source_dir(cache: TileCache, source: DemSource) -> Path:
+    return cache.root / "_sources" / source.id
+
+
+def download_sources(
+    source: DemSource,
+    files: list[SourceFile],
+    cache: TileCache,
+    client: httpx.Client | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel: threading.Event | None = None,
+) -> DownloadProgress:
+    client = client or http_client()
+    folder = source_dir(cache, source)
+    folder.mkdir(parents=True, exist_ok=True)
+    progress = DownloadProgress(total=len(files))
+    for f in files:
+        if cancel is not None and cancel.is_set():
+            break
+        target = folder / f.filename
+        missing = folder / (f.filename + ".missing")
+        if target.exists() or missing.exists():
+            progress.skipped += 1
+        else:
+            try:
+                with client.stream("GET", f.url) as response:
+                    if response.status_code in (403, 404):
+                        missing.touch()  # e.g. ocean tiles do not exist
+                        progress.missing += 1
+                    else:
+                        response.raise_for_status()
+                        buf = io.BytesIO()
+                        for chunk in response.iter_bytes(1 << 20):
+                            if cancel is not None and cancel.is_set():
+                                raise InterruptedError
+                            buf.write(chunk)
+                            progress.bytes += len(chunk)
+                            if on_progress:
+                                on_progress(progress)
+                        write_atomic(target, buf.getvalue())
+                        progress.downloaded += 1
+            except InterruptedError:
+                break
+            except httpx.HTTPError as exc:
+                progress.failed += 1
+                progress.errors.append(f"{f.filename}: {exc}")
+        progress.done += 1
+        if on_progress:
+            on_progress(progress)
+    return progress
+
+
+# --- sampling ----------------------------------------------------------------------------
+class _Raster:
+    """A source raster (optionally decimated via overviews) held in memory."""
+
+    def __init__(self, path: Path, decimation: int) -> None:
+        with rasterio.open(path) as ds:
+            height = max(1, ds.height // decimation)
+            width = max(1, ds.width // decimation)
+            data = ds.read(
+                1, out_shape=(height, width), resampling=Resampling.average, masked=True
+            ).astype(np.float32)
+            self.values = np.ma.filled(data, np.nan)
+            scale_x = ds.width / width
+            scale_y = ds.height / height
+            self.transform = ds.transform @ rasterio.Affine.scale(scale_x, scale_y)
+            self.crs = ds.crs
+            self.bounds = ds.bounds
+        self.inverse = ~self.transform
+        self._to_src = None
+        if self.crs is not None and self.crs.to_epsg() != 4326:
+            self._to_src = Transformer.from_crs(4326, self.crs, always_xy=True)
+
+    def sample(self, lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
+        """Bilinear sampling at lon/lat; NaN outside or where any neighbour is nodata."""
+        if self._to_src is not None:
+            sx, sy = self._to_src.transform(lon, lat)
+        else:
+            sx, sy = lon, lat
+        col, row = self.inverse @ (np.asarray(sx), np.asarray(sy))
+        h, w = self.values.shape
+        # Everything within the raster footprint is sampled; within the outermost half pixel
+        # the edge value is extended, so adjacent source files join without gaps.
+        inside = (col >= 0) & (row >= 0) & (col <= w) & (row <= h)
+        out = np.full(np.shape(col), np.nan, dtype=np.float32)
+        if not inside.any():
+            return out
+        col = np.clip(col[inside] - 0.5, 0, w - 1)  # pixel centres
+        row = np.clip(row[inside] - 0.5, 0, h - 1)
+        c0 = np.minimum(np.floor(col).astype(np.int64), max(w - 2, 0))
+        r0 = np.minimum(np.floor(row).astype(np.int64), max(h - 2, 0))
+        c1 = np.minimum(c0 + 1, w - 1)
+        r1 = np.minimum(r0 + 1, h - 1)
+        fc = col - c0
+        fr = row - r0
+        v = self.values
+        top = v[r0, c0] * (1 - fc) + v[r0, c1] * fc
+        bottom = v[r1, c0] * (1 - fc) + v[r1, c1] * fc
+        out[inside] = top * (1 - fr) + bottom * fr
+        return out
+
+
+class DemBaker:
+    """Bakes heightmap tiles from the downloaded source files of a DEM source."""
+
+    def __init__(self, source: DemSource, cache: TileCache, max_rasters: int = 6) -> None:
+        self.source = source
+        self.cache = cache
+        self.folder = source_dir(cache, source)
+        self._rasters: OrderedDict[tuple[str, int], _Raster] = OrderedDict()
+        self._max_rasters = max_rasters
+
+    def _raster(self, filename: str, decimation: int) -> _Raster:
+        key = (filename, decimation)
+        raster = self._rasters.get(key)
+        if raster is None:
+            raster = _Raster(self.folder / filename, decimation)
+            self._rasters[key] = raster
+            while len(self._rasters) > self._max_rasters:
+                self._rasters.popitem(last=False)
+        else:
+            self._rasters.move_to_end(key)
+        return raster
+
+    def _decimation_for(self, z: int, lat: float) -> int:
+        spacing = sample_spacing_m(z, lat)
+        factor = 1
+        while self.source.native_resolution_m * factor * 2 <= spacing and factor < 256:
+            factor *= 2
+        return factor
+
+    def bake_tile(self, z: int, x: int, y: int) -> np.ndarray | None:
+        west, south, east, north = tile_bounds_lonlat(z, x, y)
+        margin = (east - west) / GRID_INTERVALS * 2
+        files = [
+            f
+            for f in self.source.files_for_bounds(
+                (west - margin, south - margin, east + margin, north + margin)
+            )
+            if (self.folder / f.filename).exists()
+        ]
+        if not files:
+            return None
+        mx, my = sample_positions_mercator(z, x, y)
+        gx, gy = np.meshgrid(mx, my)
+        lon, lat = mercator_to_lonlat(gx, gy)
+        decimation = self._decimation_for(z, (south + north) / 2)
+        heights = np.full(gx.shape, np.nan, dtype=np.float32)
+        for f in files:
+            todo = np.isnan(heights)
+            if not todo.any():
+                break
+            values = self._raster(f.filename, decimation).sample(lon[todo], lat[todo])
+            heights[todo] = values
+        if np.isnan(heights).all():
+            return None
+        return heights
+
+    def bake(
+        self,
+        tiles: Iterable[tuple[int, int, int]],
+        on_progress: ProgressCallback | None = None,
+        cancel: threading.Event | None = None,
+        overwrite: bool = False,
+    ) -> DownloadProgress:
+        tiles = list(tiles)
+        progress = DownloadProgress(total=len(tiles))
+        sid = self.source.id
+        # Coarse-to-fine and spatially sorted, so raster cache hits are likely.
+        tiles.sort(key=lambda t: (t[0], t[1] >> 3, t[2] >> 3, t[1], t[2]))
+        for z, x, y in tiles:
+            if cancel is not None and cancel.is_set():
+                break
+            if not overwrite and self.cache.is_known(sid, z, x, y, "png"):
+                progress.skipped += 1
+            else:
+                try:
+                    heights = self.bake_tile(z, x, y)
+                except Exception as exc:  # rasterio errors etc.
+                    progress.failed += 1
+                    progress.errors.append(f"{z}/{x}/{y}: {exc}")
+                    log.exception("baking %s/%s/%s failed", z, x, y)
+                else:
+                    if heights is None:
+                        self.cache.mark_missing(sid, z, x, y)
+                        progress.missing += 1
+                    else:
+                        data = encode_heightmap(heights)
+                        self.cache.write(sid, z, x, y, "png", data)
+                        progress.downloaded += 1
+                        progress.bytes += len(data)
+            progress.done += 1
+            if on_progress:
+                on_progress(progress)
+        return progress
+
+
+def read_heightmap(cache: TileCache, source_id: str, z: int, x: int, y: int) -> np.ndarray | None:
+    data = cache.read(source_id, z, x, y, "png")
+    return None if data is None else decode_heightmap(data)

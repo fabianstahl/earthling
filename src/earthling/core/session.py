@@ -32,7 +32,19 @@ class Session:
             raise ConfigError(f"sources.imagery: {exc.args[0]}") from exc
         if not self.imagery_providers:
             raise ConfigError("sources.imagery must name at least one provider")
+        from earthling.data.dem import DemSource, get_dem_source
+
+        try:
+            self.dem_sources: list[DemSource] = [get_dem_source(d) for d in self.config.sources.dem]
+        except KeyError as exc:
+            raise ConfigError(f"sources.dem: {exc.args[0]}") from exc
+        if not self.dem_sources:
+            raise ConfigError("sources.dem must name at least one source")
         self.cache = TileCache(project.cache_dir)
+
+    @property
+    def dem_source(self):
+        return self.dem_sources[0]
 
     @property
     def imagery_provider(self) -> TileProvider:
