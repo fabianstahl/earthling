@@ -130,6 +130,7 @@ class Renderer:
         self.hud = HudLayer(ctx, self.shaders, self.labels.get_atlas)
         self.shadows = ShadowMaps(ctx)
         self.time = 0.0  # animation time in seconds (drives pulsing effects)
+        self.jitter_px = (0.0, 0.0)  # sub-pixel projection offset (export anti-aliasing)
         # temporary replacements of property values (preview / export quality)
         self.overrides: dict[str, object] = {}
         self.store: PropertyStore | None = None
@@ -247,6 +248,10 @@ class Renderer:
         self.reset_state()
         self.apply_properties(camera)
         view_proj = camera.view_projection(width / max(1, height))
+        if self.jitter_px != (0.0, 0.0):
+            jx, jy = self.jitter_px
+            shift = glm.vec3(2.0 * jx / width, 2.0 * jy / height, 0.0)
+            view_proj = glm.translate(glm.mat4(1.0), shift) * view_proj
         # the camera selection comes first so shadow casters never starve the view
         selection = self.terrain.update(camera, view_proj, height) if self.terrain.visible else None
         shadow_uniforms = self._render_shadows(camera, width, height)

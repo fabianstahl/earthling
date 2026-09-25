@@ -19,14 +19,37 @@ def parse_resolution(text: str) -> tuple[int, int]:
     return int(w), int(h)
 
 
+def halton(index: int, base: int) -> float:
+    """Low-discrepancy sequence in [0, 1) (sub-pixel sample positions)."""
+    f, result = 1.0, 0.0
+    while index > 0:
+        f /= base
+        result += f * (index % base)
+        index //= base
+    return result
+
+
 @dataclass
 class ExportQuality:
     detail: float = 0.75  # terrain detail threshold (px per texel)
     shadow_resolution: str = "8192"
+    samples: int = 1  # jittered sub-frames per frame (anti-aliasing)
+    motion_blur: float = 0.0  # shutter as a fraction of the frame time
 
     @classmethod
     def from_store(cls, store) -> ExportQuality:
-        return cls(store["export.detail"], store["export.shadow_resolution"])
+        return cls(
+            store["export.detail"],
+            store["export.shadow_resolution"],
+            int(store["export.samples"]),
+            float(store["export.motion_blur"]),
+        )
+
+    @property
+    def subframes(self) -> int:
+        if self.motion_blur > 0.0:
+            return max(self.samples, 8)
+        return max(self.samples, 1)
 
 
 class FrameRenderer:
@@ -54,6 +77,8 @@ class FrameRenderer:
         self._size = (0, 0)
         self._color: moderngl.Texture | None = None
         self._fbo: moderngl.Framebuffer | None = None
+        self._acc: moderngl.Texture | None = None
+        self._acc_fbo: moderngl.Framebuffer | None = None
 
     def _ensure_target(self, width: int, height: int) -> moderngl.Framebuffer:
         if (width, height) != self._size or self._fbo is None:
@@ -63,6 +88,12 @@ class FrameRenderer:
             self._fbo = self.ctx.framebuffer([self._color])
             self._size = (width, height)
         return self._fbo
+
+    def _accumulator(self) -> moderngl.Framebuffer:
+        if self._acc_fbo is None:
+            self._acc = self.ctx.texture(self._size, 4, dtype="f4")
+            self._acc_fbo = self.ctx.framebuffer([self._acc])
+        return self._acc_fbo
 
     def camera_at(self, time: float) -> Camera:
         self.rig.path = self.renderer.tracks.path
@@ -80,9 +111,59 @@ class FrameRenderer:
         return camera
 
     def _draw(self, time: float, width: int, height: int) -> moderngl.Framebuffer:
-        """Render ``time`` at full quality into the offscreen target (no readback)."""
-        self.animation.apply(time)
+        """Render ``time`` at full quality into the offscreen target (no readback). With
+        anti-aliasing / motion blur, the average of jittered sub-frames spread over the
+        shutter interval."""
+        n = self.quality.subframes
+        if n <= 1:
+            return self._draw_single(time, width, height)
         if self.on_time is not None:
+            self.on_time(time)
+        shutter = self.quality.motion_blur / max(self.animation.fps, 1e-6)
+        jitter = self.quality.samples > 1
+        renderer = self.renderer
+        fbo = self._ensure_target(width, height)
+        acc = self._accumulator()
+        acc.use()
+        acc.clear(0.0, 0.0, 0.0, 0.0)
+        passes = renderer.fullscreen
+        program = passes("accumulate")
+        try:
+            for i in range(n):
+                renderer.jitter_px = (
+                    (halton(i + 1, 2) - 0.5, halton(i + 1, 3) - 0.5) if jitter else (0.0, 0.0)
+                )
+                t = time + ((i + 0.5) / n - 0.5) * shutter
+                self._draw_single(t, width, height, notify=False)
+                acc.use()
+                self.ctx.viewport = (0, 0, width, height)
+                self.ctx.enable(moderngl.BLEND)
+                self.ctx.blend_func = moderngl.ONE, moderngl.ONE
+                assert self._color is not None
+                self._color.use(0)
+                program["u_source"] = 0
+                program["u_weight"] = 1.0 / n
+                passes.draw("accumulate")
+                self.ctx.disable(moderngl.BLEND)
+        finally:
+            renderer.jitter_px = (0.0, 0.0)
+            renderer.reset_state()
+        # resolve into the (half float) output target
+        fbo.use()
+        self.ctx.viewport = (0, 0, width, height)
+        assert self._acc is not None
+        self._acc.use(0)
+        program["u_weight"] = 1.0
+        passes.draw("accumulate")
+        if shutter > 0.0:
+            self.animation.apply(time)  # leave the scene at the frame time
+        return fbo
+
+    def _draw_single(
+        self, time: float, width: int, height: int, notify: bool = True
+    ) -> moderngl.Framebuffer:
+        self.animation.apply(time)
+        if notify and self.on_time is not None:
             self.on_time(time)
         renderer = self.renderer
         previous_overrides = renderer.overrides
@@ -134,10 +215,10 @@ class FrameRenderer:
                 buf.release()
 
     def release(self) -> None:
-        for obj in (self._fbo, self._color):
+        for obj in (self._fbo, self._color, self._acc_fbo, self._acc):
             if obj is not None:
                 obj.release()
-        self._fbo = self._color = None
+        self._fbo = self._color = self._acc_fbo = self._acc = None
         self._size = (0, 0)
 
 

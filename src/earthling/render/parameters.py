@@ -64,6 +64,13 @@ EXPORT = section(
         tooltip="Detail threshold used for exported frames (smaller = sharper, slower)"),
     enum("export.shadow_resolution", "Shadow map size", "8192",
          [("4096", "4096"), ("8192", "8192")], animatable=False),
+    enum("export.samples", "Anti-aliasing", "4",
+         [("1", "Off"), ("4", "4 samples"), ("8", "8 samples"), ("16", "16 samples")],
+         animatable=False,
+         tooltip="Sub-pixel jittered renders averaged per exported frame (slower, smoother)"),
+    flt("export.motion_blur", "Motion blur", 0.0, 0.0, 1.0, step=0.05, animatable=False,
+        tooltip="Shutter as a fraction of the frame time (0.5 = 180° shutter). Uses the "
+                "anti-aliasing samples, at least 8"),
 )  # fmt: skip
 
 CAMERA = section(

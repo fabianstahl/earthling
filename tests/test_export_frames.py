@@ -81,3 +81,33 @@ def test_iter_frames_matches_single_renders(gl_ctx):
     for t, img in zip(times, piped, strict=True):
         assert np.array_equal(img, frames.render(t, 96, 54, bits=16))
     assert not np.array_equal(piped[0], piped[2])  # the camera moved
+
+
+def test_antialiasing_and_motion_blur(gl_ctx):
+    from earthling.export.frames import ExportQuality, halton
+
+    assert [halton(i, 2) for i in (1, 2, 3)] == [0.5, 0.25, 0.75]
+    scene, renderer = make(gl_ctx)
+    sharp_frames = FrameRenderer(renderer, scene.animation, quality=ExportQuality(samples=1))
+    sharp = sharp_frames.render(2.0, 160, 90, bits=16).astype(float)
+    aa_frames = FrameRenderer(renderer, scene.animation, quality=ExportQuality(samples=8))
+    aa = aa_frames.render(2.0, 160, 90, bits=16).astype(float)
+    assert np.array_equal(aa, aa_frames.render(2.0, 160, 90, bits=16))  # deterministic
+    assert not np.array_equal(sharp, aa)
+    assert abs(sharp.mean() - aa.mean()) < 0.01 * 65535
+
+    def edge_energy(img):
+        return np.abs(np.diff(img, axis=1)).mean() + np.abs(np.diff(img, axis=0)).mean()
+
+    assert edge_energy(aa) < edge_energy(sharp)
+    # motion blur = the average of sharp sub-frames spread over the shutter interval
+    scene.animation.fps = 2.0  # long frames: the camera moves a lot within one
+    blur_frames = FrameRenderer(
+        renderer, scene.animation, quality=ExportQuality(samples=1, motion_blur=1.0)
+    )
+    blurred = blur_frames.render(2.0, 160, 90, bits=16).astype(float)
+    n = blur_frames.quality.subframes
+    times = [2.0 + ((i + 0.5) / n - 0.5) * 0.5 for i in range(n)]
+    expected = np.mean([sharp_frames.render(t, 160, 90, bits=16) for t in times], axis=0)
+    assert np.abs(blurred - expected).mean() < 0.002 * 65535
+    assert np.abs(blurred - sharp).mean() > 0.0005 * 65535  # smooth test scene: small change
