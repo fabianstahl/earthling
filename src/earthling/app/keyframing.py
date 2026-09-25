@@ -9,7 +9,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QUndoCommand, QUndoStack
 
 from earthling.app.timeline import TimelineController
-from earthling.core.animation import Animation, Curve, Interp, snap_to_frame
+from earthling.core.animation import Animation, Curve, HandleMode, Interp, snap_to_frame
 
 KeyRef = tuple[str, float]  # (property id, key time)
 
@@ -86,6 +86,27 @@ class KeyframeEditor(QObject):
         self.stack.push(
             AnimationSnapshotCommand(label, self.animation, before, after, self._notify)
         )
+        self._notify()
+
+    # --- interactive edits (drags): live changes, one undo step --------------------------
+    def begin(self, pids: Iterable[str]) -> None:
+        pids = list(dict.fromkeys(pids))
+        self._pending = (pids, self._snapshot(pids))
+
+    def live(self) -> None:
+        """Call after changing curves directly during a drag (refreshes views and scene)."""
+        self._notify()
+
+    def commit(self, label: str) -> None:
+        pending, self._pending = getattr(self, "_pending", None), None
+        if pending is None:
+            return
+        pids, before = pending
+        after = self._snapshot(pids)
+        if before != after:
+            self.stack.push(
+                AnimationSnapshotCommand(label, self.animation, before, after, self._notify)
+            )
         self._notify()
 
     # --- operations -------------------------------------------------------------------
@@ -193,3 +214,23 @@ class KeyframeEditor(QObject):
 
         self.edit("Paste keys", [pid for pid, *_ in self.clipboard], run)
         return pasted
+
+    def set_handle_mode(self, keys: Iterable[KeyRef], mode: HandleMode) -> None:
+        """Set the handle mode; the segments around the keys become Bézier curves."""
+        keys = list(keys)
+
+        def run() -> None:
+            for pid, t in keys:
+                curve = self.animation.curves.get(pid)
+                key = curve.key_at(t) if curve is not None else None
+                if key is None or curve.graph_kind is None:
+                    continue
+                i = curve.keys.index(key)
+                curve.freeze_handles(i)
+                key.handle_mode = mode
+                if i < len(curve.keys) - 1:
+                    key.interp = Interp.BEZIER
+                if i > 0:
+                    curve.keys[i - 1].interp = Interp.BEZIER
+
+        self.edit(f"Handles: {mode.value}", [pid for pid, _ in keys], run)

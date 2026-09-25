@@ -7,6 +7,12 @@ to the segment: ``out_handle = (x, y)`` places the first control point at
 ``(t1 - x * duration, v1 - y * delta)``. That works for any value type (scalars, colours,
 vectors, datetimes) and matches CSS ``cubic-bezier`` for the presets.
 
+Handle modes (per key, like Blender): ``auto`` handles are computed from the neighbouring keys
+(auto-clamped: smooth, flat at extremes, no overshoot), ``vector`` handles point at the
+neighbour (straight), ``aligned`` and ``free`` handles are the stored ones (aligned: the editor
+keeps both sides collinear). The graph editor works on each curve's *scalar channel*: the value
+for float/int/datetime properties, otherwise the "progress" key index + blend factor.
+
 Type rules
 ----------
 * float / int: interpolated (ints are rounded)
@@ -60,6 +66,22 @@ INTERP_LABELS = {
 }
 
 DEFAULT_HANDLE = (1.0 / 3.0, 0.0)  # smooth ease-in-out-like default for new Bezier keys
+VECTOR_HANDLE = (1.0 / 3.0, 1.0 / 3.0)  # pointing at the neighbouring key
+
+
+class HandleMode(StrEnum):
+    AUTO = "auto"
+    ALIGNED = "aligned"
+    FREE = "free"
+    VECTOR = "vector"
+
+
+HANDLE_LABELS = {
+    HandleMode.AUTO: "Auto (clamped)",
+    HandleMode.ALIGNED: "Aligned",
+    HandleMode.FREE: "Free",
+    HandleMode.VECTOR: "Vector",
+}
 
 
 def cubic_bezier_ease(x: float, x1: float, y1: float, x2: float, y2: float) -> float:
@@ -143,9 +165,20 @@ class Keyframe:
     interp: Interp = Interp.LINEAR
     out_handle: tuple[float, float] = DEFAULT_HANDLE  # used when interp is BEZIER
     in_handle: tuple[float, float] = DEFAULT_HANDLE  # of the segment *ending* at this key
+    handle_mode: HandleMode = HandleMode.AUTO
 
     def copy(self) -> Keyframe:
-        return Keyframe(self.time, self.value, self.interp, self.out_handle, self.in_handle)
+        return Keyframe(
+            self.time, self.value, self.interp, self.out_handle, self.in_handle, self.handle_mode
+        )
+
+
+def _usable_handle(handle: tuple[float, float], towards: tuple[float, float]):
+    """Presets have zero-length handles (linear, ease-out start); give them a third of the
+    way to the other control point, which keeps the tangent (linear stays exactly linear)."""
+    if abs(handle[0]) + abs(handle[1]) > 1e-6:
+        return handle
+    return towards[0] / 3.0, towards[1] / 3.0
 
 
 def _is_stepped(ptype: PType) -> bool:
@@ -233,6 +266,197 @@ class Curve:
     def sort(self) -> None:
         self.keys.sort(key=lambda k: k.time)
 
+    # --- scalar channel and handles -----------------------------------------------------
+    @property
+    def graph_kind(self) -> str | None:
+        """'value' (plotted by value), 'progress' (key index + blend) or None (stepped)."""
+        t = self.definition.type
+        if _is_stepped(t):
+            return None
+        return "value" if t in (PType.FLOAT, PType.INT, PType.DATETIME) else "progress"
+
+    def to_scalar(self, value: Any, index: float = 0.0) -> float:
+        """Scalar channel of a value (``index`` is used for progress channels)."""
+        t = self.definition.type
+        if t in (PType.FLOAT, PType.INT):
+            return float(value)
+        if t is PType.DATETIME:
+            return value.timestamp()
+        return float(index)
+
+    def from_scalar(self, scalar: float, like: Any) -> Any:
+        """Inverse of :meth:`to_scalar` for value channels (keeps a datetime's timezone)."""
+        t = self.definition.type
+        if t is PType.DATETIME:
+            return like + timedelta(seconds=scalar - like.timestamp())
+        if t in (PType.FLOAT, PType.INT):
+            return self.definition.coerce(scalar)
+        return like
+
+    def scalars(self) -> list[float]:
+        return [self.to_scalar(k.value, i) for i, k in enumerate(self.keys)]
+
+    def _auto_slope(self, i: int, values: list[float]) -> float:
+        """Auto-clamped slope (scalar units per second) at key ``i``."""
+        if i == 0 or i == len(self.keys) - 1:
+            return 0.0
+        vp, vk, vn = values[i - 1], values[i], values[i + 1]
+        if (vk - vp) * (vn - vk) <= 0.0:  # extreme or flat: horizontal handle
+            return 0.0
+        slope = (vn - vp) / max(self.keys[i + 1].time - self.keys[i - 1].time, 1e-9)
+        # clamp so neither neighbouring segment overshoots (a third of the segment's handle
+        # may rise at most by the segment's delta); one slope for both sides keeps it smooth
+        limit = min(
+            3.0 * abs(vk - vp) / max(self.keys[i].time - self.keys[i - 1].time, 1e-9),
+            3.0 * abs(vn - vk) / max(self.keys[i + 1].time - self.keys[i].time, 1e-9),
+        )
+        return math.copysign(min(abs(slope), limit), slope)
+
+    def effective_handles(
+        self, i: int, values: list[float] | None = None
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
+        """(in_handle, out_handle) of key ``i`` after applying its handle mode."""
+        key = self.keys[i]
+        mode = key.handle_mode
+        if mode is HandleMode.VECTOR:
+            return VECTOR_HANDLE, VECTOR_HANDLE
+        if mode is not HandleMode.AUTO:
+            return key.in_handle, key.out_handle
+        values = self.scalars() if values is None else values
+        slope = self._auto_slope(i, values)
+        in_h = out_h = DEFAULT_HANDLE
+        third = 1.0 / 3.0
+        if i > 0:
+            dur, delta = key.time - self.keys[i - 1].time, values[i] - values[i - 1]
+            y = slope * third * dur / delta if delta else 0.0
+            in_h = (third, min(max(y, 0.0), 1.0))
+        if i < len(self.keys) - 1:
+            dur, delta = self.keys[i + 1].time - key.time, values[i + 1] - values[i]
+            y = slope * third * dur / delta if delta else 0.0
+            out_h = (third, min(max(y, 0.0), 1.0))
+        return in_h, out_h
+
+    def segment_ease(self, i: int, values: list[float] | None = None):
+        """(x1, y1, x2, y2) cubic-bezier timing of the segment starting at key ``i``."""
+        k0 = self.keys[i]
+        if k0.interp is not Interp.BEZIER:
+            return PRESETS.get(k0.interp, PRESETS[Interp.LINEAR])
+        needs_values = HandleMode.AUTO in (k0.handle_mode, self.keys[i + 1].handle_mode)
+        if needs_values and values is None:
+            values = self.scalars()
+        ox, oy = self.effective_handles(i, values)[1]
+        ix, iy = self.effective_handles(i + 1, values)[0]
+        return ox, oy, 1.0 - ix, 1.0 - iy
+
+    def blend_at(self, time: float) -> tuple[int, float]:
+        """Segment index and blend factor at ``time`` (f may leave [0, 1] with overshoot)."""
+        keys = self.keys
+        if time <= keys[0].time or len(keys) == 1:
+            return 0, 0.0
+        if time >= keys[-1].time:
+            return len(keys) - 2, 1.0
+        i = bisect.bisect_right([k.time for k in keys], time) - 1
+        k0, k1 = keys[i], keys[i + 1]
+        duration = k1.time - k0.time
+        x = (time - k0.time) / duration if duration > 0 else 1.0
+        if k0.interp is Interp.STEP or _is_stepped(self.definition.type):
+            return i, 0.0
+        return i, cubic_bezier_ease(x, *self.segment_ease(i))
+
+    def freeze_handles(self, i: int, values: list[float] | None = None) -> None:
+        """Store the effective handles of key ``i`` so a mode change does not move them."""
+        key = self.keys[i]
+        key.in_handle, key.out_handle = self.effective_handles(i, values)
+
+    def drag_handle(self, i: int, side: str, time: float, scalar: float) -> None:
+        """Move the ``side`` ('in' or 'out') handle of key ``i`` to the absolute point
+        (time, scalar channel value). Automatic handles become aligned, the segment becomes
+        Bézier (keeping the other end's shape), aligned handles stay collinear."""
+        keys = self.keys
+        seg = i if side == "out" else i - 1
+        if not 0 <= seg < len(keys) - 1 or self.graph_kind is None:
+            return
+        values = self.scalars()
+        key = keys[i]
+        if key.handle_mode in (HandleMode.AUTO, HandleMode.VECTOR):
+            self.freeze_handles(i, values)
+            key.handle_mode = HandleMode.ALIGNED
+        start, end = keys[seg], keys[seg + 1]
+        if start.interp is not Interp.BEZIER:
+            x1, y1, x2, y2 = self.segment_ease(seg, values)
+            other_index = seg + 1 if side == "out" else seg
+            other = keys[other_index]
+            if other.handle_mode in (HandleMode.AUTO, HandleMode.VECTOR):
+                self.freeze_handles(other_index, values)
+                other.handle_mode = HandleMode.FREE
+            if side == "out":
+                end.in_handle = _usable_handle((1.0 - x2, 1.0 - y2), (1.0 - x1, 1.0 - y1))
+            else:
+                start.out_handle = _usable_handle((x1, y1), (x2, y2))
+            start.interp = Interp.BEZIER
+        duration = max(end.time - start.time, 1e-9)
+        delta = values[seg + 1] - values[seg]
+        if side == "out":
+            hx = min(max((time - key.time) / duration, 1e-3), 1.0)
+            hy = (scalar - values[i]) / delta if delta else key.out_handle[1]
+            key.out_handle = (hx, hy)
+        else:
+            hx = min(max((key.time - time) / duration, 1e-3), 1.0)
+            hy = (values[i] - scalar) / delta if delta else key.in_handle[1]
+            key.in_handle = (hx, hy)
+        if key.handle_mode is HandleMode.ALIGNED:
+            self._align(i, side, values)
+
+    def _align(self, i: int, side: str, values: list[float]) -> None:
+        """Make the handle opposite to ``side`` collinear with it (keeping its length)."""
+        keys = self.keys
+        key = keys[i]
+        if side == "out":
+            dur, delta = keys[i + 1].time - key.time, values[i + 1] - values[i]
+            hx, hy = key.out_handle
+        else:
+            dur, delta = key.time - keys[i - 1].time, values[i] - values[i - 1]
+            hx, hy = key.in_handle
+        slope = hy * delta / (hx * dur)
+        j = i - 1 if side == "out" else i + 1
+        if not 0 <= j < len(keys):
+            return
+        other_dur = abs(keys[j].time - key.time)
+        other_delta = values[max(i, j)] - values[min(i, j)]
+        if not other_delta:
+            return
+        if side == "out":
+            ix = key.in_handle[0]
+            key.in_handle = (ix, slope * ix * other_dur / other_delta)
+        else:
+            ox = key.out_handle[0]
+            key.out_handle = (ox, slope * ox * other_dur / other_delta)
+
+    def handle_points(self, i: int, values: list[float] | None = None):
+        """Absolute (time, scalar) positions of the visible handles of key ``i``:
+        {'in': (t, v), 'out': (t, v)} for the adjacent Bézier segments."""
+        keys = self.keys
+        values = self.scalars() if values is None else values
+        (ix, iy), (ox, oy) = self.effective_handles(i, values)
+        out = {}
+        key = keys[i]
+        if i < len(keys) - 1 and key.interp is Interp.BEZIER:
+            dur, delta = keys[i + 1].time - key.time, values[i + 1] - values[i]
+            out["out"] = (key.time + ox * dur, values[i] + oy * delta)
+        if i > 0 and keys[i - 1].interp is Interp.BEZIER:
+            dur, delta = key.time - keys[i - 1].time, values[i] - values[i - 1]
+            out["in"] = (key.time - ix * dur, values[i] - iy * delta)
+        return out
+
+    def scalar_at(self, time: float) -> float:
+        """The scalar channel of the curve at ``time`` (what the graph editor plots)."""
+        if self.graph_kind == "progress":
+            if len(self.keys) == 1:
+                return 0.0
+            i, f = self.blend_at(time)
+            return i + f
+        return self.to_scalar(self.evaluate(time))
+
     def evaluate(self, time: float) -> Any:
         keys = self.keys
         if not keys:
@@ -241,17 +465,10 @@ class Curve:
             return keys[0].value
         if time >= keys[-1].time:
             return keys[-1].value
-        i = bisect.bisect_right([k.time for k in keys], time) - 1
+        i, f = self.blend_at(time)
         k0, k1 = keys[i], keys[i + 1]
-        duration = k1.time - k0.time
-        x = (time - k0.time) / duration if duration > 0 else 1.0
         if k0.interp is Interp.STEP or _is_stepped(self.definition.type):
             return k0.value
-        if k0.interp is Interp.BEZIER:
-            (ox, oy), (ix, iy) = k0.out_handle, k1.in_handle
-            f = cubic_bezier_ease(x, ox, oy, 1.0 - ix, 1.0 - iy)
-        else:
-            f = cubic_bezier_ease(x, *PRESETS[k0.interp])
         if self.definition.type is PType.CAMERA:
             return self._evaluate_camera(time, i, f)
         return self.definition.coerce(_blend(self.definition, k0.value, k1.value, f))
@@ -265,7 +482,9 @@ class Curve:
                 "v": self.definition.to_json(k.value),
                 "interp": str(k.interp),
             }
-            if k.interp is Interp.BEZIER or k.in_handle != DEFAULT_HANDLE:
+            if k.handle_mode is not HandleMode.AUTO or k.interp is Interp.BEZIER:
+                entry["handles"] = str(k.handle_mode)
+            if k.handle_mode in (HandleMode.FREE, HandleMode.ALIGNED):
                 entry["out"] = list(k.out_handle)
                 entry["in"] = list(k.in_handle)
             out.append(entry)
@@ -281,6 +500,8 @@ class Curve:
                 Interp(entry.get("interp", "linear")),
                 tuple(entry.get("out", DEFAULT_HANDLE)),  # type: ignore[arg-type]
                 tuple(entry.get("in", DEFAULT_HANDLE)),  # type: ignore[arg-type]
+                # files from before handle modes stored explicit handles only
+                HandleMode(entry.get("handles", "free" if "out" in entry else "auto")),
             )
             curve.keys.append(key)
         curve.sort()

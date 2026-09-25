@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QScrollArea,
     QSizePolicy,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -179,15 +180,30 @@ class TimelineWidget(QWidget):
         from earthling.ui.dope_sheet import LABEL_WIDTH, DopeSheet
 
         self.ruler = TimeRuler(controller, left_inset=LABEL_WIDTH if editor is not None else 0)
-        layout.addWidget(self.ruler)
         self.dope_sheet = None
-        if editor is not None:
+        self.graph_editor = None
+        self.tabs = None
+        if editor is None:
+            layout.addWidget(self.ruler)
+        else:
+            from earthling.ui.graph_editor import GraphEditor
+
             self.dope_sheet = DopeSheet(editor, self.ruler.time_to_x, self.ruler.x_to_time)
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(self.dope_sheet)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            layout.addWidget(scroll, 1)
+            page = QWidget()
+            page_layout = QVBoxLayout(page)
+            page_layout.setContentsMargins(0, 0, 0, 0)
+            page_layout.addWidget(self.ruler)
+            page_layout.addWidget(scroll, 1)
+            self.graph_editor = GraphEditor(editor)
+            self.tabs = QTabWidget()
+            self.tabs.setDocumentMode(True)
+            self.tabs.addTab(page, "Dope Sheet")
+            self.tabs.addTab(self.graph_editor, "Graph Editor")
+            layout.addWidget(self.tabs, 1)
             editor.changed.connect(self.ruler.update)
         controller.time_changed.connect(self._update_label)
         controller.playing_changed.connect(

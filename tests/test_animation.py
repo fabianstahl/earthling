@@ -5,6 +5,7 @@ import pytest
 from earthling.core.animation import (
     Animation,
     Curve,
+    HandleMode,
     Interp,
     cubic_bezier_ease,
     oklab_to_srgb,
@@ -60,6 +61,8 @@ def test_ease_presets_shape():
 
 def test_bezier_handles():
     c = curve(F, (0.0, 0.0), (1.0, 10.0), interp=Interp.BEZIER)
+    for k in c.keys:
+        k.handle_mode = HandleMode.FREE
     c.keys[0].out_handle = (0.5, 0.0)
     c.keys[1].in_handle = (0.5, 0.0)
     assert c.evaluate(0.5) == pytest.approx(5.0, abs=1e-4)
@@ -117,6 +120,7 @@ def test_animation_json_roundtrip():
     anim, _ = make_animation()
     anim.set_key("a.f", 0.0, 1.0, Interp.BEZIER)
     anim.curves["a.f"].keys[0].out_handle = (0.2, 0.7)
+    anim.curves["a.f"].keys[0].handle_mode = HandleMode.FREE
     anim.set_key("a.f", 1.0, 2.0)
     anim.set_key("a.t", 3.0, datetime(2026, 7, 1, 20, 0))
     data = anim.to_json()
