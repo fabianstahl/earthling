@@ -5,6 +5,9 @@ description = "Cinematic 3D flyover videos of GPS tracks"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "moderngl>=5.12.0",
+    "numpy>=2.5.3",
+    "pyglm>=2.8.3",
     "PyQt6>=6.7",
 ]
 

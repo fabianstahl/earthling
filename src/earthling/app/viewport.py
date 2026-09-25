@@ -1,0 +1,94 @@
+"""OpenGL viewport widget hosting a moderngl context."""
+
+from __future__ import annotations
+
+import logging
+import time
+from pathlib import Path
+
+import moderngl
+from PyQt6.QtCore import QFileSystemWatcher, QTimer, pyqtSignal
+from PyQt6.QtGui import QSurfaceFormat
+from PyQt6.QtOpenGLWidgets import QOpenGLWidget
+
+from earthling.render.renderer import Renderer
+
+log = logging.getLogger(__name__)
+
+
+def configure_default_surface_format() -> None:
+    """Must be called before the QApplication is created."""
+    fmt = QSurfaceFormat()
+    fmt.setVersion(4, 3)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    fmt.setDepthBufferSize(24)
+    fmt.setStencilBufferSize(8)
+    fmt.setSwapInterval(1)
+    QSurfaceFormat.setDefaultFormat(fmt)
+
+
+class Viewport(QOpenGLWidget):
+    fps_changed = pyqtSignal(float)
+    shader_error = pyqtSignal(str)
+
+    def __init__(self, dev_mode: bool = False, parent=None) -> None:
+        super().__init__(parent)
+        self.dev_mode = dev_mode
+        self.ctx: moderngl.Context | None = None
+        self.renderer: Renderer | None = None
+        self._start = time.perf_counter()
+        self._frames = 0
+        self._fps_timer = time.perf_counter()
+        self._watcher: QFileSystemWatcher | None = None
+        # Continuous redraw; later steps switch to on-demand rendering where possible.
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self.update)
+        self._timer.start(0)
+
+    # --- Qt GL hooks -------------------------------------------------------------------
+    def initializeGL(self) -> None:
+        self.ctx = moderngl.create_context()
+        log.info("OpenGL %s on %s", self.ctx.info["GL_VERSION"], self.ctx.info["GL_RENDERER"])
+        self.renderer = Renderer(self.ctx)
+        if self.dev_mode:
+            self._watcher = QFileSystemWatcher(self)
+            self._watcher.fileChanged.connect(self._on_shader_changed)
+
+    def paintGL(self) -> None:
+        if self.ctx is None or self.renderer is None:
+            return
+        fbo = self.ctx.detect_framebuffer(self.defaultFramebufferObject())
+        ratio = self.devicePixelRatio()
+        width, height = int(self.width() * ratio), int(self.height() * ratio)
+        self.renderer.render(fbo, width, height, time.perf_counter() - self._start)
+        self._sync_watcher()
+        self._count_frame()
+
+    # --- helpers -----------------------------------------------------------------------
+    def _count_frame(self) -> None:
+        self._frames += 1
+        now = time.perf_counter()
+        if now - self._fps_timer >= 0.5:
+            self.fps_changed.emit(self._frames / (now - self._fps_timer))
+            self._frames = 0
+            self._fps_timer = now
+
+    def _sync_watcher(self) -> None:
+        if self._watcher is None or self.renderer is None:
+            return
+        wanted = {str(p) for p in self.renderer.shaders.watched_files()}
+        missing = wanted - set(self._watcher.files())
+        if missing:
+            self._watcher.addPaths(sorted(missing))
+
+    def _on_shader_changed(self, path: str) -> None:
+        if self.renderer is None:
+            return
+        self.makeCurrent()
+        errors = self.renderer.shaders.reload_changed(Path(path))
+        self.doneCurrent()
+        # Editors often replace files on save, which removes them from the watcher.
+        if self._watcher is not None and path not in self._watcher.files():
+            self._watcher.addPath(path)
+        for err in errors:
+            self.shader_error.emit(err)

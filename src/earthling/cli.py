@@ -11,6 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     gui = sub.add_parser("gui", help="start the graphical application (default)")
     gui.add_argument("project", nargs="?", help="project folder to open")
+    gui.add_argument("--dev", action="store_true", help="enable shader hot reload")
     return parser
 
 
@@ -20,7 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     if command == "gui":
         from earthling.app.main import run_gui
 
-        return run_gui(getattr(args, "project", None))
+        return run_gui(getattr(args, "project", None), dev_mode=getattr(args, "dev", False))
     return 1
 
 

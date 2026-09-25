@@ -6,15 +6,23 @@ from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import QLabel, QMainWindow, QMessageBox
 
 from earthling import __version__
+from earthling.app.viewport import Viewport
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, dev_mode: bool = False) -> None:
         super().__init__()
         self.setWindowTitle("Earthling")
         self.resize(1600, 1000)
         self._build_menus()
-        self.setCentralWidget(QLabel("No project loaded"))
+        self.viewport = Viewport(dev_mode=dev_mode)
+        self.setCentralWidget(self.viewport)
+        self._fps_label = QLabel()
+        self.statusBar().addPermanentWidget(self._fps_label)
+        self.viewport.fps_changed.connect(lambda fps: self._fps_label.setText(f"{fps:5.1f} fps"))
+        self.viewport.shader_error.connect(
+            lambda msg: self.statusBar().showMessage(f"Shader error: {msg}", 10000)
+        )
         self.statusBar().showMessage("Ready")
 
     def _build_menus(self) -> None:

@@ -1,0 +1,143 @@
+"""Loads GLSL programs from disk, resolves ``#include`` and supports hot reload.
+
+A program named ``foo`` consists of ``foo.vert`` and ``foo.frag`` (optionally ``foo.geom``)
+inside the shader directory. Sources may contain ``#include "file.glsl"`` lines which are
+resolved relative to the shader directory. Every file a program depends on is tracked, so
+that a change to any of them triggers a recompile of that program.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import moderngl
+
+log = logging.getLogger(__name__)
+
+SHADER_DIR = Path(__file__).parent / "shaders"
+GLSL_VERSION = "#version 430 core"
+
+_INCLUDE_RE = re.compile(r'^\s*#include\s+"([^"]+)"\s*$', re.MULTILINE)
+
+
+class ShaderError(RuntimeError):
+    pass
+
+
+def preprocess(
+    source: str,
+    base_dir: Path,
+    defines: dict[str, object] | None = None,
+    deps: set[Path] | None = None,
+    _stack: tuple[Path, ...] = (),
+) -> str:
+    """Resolve includes recursively and prepend the version line and defines."""
+
+    def resolve(text: str, stack: tuple[Path, ...]) -> str:
+        def repl(match: re.Match[str]) -> str:
+            path = (base_dir / match.group(1)).resolve()
+            if path in stack:
+                raise ShaderError(f"recursive include of {path.name}")
+            if not path.exists():
+                raise ShaderError(f"include not found: {match.group(1)}")
+            if deps is not None:
+                deps.add(path)
+            return resolve(path.read_text(encoding="utf-8"), (*stack, path))
+
+        return _INCLUDE_RE.sub(repl, text)
+
+    body = resolve(source, _stack)
+    header = [GLSL_VERSION]
+    for key, value in (defines or {}).items():
+        header.append(f"#define {key} {value}")
+    return "\n".join(header) + "\n#line 1\n" + body
+
+
+@dataclass
+class _Entry:
+    name: str
+    defines: dict[str, object]
+    program: moderngl.Program | None = None
+    deps: set[Path] = field(default_factory=set)
+    listeners: list[Callable[[moderngl.Program], None]] = field(default_factory=list)
+
+
+class ShaderLibrary:
+    def __init__(self, ctx: moderngl.Context, shader_dir: Path = SHADER_DIR) -> None:
+        self.ctx = ctx
+        self.shader_dir = shader_dir
+        self._entries: dict[tuple[str, tuple], _Entry] = {}
+
+    def get(
+        self,
+        name: str,
+        defines: dict[str, object] | None = None,
+        on_reload: Callable[[moderngl.Program], None] | None = None,
+    ) -> moderngl.Program:
+        defines = dict(defines or {})
+        key = (name, tuple(sorted(defines.items())))
+        entry = self._entries.get(key)
+        if entry is None:
+            entry = _Entry(name, defines)
+            entry.program = self._compile(entry)
+            self._entries[key] = entry
+        if on_reload is not None:
+            entry.listeners.append(on_reload)
+        assert entry.program is not None
+        return entry.program
+
+    def _compile(self, entry: _Entry) -> moderngl.Program:
+        deps: set[Path] = set()
+        stages: dict[str, str] = {}
+        for stage, ext in (
+            ("vertex_shader", "vert"),
+            ("fragment_shader", "frag"),
+            ("geometry_shader", "geom"),
+        ):
+            path = self.shader_dir / f"{entry.name}.{ext}"
+            if not path.exists():
+                continue
+            deps.add(path.resolve())
+            stages[stage] = preprocess(
+                path.read_text(encoding="utf-8"), self.shader_dir, entry.defines, deps
+            )
+        if "vertex_shader" not in stages:
+            raise ShaderError(f"shader program '{entry.name}' has no vertex shader")
+        try:
+            program = self.ctx.program(**stages)
+        except moderngl.Error as exc:
+            raise ShaderError(f"{entry.name}: {exc}") from exc
+        entry.deps = deps
+        return program
+
+    def watched_files(self) -> set[Path]:
+        files: set[Path] = set()
+        for entry in self._entries.values():
+            files |= entry.deps
+        return files
+
+    def reload_changed(self, changed: Path) -> list[str]:
+        """Recompile all programs depending on ``changed``. Returns error messages."""
+        changed = changed.resolve()
+        errors: list[str] = []
+        for entry in self._entries.values():
+            if changed not in entry.deps:
+                continue
+            try:
+                program = self._compile(entry)
+            except ShaderError as exc:
+                log.error("shader reload failed: %s", exc)
+                errors.append(str(exc))
+                continue
+            old = entry.program
+            entry.program = program
+            for listener in entry.listeners:
+                listener(program)
+            if old is not None:
+                old.release()
+            log.info("reloaded shader %s", entry.name)
+        return errors
