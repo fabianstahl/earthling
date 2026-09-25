@@ -497,10 +497,16 @@ class TerrainLayer:
             del self._resident[node.key]
 
     # --- per frame --------------------------------------------------------------------
-    def _select(self, camera: Camera, view_proj, viewport_height: int) -> lod.Selection:
+    def _select(
+        self, camera: Camera, view_proj, viewport_height: int, coarse: bool = False
+    ) -> lod.Selection:
+        """``coarse``: the (4x coarser) selection used for shadow casters."""
         assert self.nodes is not None
         planes = lod.frustum_planes(view_proj)
         ppr = viewport_height / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
+        params = self.params
+        if coarse:
+            params = lod.LodParams(self.params.pixel_threshold * 4.0, self.params.max_nodes)
         sel = lod.select_nodes(
             self.nodes,
             self.node_bounds,
@@ -510,7 +516,7 @@ class TerrainLayer:
             camera.position,
             planes,
             ppr,
-            self.params,
+            params,
         )
         sel.request = [k for k in sel.request if k not in self._failed]
         return sel
@@ -546,15 +552,24 @@ class TerrainLayer:
         )
 
     def finish_loading(
-        self, camera: Camera, view_proj, viewport_height: int, timeout_s: float = 120.0
+        self,
+        camera: Camera,
+        view_proj,
+        viewport_height: int,
+        timeout_s: float = 120.0,
+        coarse: bool = False,
     ) -> bool:
-        """Block until the view is loaded at full LOD (used by export and tests)."""
+        """Block until the view is loaded at full LOD (used by export and tests).
+
+        ``coarse`` waits for the shadow-caster selection of a light frustum instead.
+        """
         if self.nodes is None or self.data is None:
             return True
         deadline = time.perf_counter() + timeout_s
         while time.perf_counter() < deadline:
-            sel = self._select(camera, view_proj, viewport_height)
-            self.last_selection = sel
+            sel = self._select(camera, view_proj, viewport_height, coarse)
+            if not coarse:
+                self.last_selection = sel
             stale = [
                 k
                 for k in sel.draw

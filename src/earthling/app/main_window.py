@@ -138,6 +138,8 @@ class MainWindow(QMainWindow):
         self._add_action(self.file_menu, "Save Scene &As…", self.save_scene_as, "Ctrl+Shift+S")
         self._add_action(self.file_menu, "Re&vert Scene", self._revert_scene)
         self.file_menu.addSeparator()
+        self._add_action(self.file_menu, "Render &Still…", self.render_still_dialog, "Ctrl+R")
+        self.file_menu.addSeparator()
         self._add_action(self.file_menu, "&Quit", self.close, QKeySequence.StandardKey.Quit)
         self._rebuild_recent_menu()
 
@@ -199,6 +201,43 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(self, "Animation check", "No problems found.")
         return messages
+
+    def frame_renderer(self):
+        from earthling.export.frames import FrameRenderer
+
+        return FrameRenderer(self.viewport.renderer, self.scene.animation, self.rig)
+
+    def render_still(self, path: Path, width: int, height: int) -> None:
+        """Render the current timeline frame at full export quality."""
+        from earthling.export.frames import save_png
+
+        self.viewport.makeCurrent()
+        frames = self.frame_renderer()
+        try:
+            image = frames.render(self.timeline.time, width, height)
+        finally:
+            frames.release()
+            self.viewport.doneCurrent()
+        save_png(image, path)
+        self.viewport.request_render()
+
+    def render_still_dialog(self) -> None:
+        if self.viewport.renderer is None:
+            return
+        from earthling.export.frames import parse_resolution
+
+        start = str(self.project.folder / "still.png") if self.project else "still.png"
+        path, _ = QFileDialog.getSaveFileName(self, "Render still", start, "PNG images (*.png)")
+        if not path:
+            return
+        width, height = parse_resolution(self.scene.store["export.resolution"])
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.statusBar().showMessage(f"Rendering {width} × {height}…")
+        try:
+            self.render_still(Path(path), width, height)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.statusBar().showMessage(f"Saved {path}", 5000)
 
     def pick_look_at_target(self) -> None:
         self.statusBar().showMessage("Click on the terrain to set the look-at target", 5000)

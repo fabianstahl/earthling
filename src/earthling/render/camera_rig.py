@@ -113,3 +113,21 @@ class CameraRig:
             return current
         f = smoothstep((time - switch_time) / transition)
         return blend_poses(self.pose_for_mode(previous_mode, time), current, f)
+
+
+MIN_CLEARANCE_M = 5.0
+
+
+def clamp_above_ground(pose: Pose, frame, terrain_data, exaggeration: float) -> Pose:
+    """Keep a pose above the terrain (follow/look-at paths may cut through ridges)."""
+    height_at = getattr(terrain_data, "height_at", None)
+    if frame is None or height_at is None:
+        return pose
+    lat, lon, h = frame.enu_to_geodetic(np.array(pose[:3]))
+    ground = height_at(float(lon), float(lat))
+    if ground is None:
+        return pose
+    lift = ground * exaggeration + MIN_CLEARANCE_M - float(h)
+    if lift <= 0:
+        return pose
+    return (pose[0], pose[1], pose[2] + lift, *pose[3:])

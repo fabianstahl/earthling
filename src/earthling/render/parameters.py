@@ -48,6 +48,22 @@ VIEW = section(
     flt("view.fov", "Field of view", 50.0, 10.0, 120.0, step=0.5, decimals=1, unit="°"),
     boolean("view.show_outlines", "Area outlines", True, animatable=False,
             tooltip="Show the area of interest and resolution zone outlines"),
+    boolean("view.preview", "Preview quality", False, animatable=False,
+            tooltip="Faster viewport: half resolution, coarser terrain, smaller shadow maps. "
+                    "Exports always use full quality."),
+)  # fmt: skip
+
+EXPORT = section(
+    "Export",
+    enum("export.resolution", "Resolution", "3840x2160",
+         [("1280x720", "1280 × 720 (720p)"), ("1920x1080", "1920 × 1080 (1080p)"),
+          ("2560x1440", "2560 × 1440 (1440p)"), ("3840x2160", "3840 × 2160 (4K UHD)")],
+         animatable=False),
+    flt("export.detail", "Terrain detail", 0.75, 0.25, 4.0, step=0.05, unit="px/texel",
+        logarithmic=True, animatable=False,
+        tooltip="Detail threshold used for exported frames (smaller = sharper, slower)"),
+    enum("export.shadow_resolution", "Shadow map size", "8192",
+         [("4096", "4096"), ("8192", "8192")], animatable=False),
 )  # fmt: skip
 
 CAMERA = section(
@@ -227,6 +243,7 @@ def build_registry() -> PropertyRegistry:
     for group in (
         VIEW,
         CAMERA,
+        EXPORT,
         POST,
         TERRAIN,
         SUN,

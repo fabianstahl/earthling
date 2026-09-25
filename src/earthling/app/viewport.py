@@ -16,6 +16,7 @@ from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
 from earthling.render.camera import Camera, FlyController, OrbitController
+from earthling.render.camera_rig import clamp_above_ground
 from earthling.render.renderer import Renderer
 
 log = logging.getLogger(__name__)
@@ -263,16 +264,8 @@ class Viewport(QOpenGLWidget):
 
     def clamp_pose(self, pose):
         """Keep an animated pose above the terrain (follow/look-at paths may cut ridges)."""
-        if self.frame is None:
-            return pose
-        lat, lon, h = self.frame.enu_to_geodetic(np.array(pose[:3]))
-        ground = self.ground_height(float(lat), float(lon))
-        if ground is None:
-            return pose
-        lift = ground * self._exaggeration() + MIN_GROUND_CLEARANCE_M - float(h)
-        if lift <= 0:
-            return pose
-        return (pose[0], pose[1], pose[2] + lift, *pose[3:])
+        data = self.renderer.terrain.data if self.renderer is not None else None
+        return clamp_above_ground(pose, self.frame, data, self._exaggeration())
 
     def _clamp_to_ground(self) -> None:
         hag = self.height_above_ground()
@@ -320,12 +313,16 @@ class Viewport(QOpenGLWidget):
         px, py = int(x * ratio), int(height - 1 - y * ratio)
         if not (0 <= px < width and 0 <= py < height):
             return None
+        # the scene target may be smaller than the widget (preview quality)
+        tw, th = self.renderer.target.size
+        tx = min(int(px * tw / max(width, 1)), tw - 1)
+        ty = min(int(py * th / max(height, 1)), th - 1)
         self.makeCurrent()
-        depth = self.renderer.read_depth(px, py)
+        depth = self.renderer.read_depth(tx, ty)
         self.doneCurrent()
         if depth is None or depth >= 0.999999:
             return None  # sky
-        return unproject_log_depth(self.camera, px, py, width, height, depth)
+        return unproject_log_depth(self.camera, tx, ty, tw, th, depth)
 
     def pick_center(self) -> np.ndarray | None:
         return self.pick(self.width() / 2, self.height() / 2)
@@ -378,7 +375,15 @@ class Viewport(QOpenGLWidget):
         fbo = self.ctx.detect_framebuffer(self.defaultFramebufferObject())
         ratio = self.devicePixelRatio()
         width, height = int(self.width() * ratio), int(self.height() * ratio)
-        self.renderer.render(fbo, width, height, self.camera)
+        scale = 1.0
+        self.renderer.overrides = {}
+        if self.store is not None and self.store["view.preview"]:
+            scale = 0.5
+            self.renderer.overrides = {
+                "terrain.detail": self.store["terrain.detail"] * 2.0,
+                "shadows.resolution": "2048",
+            }
+        self.renderer.render(fbo, width, height, self.camera, scale=scale)
         self._sync_watcher()
         self._count_frame(now)
 

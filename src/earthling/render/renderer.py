@@ -126,6 +126,8 @@ class Renderer:
         self.marker = MarkerLayer(ctx, self.shaders)
         self.shadows = ShadowMaps(ctx)
         self.time = 0.0  # animation time in seconds (drives pulsing effects)
+        # temporary replacements of property values (preview / export quality)
+        self.overrides: dict[str, object] = {}
         self.store: PropertyStore | None = None
         self.timezone = "UTC"
         self.lighting: Lighting | None = None
@@ -151,6 +153,12 @@ class Renderer:
     def scene_bounds(self):
         return self.terrain.bounds() or self.tracks.bounds
 
+    def value(self, pid: str):
+        """A property value, honouring quality overrides."""
+        if pid in self.overrides:
+            return self.overrides[pid]
+        return self.store[pid]
+
     def apply_properties(self, camera: Camera) -> None:
         """Push the current property values into the render layers."""
         s = self.store
@@ -160,7 +168,7 @@ class Renderer:
         if s["terrain.exaggeration"] != self.terrain.exaggeration:
             self.terrain.exaggeration = s["terrain.exaggeration"]
             self.terrain.invalidate_bounds()
-        self.terrain.params.pixel_threshold = s["terrain.detail"]
+        self.terrain.params.pixel_threshold = self.value("terrain.detail")
         self.terrain.memory_budget_mb = s["terrain.memory_budget_mb"]
         self.terrain.debug_lod = s["terrain.debug_lod"]
         self.terrain.store = s
@@ -185,7 +193,42 @@ class Renderer:
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self.ctx.depth_func = "<"
 
-    def render(self, fbo: moderngl.Framebuffer, width: int, height: int, camera: Camera) -> None:
+    def prepare(self, camera: Camera, width: int, height: int, timeout_s: float = 300.0) -> bool:
+        """Load everything the frame needs at full detail (camera view and shadow casters),
+        so an exported frame never shows lower-resolution tiles or pop-in."""
+        self.reset_state()
+        self.apply_properties(camera)
+        if not self.terrain.visible:
+            return True
+        view_proj = camera.view_projection(width / max(1, height))
+        ok = self.terrain.finish_loading(camera, view_proj, height, timeout_s)
+        s = self.store
+        lit = self.lighting is not None and max(self.lighting.sun_radiance) > 0.0
+        if ok and s is not None and s["shadows.enabled"] and lit:
+            setup = compute_cascades(
+                camera,
+                width / max(1, height),
+                self.lighting.sun_direction,
+                s["shadows.distance"] * 1000.0,
+                int(self.value("shadows.resolution")),
+            )
+            light_vp = setup.cascades[-1].view_proj
+            ok = self.terrain.finish_loading(camera, light_vp, height, timeout_s, coarse=True)
+        return ok
+
+    def render(
+        self,
+        fbo: moderngl.Framebuffer,
+        width: int,
+        height: int,
+        camera: Camera,
+        scale: float = 1.0,
+    ) -> None:
+        """Render into ``fbo`` (width x height); ``scale`` < 1 renders the scene at a lower
+        internal resolution (preview quality) and upscales in the tonemap pass."""
+        output = (width, height)
+        width = max(1, int(round(width * scale)))
+        height = max(1, int(round(height * scale)))
         self.reset_state()
         self.apply_properties(camera)
         view_proj = camera.view_projection(width / max(1, height))
@@ -207,7 +250,7 @@ class Renderer:
         self.ctx.disable(moderngl.DEPTH_TEST)  # the camera path is drawn on top
         self.camera_path.render(camera, view_proj)
         bloom = self._render_glow(camera, view_proj, width, height)
-        self._tonemap(fbo, width, height, bloom)
+        self._tonemap(fbo, *output, bloom)
         self.reset_state()  # leave the context clean for Qt
 
     def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:
@@ -217,7 +260,7 @@ class Renderer:
             self.shadows.setup = None
             return self.shadows.uniforms()
         assert self.lighting is not None
-        self.shadows.ensure(int(s["shadows.resolution"]))
+        self.shadows.ensure(int(self.value("shadows.resolution")))
         setup = compute_cascades(
             camera,
             width / max(1, height),
