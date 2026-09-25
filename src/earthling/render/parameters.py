@@ -85,6 +85,22 @@ LIGHT = section(
     color("light.ground_color", "Ground bounce color", (0.45, 0.4, 0.33)),
 )  # fmt: skip
 
+SHADOWS = section(
+    "Shadows",
+    boolean("shadows.enabled", "Terrain shadows", True),
+    flt("shadows.strength", "Shadow strength", 1.0, 0.0, 1.0, uniform="u_shadow_strength"),
+    flt("shadows.distance", "Shadow distance", 40.0, 2.0, 200.0, step=1.0, decimals=0,
+        unit="km", logarithmic=True, animatable=False,
+        tooltip="Shadows are computed up to this distance from the camera"),
+    enum("shadows.resolution", "Shadow map size", "4096",
+         [("2048", "2048 (fast)"), ("4096", "4096"), ("8192", "8192 (export quality)")],
+         animatable=False),
+    flt("shadows.softness", "Softness", 1.5, 0.5, 4.0, uniform="u_shadow_softness",
+        animatable=False),
+    flt("shadows.bias", "Bias", 1.0, 0.0, 5.0, uniform="u_shadow_bias", animatable=False,
+        tooltip="Increase if shadow acne (stripes) appears on slopes"),
+)  # fmt: skip
+
 SKY = section(
     "Sky & Atmosphere",
     flt("sky.illuminance", "Sky brightness", 20.0, 0.0, 100.0, step=0.5, decimals=1,
@@ -131,6 +147,6 @@ TRACKS = section(
 
 def build_registry() -> PropertyRegistry:
     registry = PropertyRegistry()
-    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SKY, FOG, TRACKS):
+    for group in (VIEW, POST, TERRAIN, SUN, LIGHT, SHADOWS, SKY, FOG, TRACKS):
         registry.extend(group)
     return registry

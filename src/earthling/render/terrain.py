@@ -16,7 +16,7 @@ import os
 import time
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import moderngl
 import numpy as np
@@ -110,6 +110,12 @@ def tile_geometry(frame: LocalFrame, z: int, x: int, y: int, n: int = MESH_GRID)
     ups = np.vstack([ups, ups[per]])
     width = (max_x - min_x) * np.cos(np.radians(float(lat[centre])))
     return TileGeometry(origin, positions, ups, np.array([east_c, north_c, up_c]), float(width))
+
+
+def _set(program: moderngl.Program, name: str, value) -> None:
+    """Set a uniform if the compiled program uses it (variants optimise some away)."""
+    if name in program:
+        program[name] = value
 
 
 # --- CPU preparation (runs on worker threads) ---------------------------------------------
@@ -227,7 +233,7 @@ class _Node:
     min_h: float
     max_h: float
     imagery: moderngl.Texture | None
-    vao: moderngl.VertexArray | None = None
+    vaos: dict[int, moderngl.VertexArray] = field(default_factory=dict)  # per program
     last_used: int = 0
 
     @property
@@ -261,7 +267,7 @@ class TerrainLayer:
         self._workers = workers or max(2, min(8, (os.cpu_count() or 4) - 1))
         self._executor = ThreadPoolExecutor(self._workers, thread_name_prefix="terrain")
         self._in_flight: dict[TileKey, Future] = {}
-        self._program: moderngl.Program | None = None
+        self._programs: dict[str, moderngl.Program] = {}
         self._frame_no = 0
         self.last_selection: lod.Selection | None = None
 
@@ -393,8 +399,9 @@ class TerrainLayer:
             self._upload(prepared)
 
     def _release_node(self, node: _Node) -> None:
-        if node.vao is not None:
-            node.vao.release()
+        for vao in node.vaos.values():
+            vao.release()
+        node.vaos.clear()
         node.vbo.release()
         if node.imagery is not None:
             self._pool.release(node.imagery)
@@ -491,50 +498,118 @@ class TerrainLayer:
             return
         self.draw(camera, view_proj, sel.draw)
 
-    def draw(self, camera: Camera, view_proj, keys: list[TileKey]) -> None:
-        program = self.shaders.get("terrain")
-        if program is not self._program:
+    def _vao(self, node: _Node, program: moderngl.Program) -> moderngl.VertexArray:
+        vao = node.vaos.get(program.glo)
+        if vao is None:
+            vao = self.ctx.vertex_array(
+                program,
+                [
+                    (node.vbo, "3f 3f", "in_pos", "in_up"),
+                    (self._shared, "2f 1f", "in_uv", "in_skirt"),
+                ],
+                self._ibo,
+                index_element_size=4,
+            )
+            node.vaos[program.glo] = vao
+        return vao
+
+    def _check_program(self, program: moderngl.Program, key: str) -> None:
+        """Drop cached VAOs of a program that was hot-reloaded."""
+        old = self._programs.get(key)
+        if old is not None and old is not program:
             for node in self._resident.values():
-                if node.vao is not None:
-                    node.vao.release()
-                node.vao = None
-            self._program = program
+                vao = node.vaos.pop(old.glo, None)
+                if vao is not None:
+                    vao.release()
+        self._programs[key] = program
+
+    def draw(
+        self,
+        camera: Camera,
+        view_proj,
+        keys: list[TileKey],
+        shadow_pass: bool = False,
+        extra_uniforms: dict[str, object] | None = None,
+    ) -> None:
+        if shadow_pass:
+            program = self.shaders.get("terrain", defines={"SHADOW_PASS": 1})
+        else:
+            program = self.shaders.get("terrain")
+        self._check_program(program, "shadow" if shadow_pass else "main")
         program["u_view_proj"].write(view_proj)
-        program["u_log_depth_coef"] = camera.log_depth_coef
-        program["u_exaggeration"] = self.exaggeration
-        program["u_heightmap"] = 0
-        program["u_imagery"] = 1
-        program["u_debug_lod"] = self.debug_lod
-        if self.store is not None:
-            bind_uniforms(program, self.store)
-        for name, value in self.lighting_uniforms.items():
-            if name in program:
-                program[name] = value
+        _set(program, "u_exaggeration", self.exaggeration)
+        _set(program, "u_heightmap", 0)
+        if not shadow_pass:
+            _set(program, "u_log_depth_coef", camera.log_depth_coef)
+            _set(program, "u_imagery", 1)
+            _set(program, "u_debug_lod", self.debug_lod)
+            if self.store is not None:
+                bind_uniforms(program, self.store)
+            for name, value in {**self.lighting_uniforms, **(extra_uniforms or {})}.items():
+                if name == "_matrices":
+                    # to_list() yields columns -> column-major (bytes(mat) is row-major!)
+                    data = np.array([m.to_list() for m in value], dtype="f4").tobytes()  # type: ignore[union-attr]
+                    program["u_shadow_matrix"].write(data)
+                else:
+                    _set(program, name, value)
         for key in keys:
             node = self._resident.get(key)
             if node is None or node.heightmap_key is None:
                 continue
-            if node.vao is None:
-                node.vao = self.ctx.vertex_array(
-                    program,
-                    [
-                        (node.vbo, "3f 3f", "in_pos", "in_up"),
-                        (self._shared, "2f 1f", "in_uv", "in_skirt"),
-                    ],
-                    self._ibo,
-                    index_element_size=4,
-                )
+            vao = self._vao(node, program)
             geo = node.geometry
-            program["u_offset"] = camera.relative(geo.origin)
-            # GLSL mat3 is column-major: columns = east, north, up
-            program["u_tangent"].write(geo.tangent.astype("f4").tobytes())
-            program["u_sample_spacing"] = node.sample_spacing_m
-            program["u_hm_scale"] = node.hm_scale
-            program["u_hm_offset"] = node.hm_offset
-            program["u_skirt_depth"] = max(20.0, geo.width_m / MESH_GRID * 2.0)
-            program["u_zoom"] = key[0]
+            _set(program, "u_offset", camera.relative(geo.origin))
+            _set(program, "u_hm_scale", node.hm_scale)
+            _set(program, "u_hm_offset", node.hm_offset)
+            _set(program, "u_skirt_depth", max(20.0, geo.width_m / MESH_GRID * 2.0))
             self._heightmaps[node.heightmap_key].texture.use(0)
-            if node.imagery is not None:
-                node.imagery.use(1)
-            program["u_has_imagery"] = node.imagery is not None
-            node.vao.render(moderngl.TRIANGLES)
+            if not shadow_pass:
+                _set(program, "u_sample_spacing", node.sample_spacing_m)
+                # GLSL mat3 is column-major: columns = east, north, up
+                if "u_tangent" in program:
+                    program["u_tangent"].write(geo.tangent.astype("f4").tobytes())
+                _set(program, "u_zoom", key[0])
+                if node.imagery is not None:
+                    node.imagery.use(1)
+                _set(program, "u_has_imagery", node.imagery is not None)
+            vao.render(moderngl.TRIANGLES)
+
+    # --- shadows ------------------------------------------------------------------------
+    def select_shadow_casters(
+        self, camera: Camera, light_view_proj, viewport_height: int
+    ) -> list[TileKey]:
+        """Coarser node selection covering the light frustum (occluders outside the view)."""
+        if self.nodes is None or self.data is None or self.frame is None:
+            return []
+        planes = lod.frustum_planes(light_view_proj)
+        ppr = viewport_height / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
+        params = lod.LodParams(self.params.pixel_threshold * 4.0, self.params.max_nodes)
+        sel = lod.select_nodes(
+            self.nodes,
+            self.node_bounds,
+            lambda k: k in self._resident,
+            camera.position,
+            planes,
+            ppr,
+            params,
+        )
+        for key in sel.request:
+            if len(self._in_flight) >= self._workers * 3:
+                break
+            self._submit(key)
+        for key in sel.draw:
+            node = self._resident.get(key)
+            if node is not None:
+                node.last_used = self._frame_no
+        return sel.draw
+
+    def draw_shadow_casters(self, camera: Camera, light_view_proj, keys: list[TileKey]) -> None:
+        planes = lod.frustum_planes(light_view_proj)
+        visible = [
+            k
+            for k in keys
+            if lod.sphere_visible(
+                planes, self.node_bounds(k).center - camera.position, self.node_bounds(k).radius
+            )
+        ]
+        self.draw(camera, light_view_proj, visible, shadow_pass=True)

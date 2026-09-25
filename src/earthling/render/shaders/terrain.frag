@@ -2,6 +2,7 @@
 #include "logdepth.glsl"
 #include "atmosphere.glsl"
 #include "fog.glsl"
+#include "shadows.glsl"
 in vec2 v_hm_uv;
 in vec2 v_tile_uv;
 in float v_height;
@@ -17,6 +18,7 @@ uniform vec3 u_sun_radiance = vec3(1.4);         // linear, 0 below the horizon
 uniform vec3 u_sky_ambient = vec3(0.2, 0.24, 0.35);
 uniform vec3 u_ground_ambient = vec3(0.1, 0.08, 0.06);
 uniform int u_zoom;
+uniform float u_shadow_strength = 1.0;
 
 vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
 
@@ -39,9 +41,14 @@ vec3 zoom_color(int z) {
 
 void main() {
     if (valid_at(v_hm_uv) < 0.5) discard;
+#ifdef SHADOW_PASS
+    return;  // depth only
+#else
     write_log_depth(v_log_z);
     vec3 n = terrain_normal(v_hm_uv);
-    float diffuse = max(dot(n, normalize(u_sun_dir)), 0.0);
+    vec3 sun = normalize(u_sun_dir);
+    float diffuse = max(dot(n, sun), 0.0);
+    if (diffuse > 0.0) diffuse *= mix(1.0, sun_shadow(v_world, n, sun), u_shadow_strength);
     vec3 albedo = (u_has_imagery && u_show_imagery) ? srgb_to_linear(texture(u_imagery, v_tile_uv).rgb)
                                 : srgb_to_linear(elevation_ramp(v_height));
     if (u_debug_lod) {
@@ -55,4 +62,5 @@ void main() {
     float dist = length(v_world);
     color = apply_atmosphere(color, v_world / max(dist, 1e-3), dist);
     f_color = vec4(color, 1.0);  // linear HDR radiance
+#endif
 }

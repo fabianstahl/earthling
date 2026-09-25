@@ -30,6 +30,7 @@ from earthling.render.lighting import (
 )
 from earthling.render.overlays import OutlineLayer
 from earthling.render.shader_library import ShaderLibrary
+from earthling.render.shadows import SHADOW_UNIT, ShadowMaps, compute_cascades
 from earthling.render.terrain import TerrainLayer
 from earthling.render.tracks import TrackLayer
 
@@ -80,6 +81,7 @@ class Renderer:
         self.terrain = TerrainLayer(ctx, self.shaders)
         self.tracks = TrackLayer(ctx, self.shaders)
         self.outlines = OutlineLayer(ctx, self.shaders)
+        self.shadows = ShadowMaps(ctx)
         self.store: PropertyStore | None = None
         self.timezone = "UTC"
         self.lighting: Lighting | None = None
@@ -130,19 +132,55 @@ class Renderer:
     # --- frame ------------------------------------------------------------------------
     def render(self, fbo: moderngl.Framebuffer, width: int, height: int, camera: Camera) -> None:
         self.apply_properties(camera)
+        view_proj = camera.view_projection(width / max(1, height))
+        # the camera selection comes first so shadow casters never starve the view
+        selection = self.terrain.update(camera, view_proj, height) if self.terrain.visible else None
+        shadow_uniforms = self._render_shadows(camera, width, height)
         target = self.target.ensure(width, height)
         target.use()
         self.ctx.viewport = (0, 0, width, height)
         target.clear(*self.clear_color, depth=1.0)
-        view_proj = camera.view_projection(width / max(1, height))
         self._render_sky(camera, view_proj, height)
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.optical_depth.use(OPTICAL_DEPTH_UNIT)
-        self.terrain.render(camera, view_proj, height)
+        if selection is not None:
+            extra = {"u_camera_forward": tuple(float(v) for v in camera.forward), **shadow_uniforms}
+            self.terrain.draw(camera, view_proj, selection.draw, extra_uniforms=extra)
         self.tracks.render(camera, view_proj)
         self.outlines.render(camera, view_proj)
         self.ctx.disable(moderngl.DEPTH_TEST)
         self._tonemap(fbo, width, height)
+
+    def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:
+        s = self.store
+        lit = self.lighting is not None and max(self.lighting.sun_radiance) > 0.0
+        if s is None or not s["shadows.enabled"] or not lit or not self.terrain.visible:
+            self.shadows.setup = None
+            return self.shadows.uniforms()
+        assert self.lighting is not None
+        self.shadows.ensure(int(s["shadows.resolution"]))
+        setup = compute_cascades(
+            camera,
+            width / max(1, height),
+            self.lighting.sun_direction,
+            s["shadows.distance"] * 1000.0,
+            self.shadows.size,
+        )
+        casters = self.terrain.select_shadow_casters(camera, setup.cascades[-1].view_proj, height)
+        fbo = self.shadows.fbo
+        assert fbo is not None
+        fbo.use()
+        self.ctx.viewport = (0, 0, self.shadows.size, self.shadows.size)
+        fbo.clear(depth=1.0)
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        for index, cascade in enumerate(setup.cascades):
+            self.ctx.viewport = self.shadows.viewport(index)
+            self.terrain.draw_shadow_casters(camera, cascade.view_proj, casters)
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.shadows.setup = setup
+        assert self.shadows.depth is not None
+        self.shadows.depth.use(SHADOW_UNIT)
+        return self.shadows.uniforms()
 
     def read_depth(self, px: int, py: int) -> float | None:
         """Log depth of the last frame at pixel (px, py) (GL convention, y up)."""
