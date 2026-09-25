@@ -45,6 +45,7 @@ class Viewport(QOpenGLWidget):
         self._pending_outlines = None
         self._pending_terrain = None
         self._outlines_visible = True
+        self._debug_lod = False
         self._last_mouse: QPointF | None = None
         self._frames = 0
         self._fps_timer = time.perf_counter()
@@ -66,12 +67,12 @@ class Viewport(QOpenGLWidget):
         if reframe:
             self.frame_all()
 
-    def set_terrain(self, tiles) -> None:
+    def set_terrain_source(self, data, nodes) -> None:
         if self.renderer is None:
-            self._pending_terrain = tiles
+            self._pending_terrain = (data, nodes)
             return
         self.makeCurrent()
-        self.renderer.set_terrain(tiles)
+        self.renderer.set_terrain_source(data, nodes)
         self.doneCurrent()
 
     def set_outlines(self, lines) -> None:
@@ -86,6 +87,11 @@ class Viewport(QOpenGLWidget):
         self._outlines_visible = visible
         if self.renderer is not None:
             self.renderer.outlines.visible = visible
+
+    def set_debug_lod(self, enabled: bool) -> None:
+        self._debug_lod = enabled
+        if self.renderer is not None:
+            self.renderer.terrain.debug_lod = enabled
 
     def frame_all(self) -> None:
         bounds = self.renderer.scene_bounds() if self.renderer is not None else None
@@ -106,14 +112,14 @@ class Viewport(QOpenGLWidget):
             self.renderer.set_scene(frame, tracks)
             self.frame_all()
         if self._pending_terrain is not None:
-            self.renderer.set_terrain(self._pending_terrain)
+            self.renderer.set_terrain_source(*self._pending_terrain)
             self._pending_terrain = None
-            self.frame_all()
         if self._pending_outlines is not None:
             self.renderer.outlines.set_lines(self._pending_outlines)
             self._pending_outlines = None
         self._pending_terrain = None
         self.renderer.outlines.visible = self._outlines_visible
+        self.renderer.terrain.debug_lod = self._debug_lod
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:

@@ -1,38 +1,35 @@
-// Terrain tile helpers shared by terrain shaders.
-#define MESH_GRID 64
+// Terrain node helpers shared by terrain shaders.
 #define HEIGHTMAP_SAMPLES 259.0
-#define HEIGHTMAP_STRIDE 4.0
 
-uniform sampler2D u_heightmap;
+uniform sampler2D u_heightmap;  // r = height (m), g = valid (1/0)
 uniform float u_exaggeration;
 uniform float u_sample_spacing;  // metres between heightmap samples
-uniform mat3 u_tangent;          // columns: east, north, up (ENU) at tile centre
+uniform mat3 u_tangent;          // columns: east, north, up (ENU) at node centre
+uniform float u_hm_scale;        // heightmap samples across this node
+uniform vec2 u_hm_offset;        // heightmap sample index of the node's NW corner
 
-// Heightmap texture coordinate of mesh vertex (i, j); sample index 0 is texel 1.
-vec2 vertex_uv(int vertex_id) {
-    int i = vertex_id % (MESH_GRID + 1);
-    int j = vertex_id / (MESH_GRID + 1);
-    return (vec2(i, j) * HEIGHTMAP_STRIDE + 1.5) / HEIGHTMAP_SAMPLES;
+// Heightmap texture coordinate for a node-local uv (0..1, v north -> south).
+// Sample index s is stored at texel s + 1 (one border sample on each side).
+vec2 heightmap_uv(vec2 tile_uv) {
+    vec2 s = u_hm_offset + tile_uv * u_hm_scale;
+    return (s + 1.5) / HEIGHTMAP_SAMPLES;
 }
 
-// Tile-local texture coordinate (0..1 across the tile, v north -> south) of vertex (i, j).
-vec2 vertex_tile_uv(int vertex_id) {
-    int i = vertex_id % (MESH_GRID + 1);
-    int j = vertex_id / (MESH_GRID + 1);
-    return vec2(i, j) / float(MESH_GRID);
+float height_at(vec2 hm_uv) {
+    return texture(u_heightmap, hm_uv).r * u_exaggeration;
 }
 
-float height_at(vec2 uv) {
-    return texture(u_heightmap, uv).r * u_exaggeration;
+float valid_at(vec2 hm_uv) {
+    return texture(u_heightmap, hm_uv).g;
 }
 
 // World-space (ENU) normal from central differences of the heightmap.
-vec3 terrain_normal(vec2 uv) {
+vec3 terrain_normal(vec2 hm_uv) {
     float t = 1.0 / HEIGHTMAP_SAMPLES;
-    float he = height_at(uv + vec2(t, 0.0));
-    float hw = height_at(uv - vec2(t, 0.0));
-    float hn = height_at(uv - vec2(0.0, t));  // rows run north -> south
-    float hs = height_at(uv + vec2(0.0, t));
+    float he = height_at(hm_uv + vec2(t, 0.0));
+    float hw = height_at(hm_uv - vec2(t, 0.0));
+    float hn = height_at(hm_uv - vec2(0.0, t));  // rows run north -> south
+    float hs = height_at(hm_uv + vec2(0.0, t));
     vec3 n = normalize(vec3((hw - he) / (2.0 * u_sample_spacing),
                             (hs - hn) / (2.0 * u_sample_spacing), 1.0));
     return normalize(u_tangent * n);

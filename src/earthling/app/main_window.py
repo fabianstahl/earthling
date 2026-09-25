@@ -67,6 +67,9 @@ class MainWindow(QMainWindow):
 
         self.view_menu = bar.addMenu("&View")
         self._add_action(self.view_menu, "&Frame All", lambda: self.viewport.frame_all(), "Home")
+        self.debug_lod_action = QAction("Debug: Show Terrain &LOD", self, checkable=True)
+        self.debug_lod_action.toggled.connect(lambda v: self.viewport.set_debug_lod(v))
+        self.view_menu.addAction(self.debug_lod_action)
         self.show_outlines_action = QAction("Show &Area Outlines", self, checkable=True)
         self.show_outlines_action.setChecked(True)
         self.show_outlines_action.toggled.connect(lambda v: self.viewport.set_outlines_visible(v))
@@ -126,7 +129,7 @@ class MainWindow(QMainWindow):
     def _reload_terrain(self, reframe: bool = False) -> None:
         if self.session is None:
             return
-        self.viewport.set_terrain(self.session.load_static_terrain())
+        self.viewport.set_terrain_source(self.session.terrain_data(), self.session.terrain_nodes())
         if reframe:
             self.viewport.frame_all()
 

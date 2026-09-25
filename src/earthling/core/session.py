@@ -102,31 +102,19 @@ class Session:
         return lines
 
     # --- terrain ---------------------------------------------------------------------------
-    @property
-    def static_terrain_zoom(self) -> int:
-        """Zoom used for the (pre-LOD) static terrain: the outer zone's DEM zoom."""
-        return self.config.area.zones[-1].dem_zoom
-
-    @property
-    def static_imagery_zoom(self) -> int:
-        """Imagery zoom for static terrain tiles (at most 8x8 imagery tiles per terrain tile)."""
-        wanted = self.config.area.zones[-1].imagery_zoom
-        return max(self.static_terrain_zoom, min(wanted, self.static_terrain_zoom + 3))
-
-    def load_static_terrain(self):
-        """(z, x, y, heights, imagery) of all cached DEM tiles at :attr:`static_terrain_zoom`."""
-        from earthling.data.dem import read_heightmap
-        from earthling.data.imagery import compose_tile_texture
+    def terrain_data(self):
+        from earthling.data.terrain_data import TerrainData
 
         if self.plan is None:
-            return []
-        z = self.static_terrain_zoom
-        out = []
-        for x, y in self.plan.levels["dem"].get(z, []):
-            heights = read_heightmap(self.cache, self.dem_source.id, z, int(x), int(y))
-            if heights is not None:
-                rgb = compose_tile_texture(
-                    self.cache, self.imagery_provider, z, int(x), int(y), self.static_imagery_zoom
-                )
-                out.append((z, int(x), int(y), heights, rgb))
-        return out
+            return None
+        return TerrainData(self.cache, self.dem_source.id, self.imagery_provider, self.plan)
+
+    def terrain_nodes(self):
+        from earthling.data.terrain_data import TEXEL_ZOOM_OFFSET
+        from earthling.render.lod import NodeSet
+
+        if self.plan is None:
+            return None
+        return NodeSet.from_plan(
+            self.plan.levels.get("dem", {}), self.plan.levels.get("imagery", {}), TEXEL_ZOOM_OFFSET
+        )

@@ -31,13 +31,11 @@ class Renderer:
         self.frame = frame
         self.tracks.set_tracks(tracks, frame)
 
-    def set_terrain(self, tiles) -> None:
-        """``tiles``: iterable of (z, x, y, heights, imagery_rgb_or_None)."""
-        self.terrain.clear()
+    def set_terrain_source(self, data, nodes) -> None:
+        """``data``: TerrainData, ``nodes``: lod.NodeSet (or None to clear)."""
         if self.frame is None:
             return
-        for z, x, y, heights, imagery in tiles:
-            self.terrain.add_tile(self.frame, z, x, y, heights, imagery)
+        self.terrain.set_source(self.frame, data, nodes)
 
     def scene_bounds(self):
         return self.terrain.bounds() or self.tracks.bounds
@@ -48,8 +46,6 @@ class Renderer:
         fbo.clear(*self.clear_color, depth=1.0)
         self.ctx.enable(moderngl.DEPTH_TEST)
         view_proj = camera.view_projection(width / max(1, height))
-        self.ctx.enable(moderngl.CULL_FACE)
-        self.terrain.render(camera, view_proj)
-        self.ctx.disable(moderngl.CULL_FACE)
+        self.terrain.render(camera, view_proj, height)
         self.tracks.render(camera, view_proj)
         self.outlines.render(camera, view_proj)
