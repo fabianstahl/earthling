@@ -22,6 +22,7 @@ from earthling.app.download_dialog import DownloadDialog
 from earthling.app.goto_dialog import GoToDialog
 from earthling.app.keyframing import KeyframeEditor
 from earthling.app.plan_dialog import PlanDialog
+from earthling.app.poi_dock import PoiDock
 from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.undo import set_property
@@ -102,6 +103,15 @@ class MainWindow(QMainWindow):
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
         self.tracks_changed.connect(self.viewport.request_render)
         self.tracks_dock.track_activated.connect(self._frame_track)
+        self.poi_dock = PoiDock(self.scene, self.undo_stack, self.hiker_lonlat,
+                                self._pick_lonlat, self._scene_dir, self)  # fmt: skip
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.poi_dock)
+        self.tabifyDockWidget(self.parameters_dock, self.poi_dock)
+        self.parameters_dock.raise_()
+        self.view_menu.addAction(self.poi_dock.toggleViewAction())
+        self.poi_dock.changed.connect(self._pois_changed)
+        self.viewport.timeline_time_provider = lambda: self.timeline.time
+        self._pois_changed()
         self.viewport.mode_changed.connect(
             lambda mode: self.fly_mode_action.setChecked(mode == self.viewport.FLY)
         )
@@ -249,6 +259,38 @@ class MainWindow(QMainWindow):
             return
         ExportDialog(self).exec()
 
+    # --- points of interest ---------------------------------------------------------------
+    def _scene_dir(self) -> Path | None:
+        if self.scene.path is not None:
+            return self.scene.path.parent
+        return self.project.folder if self.project else None
+
+    def _pois_changed(self) -> None:
+        self.viewport.set_pois(self.scene.pois, self._scene_dir(), self.scene.animation)
+
+    def hiker_lonlat(self) -> tuple[float, float] | None:
+        """(lon, lat) of the head of the drawn track."""
+        renderer = self.viewport.renderer
+        if renderer is None or renderer.tracks.path is None or self.session is None:
+            return None
+        s = self.scene.store
+        path = renderer.tracks.path
+        enu = path.position_at(path.distance_for(s["progress.head"], s["progress.mode"]))
+        if enu is None:
+            return None
+        lat, lon, _ = self.session.frame.enu_to_geodetic(enu)
+        return float(lon), float(lat)
+
+    def _pick_lonlat(self, callback) -> None:
+        self.statusBar().showMessage("Click on the terrain to place the POI", 5000)
+
+        def picked(point) -> None:
+            if self.session is not None:
+                lat, lon, _ = self.session.frame.enu_to_geodetic(point)
+                callback(float(lon), float(lat))
+
+        self.viewport.request_pick(picked)
+
     def pick_look_at_target(self) -> None:
         self.statusBar().showMessage("Click on the terrain to set the look-at target", 5000)
 
@@ -391,6 +433,8 @@ class MainWindow(QMainWindow):
         if self.scene.camera and not has_camera_keys:
             self.viewport.restore_camera_state(self.scene.camera)
         self._restore_ui_state()
+        self.poi_dock.refresh()
+        self._pois_changed()
         self._update_title()
         if problems:
             QMessageBox.warning(self, "Scene problems", "\n".join(problems[:30]))

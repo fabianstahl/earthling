@@ -76,6 +76,7 @@ class Viewport(QOpenGLWidget):
         self._pending_camera_path = None
         self.store = None  # PropertyStore of the scene
         self.suspended = False  # no viewport rendering (e.g. while exporting a video)
+        self.timeline_time_provider = None  # () -> timeline seconds (POI animations)
         self.animated_camera = False  # follow the "camera.pose" property (timeline playback)
         self.pose_provider = None  # () -> pose; the camera rig (modes, transitions)
         self._pick_callback = None  # set by request_pick(): the next click picks a point
@@ -139,6 +140,14 @@ class Viewport(QOpenGLWidget):
     def set_on_demand(self, enabled: bool) -> None:
         if self.renderer is not None and self.renderer.terrain.data is not None:
             self.renderer.terrain.data.on_demand = enabled
+
+    def set_pois(self, pois, base_dir=None, animation=None) -> None:
+        """Points of interest of the scene (``animation``: for their pop-in timing)."""
+        self._pending_pois = (list(pois), base_dir, animation)
+        if self.renderer is not None:
+            self.renderer.pois.set_pois(list(pois), base_dir)
+            self.renderer.animation = animation
+        self.request_render()
 
     def set_store(self, store) -> None:
         self.store = store
@@ -360,6 +369,10 @@ class Viewport(QOpenGLWidget):
         self.renderer.camera_path.visible = not self.animated_camera
         self.renderer.store = self.store
         self.renderer.timezone = self.timezone
+        pending = getattr(self, "_pending_pois", None)
+        if pending is not None:
+            self.renderer.pois.set_pois(pending[0], pending[1])
+            self.renderer.animation = pending[2]
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:
@@ -379,6 +392,8 @@ class Viewport(QOpenGLWidget):
         if not self.animated_camera:
             self._clamp_to_ground()
         self.renderer.time = now - self._start_time
+        if self.timeline_time_provider is not None:
+            self.renderer.timeline_time = self.timeline_time_provider()
         fbo = self.ctx.detect_framebuffer(self.defaultFramebufferObject())
         ratio = self.devicePixelRatio()
         width, height = int(self.width() * ratio), int(self.height() * ratio)

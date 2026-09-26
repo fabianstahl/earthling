@@ -200,7 +200,14 @@ class LabelData:
 
     def __init__(self, cache: TileCache, bounds: tuple[float, float, float, float]) -> None:
         self.cache = cache
-        self.bounds = tuple(float(v) for v in bounds)
+        # snapped outwards to 0.01 deg: small changes of the area reuse the cached download
+        west, south, east, north = (float(v) for v in bounds)
+        self.bounds = (
+            math.floor(west * 100) / 100,
+            math.floor(south * 100) / 100,
+            math.ceil(east * 100) / 100,
+            math.ceil(north * 100) / 100,
+        )
         self.allow_download = True
         self.features: list[LabelFeature] | None = None
         self.error: str | None = None

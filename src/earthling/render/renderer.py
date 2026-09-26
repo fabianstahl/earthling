@@ -132,6 +132,7 @@ class Renderer:
         self.hud = HudLayer(ctx, self.shaders, self.labels.get_atlas)
         self.pois = PoiLayer(ctx, self.shaders, self.labels.get_atlas)
         self.animation = None  # the scene animation (POI pop-in timing); set by the owner
+        self.timeline_time: float | None = None  # timeline position (default: self.time)
         self.shadows = ShadowMaps(ctx)
         self.time = 0.0  # animation time in seconds (drives pulsing effects)
         self.jitter_px = (0.0, 0.0)  # sub-pixel projection offset (export anti-aliasing)
@@ -289,7 +290,9 @@ class Renderer:
                            *output, self.target.depth, (width, height), self.store)  # fmt: skip
         self.pois.render(fbo, camera, view_proj, self.frame, self.terrain.data,
                          self.terrain.exaggeration, *output, self.target.depth, (width, height),
-                         self.store, self.time, self.animation)  # fmt: skip
+                         self.store,
+                         self.time if self.timeline_time is None else self.timeline_time,
+                         self.animation)  # fmt: skip
         self.hud.render(fbo, *output, self.store, self.tracks.path, self.tracks.head_m,
                         self.timezone)  # fmt: skip
         self.reset_state()  # leave the context clean for Qt
