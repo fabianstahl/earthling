@@ -211,3 +211,18 @@ def test_fine_file_dem_sources_leave_coarse_zooms_to_the_fallback(tmp_path):
     assert swiss_tiles and all(ground_resolution_m(lat, z) <= limit for z in swiss_tiles)
     coarse = min(session.plan.levels["dem"])
     assert ground_resolution_m(lat, coarse) > limit and coarse in world_tiles
+
+
+def test_gaps_are_filled_from_the_parent_heights():
+    from earthling.data.terrain_data import fill_from_parent
+
+    n = 259
+    # parent: height = its sample index along x (a ramp across the whole parent node)
+    parent = np.tile(np.arange(n, dtype=np.float32) - 1.0, (n, 1))
+    child = np.full((n, n), 500.0, dtype=np.float32)
+    child[:, 200:] = np.nan  # the source ends here
+    filled = fill_from_parent(child, parent, 1, 0)  # the eastern quadrant
+    assert np.isfinite(filled).all()
+    assert filled[10, 100] == 500.0  # real data untouched
+    # own sample s (index s + 1) lies at parent sample 128 + s / 2
+    assert filled[5, 230] == pytest.approx(128 + 229 / 2.0, abs=1e-3)

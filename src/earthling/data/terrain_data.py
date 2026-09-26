@@ -35,6 +35,27 @@ class HeightmapRef:
     offset: tuple[float, float]
 
 
+def fill_from_parent(heights: np.ndarray, parent: np.ndarray, qx: int, qy: int) -> np.ndarray:
+    """Fill the NaN samples of a node heightmap with the (bilinearly sampled) heights of its
+    parent. (qx, qy): the node's quadrant in the parent. Both grids store sample s at index
+    s + 1 (one border sample each side), GRID_INTERVALS intervals across the node."""
+    n = heights.shape[0]
+    half = GRID_INTERVALS / 2.0
+    coords = np.arange(n, dtype=np.float64) - 1.0  # own sample index
+    px = qx * half + coords / 2.0 + 1.0  # parent array index
+    py = qy * half + coords / 2.0 + 1.0
+    x0 = np.clip(np.floor(px).astype(int), 0, parent.shape[1] - 2)
+    y0 = np.clip(np.floor(py).astype(int), 0, parent.shape[0] - 2)
+    fx, fy = px - x0, py - y0
+    top = parent[y0][:, x0] * (1 - fx) + parent[y0][:, x0 + 1] * fx
+    bottom = parent[y0 + 1][:, x0] * (1 - fx) + parent[y0 + 1][:, x0 + 1] * fx
+    sampled = top * (1 - fy)[:, None] + bottom * fy[:, None]
+    out = heights.copy()
+    gaps = ~np.isfinite(out) & np.isfinite(sampled)
+    out[gaps] = sampled[gaps]
+    return out.astype(np.float32)
+
+
 class TerrainData:
     """Heightmaps and textures for LOD nodes.
 
@@ -92,6 +113,13 @@ class TerrainData:
                 self._heightmaps.move_to_end(key)
                 return self._heightmaps[key]
         heights = self._composite_heightmap(key)
+        if heights is not None and key[0] > 0 and not np.isfinite(heights).all():
+            # gaps no source covers at this zoom (e.g. a national DEM ending at the border):
+            # fill them from the parent's heights instead of leaving holes in the terrain
+            z, x, y = key
+            parent = self._heightmap((z - 1, x >> 1, y >> 1))
+            if parent is not None:
+                heights = fill_from_parent(heights, parent, x & 1, y & 1)
         with self._lock:
             self._heightmaps[key] = heights
             while len(self._heightmaps) > self._max:
