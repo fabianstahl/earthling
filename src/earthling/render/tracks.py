@@ -226,6 +226,28 @@ class ProgressPath:
                 return np.array([np.interp(local, g.dist, g.enu[:, k]) for k in range(3)])
         return None
 
+    def distance_for_time(self, seconds: float) -> float:
+        """Distance of the recorded point at ``seconds`` (UTC epoch), clamped to the hike."""
+        valid = self._valid
+        if not valid.any():
+            return 0.0
+        return float(np.interp(seconds, self.time[valid], self.dist[valid]))
+
+    def progress_for_distance(self, distance: float, mode: str = "distance") -> float:
+        """Inverse of :meth:`distance_for` (the progress value that puts the head there)."""
+        if self.total_m <= 0:
+            return 0.0
+        if mode == "time" and self.has_time:
+            t = self.time[self._valid]
+            seconds = float(np.interp(distance, self.dist[self._valid], t))
+            return (seconds - t[0]) / max(t[-1] - t[0], 1e-9)
+        return min(max(distance / self.total_m, 0.0), 1.0)
+
+    def track_range(self, index: int) -> tuple[float, float]:
+        """(start, end) distance of walked track ``index`` on the global axis."""
+        g = self.tracks[index]
+        return g.offset_m, g.offset_m + g.length_m
+
     def time_at(self, distance: float) -> float | None:
         valid = self._valid
         if not valid.any():

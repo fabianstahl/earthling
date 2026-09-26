@@ -125,6 +125,11 @@ SUN = section(
         unit="°"),
     flt("sun.intensity", "Sun intensity", 1.4, 0.0, 6.0),
     color("sun.color", "Sun color", (1.0, 0.96, 0.9)),
+    boolean("sun.follow_track", "Follow the GPX time", False,
+            tooltip="The sun follows the recorded time at the head of the drawn track "
+                    "(instead of the date & time above)"),
+    flt("sun.track_offset", "GPX time offset", 0.0, -12.0, 12.0, step=0.25, unit="h",
+        tooltip="Shift the GPX time, e.g. to start a day at sunrise"),
 )  # fmt: skip
 
 LIGHT = section(

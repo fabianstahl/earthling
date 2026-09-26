@@ -62,9 +62,16 @@ class Lighting:
 
 
 def compute_lighting(
-    store: PropertyStore, lat: float, lon: float, timezone: str, camera_height: float = 1500.0
+    store: PropertyStore,
+    lat: float,
+    lon: float,
+    timezone: str,
+    camera_height: float = 1500.0,
+    when: datetime | None = None,
 ) -> Lighting:
-    when = local_to_aware(store["sun.datetime"], timezone)
+    """``when`` (aware) replaces the ``sun.datetime`` property (e.g. the GPX time)."""
+    if when is None:
+        when = local_to_aware(store["sun.datetime"], timezone)
     real = solar_position(when, lat, lon)
     sun = SunPosition(
         (real.azimuth + store["sun.azimuth_offset"]) % 360.0,

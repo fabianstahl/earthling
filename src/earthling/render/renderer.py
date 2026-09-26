@@ -198,7 +198,12 @@ class Renderer:
             height = float(self.frame.enu_to_geodetic(camera.position)[2])
             self.camera_height = height
             self.lighting = compute_lighting(
-                s, self.frame.lat, self.frame.lon, self.timezone, camera_height=height
+                s,
+                self.frame.lat,
+                self.frame.lon,
+                self.timezone,
+                camera_height=height,
+                when=self.track_time(),
             )
             self.terrain.lighting_uniforms = lighting_uniforms(self.lighting)
 
@@ -368,6 +373,20 @@ class Renderer:
         self.tracks.tail_m = tail
         self.marker.color = s["marker.color"]
         self.marker.position = path.position_at(head) if s["marker.visible"] else None
+
+    def track_time(self):
+        """With ``sun.follow_track``: the (aware) GPX time at the head of the drawn track."""
+        s = self.store
+        path = self.tracks.path
+        if s is None or not s["sun.follow_track"] or path is None or not path.has_time:
+            return None
+        from datetime import UTC, datetime, timedelta
+
+        head = path.distance_for(s["progress.head"], s["progress.mode"])
+        seconds = path.time_at(head)
+        if seconds is None:
+            return None
+        return datetime.fromtimestamp(seconds, tz=UTC) + timedelta(hours=s["sun.track_offset"])
 
     def read_depth(self, px: int, py: int) -> float | None:
         """Log depth of the last frame at pixel (px, py) (GL convention, y up)."""
