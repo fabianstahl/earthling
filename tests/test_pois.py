@@ -150,3 +150,17 @@ def test_captions_without_icon_and_with_several_lines(gl_ctx):
                   height_offset_m=2600.0)  # fmt: skip
     _, img2 = render_poi(gl_ctx, stacked, poi__fr__caption_size=72.0)
     assert white_rows(img2)[0] > one_line * 1.6
+
+
+def test_poi_slightly_below_the_drawn_terrain_stays_visible(gl_ctx):
+    """The terrain mesh is a coarser LOD than the anchor heights: a few tens of metres under
+    the drawn surface (seen from a few km) must not hide the icon."""
+    red = lambda im: ((im[..., 0] > 170) & (im[..., 1] < 70) & (im[..., 2] < 70)).sum()  # noqa: E731
+
+    def at(height):  # the anchor lies on the fake plateau (1500 m)
+        poi = Poi("camp", "Camp", 7.0, 46.0, "builtin:turnaround", size_px=300.0,
+                  height_offset_m=height - 3.0)  # fmt: skip
+        return red(render_poi(gl_ctx, poi)[1])
+
+    assert at(1480.0) > 200  # 20 m under the drawn surface: still shown
+    assert at(1300.0) == 0  # really buried: hidden

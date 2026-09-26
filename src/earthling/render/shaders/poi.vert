@@ -30,7 +30,9 @@ void main() {
         ndc = clip.xy / clip.w;
         vec2 uv = ndc * 0.5 + 0.5;
         vec2 texel = 2.0 / u_depth_size;
-        float tolerance = 4.0 + 0.004 * clip.w;
+        // the drawn terrain is a coarser LOD surface than the heights the anchor sits on (it
+        // can lie tens of metres higher far away): tolerance grows with the distance
+        float tolerance = 10.0 + 0.015 * clip.w;
         for (int j = -1; j <= 1; ++j) {
             for (int i = -1; i <= 1; ++i) {
                 vec2 q = uv + vec2(i, j) * texel;
