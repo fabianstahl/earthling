@@ -23,6 +23,19 @@ from earthling.render.shader_library import ShaderLibrary
 REFERENCE_HEIGHT = 1080.0
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
           "September", "October", "November", "December"]  # fmt: skip
+# on-screen words per language (stats.language)
+WORDS = {
+    "en": {"day": "Day {n}", "distance": "distance", "ascent": "ascent",
+           "elevation": "elevation", "time": "{t:%H:%M}", "months": MONTHS},
+    "de": {"day": "Tag {n}", "distance": "Strecke", "ascent": "Aufstieg",
+           "elevation": "Höhe", "time": "{t:%H:%M} Uhr",
+           "months": ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
+                      "September", "Oktober", "November", "Dezember"]},
+}  # fmt: skip
+
+
+def word(lang: str, key: str):
+    return WORDS.get(lang, WORDS["en"])[key]
 
 
 # --- values ----------------------------------------------------------------------------------
@@ -132,17 +145,21 @@ class HikeStats:
         return self.ground[sel], self.ele[sel], self.dist[sel]
 
 
-def format_date(t: datetime, style: str) -> str:
+def format_date(t: datetime, style: str, lang: str = "en") -> str:
     if style == "iso":
         return t.strftime("%Y-%m-%d")
+    months = word(lang, "months")
+    dot = "." if lang == "de" else ""  # "14. Juli 2026"
     if style == "short":
-        return f"{t.day} {MONTHS[t.month - 1][:3]}"
-    return f"{t.day} {MONTHS[t.month - 1]} {t.year}"
+        return f"{t.day}{dot} {months[t.month - 1][:3]}{dot}"
+    return f"{t.day}{dot} {months[t.month - 1]} {t.year}"
 
 
-def format_number(value: float, decimals: int = 0) -> str:
-    text = f"{value:,.{decimals}f}"
-    return text.replace(",", " ")  # thin space as thousands separator
+def format_number(value: float, decimals: int = 0, lang: str = "en") -> str:
+    s = f"{value:,.{decimals}f}"
+    if lang == "de":  # 12.345,7
+        return s.replace(",", "_").replace(".", ",").replace("_", ".")
+    return s.replace(",", " ")  # thin space as thousands separator
 
 
 # --- drawing ---------------------------------------------------------------------------------
@@ -288,22 +305,23 @@ class HudLayer:
         pad, gap = 16.0 * s, 26.0 * s
         day_scope = store["stats.scope"] == "day"
         # --- content sizes
-        title = f"Day {v.day}" if store["stats.show_day"] else ""
+        lang = store["stats.language"]
+        title = word(lang, "day").format(n=v.day) if store["stats.show_day"] else ""
         subtitle = ""
         if store["stats.show_date"] and v.time is not None:
-            subtitle = format_date(v.time, store["stats.date_format"])
+            subtitle = format_date(v.time, store["stats.date_format"], lang)
             if store["stats.show_time"]:
-                subtitle += f"  {v.time:%H:%M}"
+                subtitle += "  " + word(lang, "time").format(t=v.time)
         title_size, sub_size = 28.0 * s, 19.0 * s
         columns = []
         if store["stats.show_distance"]:
             d = v.day_distance_m if day_scope else v.distance_m
-            columns.append((f"{format_number(d / 1000.0, 1)} km", "distance"))
+            columns.append((f"{format_number(d / 1000.0, 1, lang)} km", word(lang, "distance")))
         if store["stats.show_ascent"]:
             a = v.day_ascent_m if day_scope else v.ascent_m
-            columns.append((f"{format_number(a)} m", "ascent"))
+            columns.append((f"{format_number(a, 0, lang)} m", word(lang, "ascent")))
         if store["stats.show_elevation"] and v.elevation_m is not None:
-            columns.append((f"{format_number(v.elevation_m)} m", "elevation"))
+            columns.append((f"{format_number(v.elevation_m, 0, lang)} m", word(lang, "elevation")))
         value_size, caption_size = 26.0 * s, 13.0 * s
         widths = [max(self._width(t, value_size), self._width(c, caption_size))
                   for t, c in columns]  # fmt: skip

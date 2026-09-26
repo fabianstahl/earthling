@@ -301,6 +301,8 @@ STATS = section(
     boolean("stats.show_day", "Day number", True),
     boolean("stats.show_date", "Date", True),
     boolean("stats.show_time", "Time of day", False),
+    enum("stats.language", "Language", "en", [("en", "English"), ("de", "Deutsch")],
+         animatable=False, tooltip="Words, dates and numbers in the overlays"),
     enum("stats.date_format", "Date format", "long",
          [("long", "14 July 2026"), ("short", "14 Jul"), ("iso", "2026-07-14")]),
     boolean("stats.show_distance", "Distance", True),
