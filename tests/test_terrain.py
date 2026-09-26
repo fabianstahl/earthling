@@ -380,3 +380,24 @@ def test_refined_nodes_fade_in_from_the_parent_imagery(gl_ctx):
 
     start, done = colour(0.0), colour(1.0)
     assert start[0] > start[1] * 2 and done[1] > done[0] * 2
+
+
+def test_nodes_without_dem_pass_through_to_their_children(gl_ctx):
+    """Coarse roots often have no DEM (the plan starts deeper): draw their children instead."""
+    tx, ty = (int(v) for v in lonlat_to_tile(7.0, 46.0, 10))
+    kids = [(11, 2 * tx + dx, 2 * ty + dy) for dx in (0, 1) for dy in (0, 1)]
+
+    class NoRoot(FakeTerrainData):
+        def heightmap_for(self, key):
+            return None if key[0] == 10 else super().heightmap_for(key)
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    renderer.set_terrain_source(NoRoot(), lod.NodeSet({10: [(tx, ty)], 11: [k[1:] for k in kids]}))
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 100)
+    OrbitController(camera).frame_bounds(
+        np.array([-40e3, -40e3, 1500.0]), np.array([40e3, 40e3, 2500.0])
+    )
+    assert renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 100, timeout_s=10)
+    assert sorted(renderer.terrain.last_selection.draw) == sorted(kids)  # far away, still drawn

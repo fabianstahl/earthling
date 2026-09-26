@@ -137,8 +137,14 @@ def select_nodes(
     planes: np.ndarray,
     pixels_per_radian: float,
     params: LodParams | None = None,
+    has_data: Callable[[TileKey], bool] | None = None,
 ) -> Selection:
-    """``pixels_per_radian`` = viewport_height / (2 * tan(fov_y / 2))."""
+    """``pixels_per_radian`` = viewport_height / (2 * tan(fov_y / 2)).
+
+    ``has_data(key)``: False for ready nodes without heights (no DEM there). They are never
+    drawn: they pass through to their children, and a drawable node is not refined into a
+    child that is a data-less leaf (it stays drawn instead of leaving a hole)."""
+    has_data = has_data or (lambda _key: True)
     params = params or LodParams()
     sel = Selection()
     requests: list[tuple[float, TileKey]] = []
@@ -154,15 +160,24 @@ def select_nodes(
         texel = screen_texel(key, b)
         kids = children(key)
         refinable = key in nodes and any(k in nodes for k in kids)
-        if refinable and texel > params.pixel_threshold and len(sel.draw) < params.max_nodes:
+        data = has_data(key)
+        wanted = texel > params.pixel_threshold and len(sel.draw) < params.max_nodes
+        if refinable and (wanted or not data):
             missing = [k for k in kids if not is_ready(k)]
             if not missing:
-                ratio = texel / max(params.pixel_threshold, 1e-9)
-                for k in kids:
-                    visit(k, ratio)
-                return
-            for k in missing:
-                requests.append((-texel, k))
+                dead_leaf = any(
+                    not has_data(k) and not any(c in nodes for c in children(k)) for k in kids
+                )
+                if not (data and dead_leaf):
+                    ratio = texel / max(params.pixel_threshold, 1e-9)
+                    for k in kids:
+                        visit(k, ratio)
+                    return
+            else:
+                for k in missing:
+                    requests.append((-texel, k))
+        if not data:
+            return  # nothing to draw here (no DEM)
         sel.draw.append(key)
         if parent_ratio is not None:
             t = min(max((parent_ratio - 1.0) / (MORPH_END - 1.0), 0.0), 1.0)

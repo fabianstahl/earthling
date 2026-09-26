@@ -514,16 +514,16 @@ class TerrainLayer:
         sel = lod.select_nodes(
             self.nodes,
             self.node_bounds,
-            # only resident nodes with heights count as ready: a child that failed to load
-            # or has no DEM data keeps its parent drawn instead of leaving a hole
-            self._drawable,
+            # only resident nodes count as ready: a child that failed to load keeps its
+            # parent drawn instead of leaving a hole (as does a child without DEM data)
+            lambda k: k in self._resident,
             camera.position,
             planes,
             ppr,
             params,
+            has_data=self._drawable,
         )
-        # resident nodes without heights are final (no data there): do not wait for them
-        sel.request = [k for k in sel.request if k not in self._failed and k not in self._resident]
+        sel.request = [k for k in sel.request if k not in self._failed]
         return sel
 
     def _drawable(self, key: TileKey) -> bool:
