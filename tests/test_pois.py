@@ -46,6 +46,7 @@ def test_pop_timing_from_the_visibility_keys():
     anim.set_key("poi.cafe.visible", 2.0, True)
     anim.set_key("poi.cafe.visible", 5.0, False)
     assert visibility_state(anim, "cafe", 1.0, False) == (0.0, 0.0)
+    assert visibility_state(anim, "cafe", 0.0, False) == (0.0, 0.0)  # hidden start: no pop-out
     scale, since = visibility_state(anim, "cafe", 2.1, True)
     assert since == pytest.approx(0.1) and 0.0 < scale < 1.0
     assert visibility_state(anim, "cafe", 2.0 + POP_IN_S + 0.1, True)[0] == 1.0

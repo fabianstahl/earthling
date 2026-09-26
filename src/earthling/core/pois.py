@@ -100,7 +100,7 @@ def visibility_state(animation, poi_id: str, time: float, visible: bool) -> tupl
                 break
             if key.value and previous is not True:
                 on_at = key.time
-            if not key.value and previous is not False:
+            if not key.value and previous is True:  # a switch-off (not a hidden start)
                 off_at = key.time
             previous = bool(key.value)
         if visible:
