@@ -3,6 +3,8 @@
 #include "atmosphere_lut.glsl"
 #include "fog.glsl"
 #include "shadows.glsl"
+#include "weather.glsl"
+uniform vec3 u_camera_enu;
 in vec2 v_hm_uv;
 in vec2 v_tile_uv;
 in float v_skirt;  // 1 on the skirts hiding cracks between nodes
@@ -139,6 +141,9 @@ void main() {
     vec3 sun = normalize(u_sun_dir);
     float diffuse = max(dot(n, sun), 0.0);
     if (diffuse > 0.0) diffuse *= mix(1.0, sun_shadow(v_world, n, sun), u_shadow_strength);
+    if (diffuse > 0.0 && u_layer_count > 0) {
+        diffuse *= cloud_shadow(v_world, u_camera_enu, u_camera_height, sun);
+    }
 
     LayerInput li;
     li.tile_uv = v_tile_uv;

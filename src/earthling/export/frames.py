@@ -134,6 +134,7 @@ class FrameRenderer:
                 renderer.jitter_px = (
                     (halton(i + 1, 2) - 0.5, halton(i + 1, 3) - 0.5) if jitter else (0.0, 0.0)
                 )
+                renderer.jitter_index = i
                 t = time + ((i + 0.5) / n - 0.5) * shutter
                 self._draw_single(t, width, height, notify=False)
                 acc.use()
@@ -148,6 +149,7 @@ class FrameRenderer:
                 self.ctx.disable(moderngl.BLEND)
         finally:
             renderer.jitter_px = (0.0, 0.0)
+            renderer.jitter_index = 0
             renderer.reset_state()
         # resolve into the (half float) output target
         fbo.use()
@@ -173,8 +175,10 @@ class FrameRenderer:
             "shadows.resolution": self.quality.shadow_resolution,
         }
         previous_time = renderer.time
+        previous_timeline = renderer.timeline_time
         try:
             renderer.time = time
+            renderer.timeline_time = time
             # the track geometry (and so the follow camera) needs one pass to be built
             if renderer.tracks.path is None and renderer.tracks.tracks:
                 renderer.render(self._ensure_target(width, height), width, height, Camera())
@@ -185,6 +189,7 @@ class FrameRenderer:
         finally:
             renderer.overrides = previous_overrides
             renderer.time = previous_time
+            renderer.timeline_time = previous_timeline
         return fbo
 
     def render(self, time: float, width: int, height: int, bits: int = 8) -> np.ndarray:

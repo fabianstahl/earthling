@@ -1,0 +1,39 @@
+// Tileable 2D coverage map (fbm of gradient noise, generated once).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(r8, binding = 0) uniform writeonly image2D u_out;
+
+vec2 hash22(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+float gradient(vec2 p, float period) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float r = 0.0;
+    for (int y = 0; y < 2; ++y)
+    for (int x = 0; x < 2; ++x) {
+        vec2 o = vec2(x, y);
+        vec2 g = normalize(hash22(mod(i + o, period)) * 2.0 - 1.0);
+        vec2 w = mix(1.0 - u, u, o);
+        r += dot(g, f - o) * w.x * w.y;
+    }
+    return r;
+}
+
+void main() {
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_out);
+    if (any(greaterThanEqual(id, size))) return;
+    vec2 uv = (vec2(id) + 0.5) / vec2(size);
+    float n = 0.0, amp = 0.5, total = 0.0;
+    for (int o = 0; o < 5; ++o) {
+        float period = 4.0 * exp2(float(o));
+        n += gradient(uv * period, period) * amp;
+        total += amp;
+        amp *= 0.5;
+    }
+    imageStore(u_out, id, vec4(clamp(n / total * 1.6 + 0.5, 0.0, 1.0)));
+}

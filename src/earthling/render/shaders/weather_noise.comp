@@ -1,0 +1,66 @@
+// Tileable 3D cloud noise (generated once). R: Perlin-Worley (base shapes), G: Worley fbm
+// (billowy detail), B: high-frequency Worley fbm, A: Perlin fbm.
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(rgba8, binding = 0) uniform writeonly image3D u_out;
+
+vec3 hash33(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+float perlin(vec3 p, float period) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float n = 0.0;
+    float result = 0.0;
+    for (int z = 0; z < 2; ++z)
+    for (int y = 0; y < 2; ++y)
+    for (int x = 0; x < 2; ++x) {
+        vec3 o = vec3(x, y, z);
+        vec3 cell = mod(i + o, period);
+        vec3 g = normalize(hash33(cell + 17.0) * 2.0 - 1.0);
+        float d = dot(g, f - o);
+        vec3 w = mix(1.0 - u, u, o);
+        result += d * w.x * w.y * w.z;
+    }
+    return result * 0.5 + 0.5;
+}
+
+float worley(vec3 p, float period) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    float best = 1.0;
+    for (int z = -1; z <= 1; ++z)
+    for (int y = -1; y <= 1; ++y)
+    for (int x = -1; x <= 1; ++x) {
+        vec3 o = vec3(x, y, z);
+        vec3 cell = mod(i + o, period);
+        vec3 feature = o + hash33(cell);
+        best = min(best, length(feature - f));
+    }
+    return 1.0 - clamp(best, 0.0, 1.0);  // inverted: 1 in the cell centres
+}
+
+float remap(float v, float lo, float hi, float a, float b) {
+    return a + (v - lo) / max(hi - lo, 1e-5) * (b - a);
+}
+
+void main() {
+    ivec3 id = ivec3(gl_GlobalInvocationID);
+    ivec3 size = imageSize(u_out);
+    if (any(greaterThanEqual(id, size))) return;
+    vec3 uvw = (vec3(id) + 0.5) / vec3(size);
+    float pf = perlin(uvw * 4.0, 4.0) * 0.55 + perlin(uvw * 8.0, 8.0) * 0.3
+             + perlin(uvw * 16.0, 16.0) * 0.15;
+    float w1 = worley(uvw * 4.0, 4.0);
+    float w2 = worley(uvw * 8.0, 8.0);
+    float w3 = worley(uvw * 16.0, 16.0);
+    float wf = w1 * 0.625 + w2 * 0.25 + w3 * 0.125;
+    float pw = clamp(remap(pf, wf - 1.0, 1.0, 0.0, 1.0), 0.0, 1.0);
+    // (equalised on the CPU afterwards, see weather.py)
+    float w4 = worley(uvw * 32.0, 32.0);
+    float hf = w2 * 0.5 + w3 * 0.3 + w4 * 0.2;
+    imageStore(u_out, id, vec4(pw, wf, hf, pf));
+}

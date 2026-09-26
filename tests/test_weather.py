@@ -1,0 +1,98 @@
+import math
+
+import numpy as np
+import pytest
+
+from earthling.core.geo import lonlat_to_tile
+from earthling.core.scene import Scene
+from earthling.render import lod
+from earthling.render.camera import Camera, OrbitController
+from earthling.render.renderer import Renderer
+from earthling.render.weather import equalize, wind_vector
+from test_terrain import FRAME, FakeTerrainData
+
+
+def test_helpers():
+    assert wind_vector(10.0, 90.0) == pytest.approx((10.0, 0.0), abs=1e-9)  # towards east
+    assert wind_vector(10.0, 0.0) == pytest.approx((0.0, 10.0), abs=1e-9)
+    values = np.array([5, 5, 5, 200, 7, 9], dtype=np.uint8)
+    out = equalize(values)
+    assert out.min() == 0 and out.max() == 255 and out[3] == 255
+
+
+def test_noise_is_generated_and_equalised(gl_ctx):
+    renderer = Renderer(gl_ctx)
+    renderer.weather._ensure_noise()
+    noise = np.frombuffer(renderer.weather.noise.read(), dtype=np.uint8).reshape(-1, 4) / 255.0
+    base = noise[:, 0]
+    assert base.mean() == pytest.approx(0.5, abs=0.01)
+    assert (base > 0.7).mean() == pytest.approx(0.3, abs=0.02)  # "coverage" = cloudy fraction
+    assert noise[:, 1].std() > 0.1  # detail channel present
+    cover = np.frombuffer(renderer.weather.map.read(), dtype=np.uint8) / 255.0
+    assert cover.mean() == pytest.approx(0.5, abs=0.01)
+
+
+def test_layers_follow_the_properties(gl_ctx):
+    renderer = Renderer(gl_ctx)
+    store = Scene().store
+    weather = renderer.weather
+    weather.update(store, 10.0)
+    assert weather.layers == []  # off by default
+    store.set("weather.enabled", True)
+    weather.update(store, 10.0)
+    assert len(weather.layers) == 1  # the fog layer is on by default
+    store.set("weather.layer2.enabled", True)
+    store.set("weather.layer2.wind_speed", 5.0)
+    store.set("weather.layer2.wind_dir", 90.0)
+    weather.update(store, 10.0)
+    shape, noise, _ = weather.layers[1]
+    assert shape[0] == store["weather.layer2.base"]
+    assert noise[1] == pytest.approx(50.0) and noise[2] == pytest.approx(0.0, abs=1e-9)
+    uniforms = weather.uniforms()
+    assert uniforms["u_layer_count"] == 2 and len(uniforms["u_layer_shape"]) == 4
+
+
+def render(gl_ctx, distance=1.0, **props):
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    renderer.set_terrain_source(FakeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))
+    scene = Scene()
+    for pid, value in props.items():
+        scene.store.set(pid.replace("__", "."), value)
+    renderer.store = scene.store
+    renderer.timezone = "UTC"
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 96)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.distance *= distance
+    orbit.pitch = -35.0
+    orbit.apply()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 96)
+    fbo = gl_ctx.simple_framebuffer((96, 96))
+    renderer.render(fbo, 96, 96, camera)
+    return np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(96, 96, 3).astype(float)
+
+
+def test_cloud_layer_renders_and_casts_shadows(gl_ctx):
+    base = {"sun__datetime": __import__("datetime").datetime(2026, 7, 1, 12, 0),
+            "haze__aerial": 0.0}  # fmt: skip
+    clear = render(gl_ctx, **base)
+    # a thick layer between the camera and the ground (the terrain is at 1500-2500 m)
+    cloudy = render(gl_ctx, **base, weather__enabled=True, weather__layer1__base=2700.0,
+                    weather__layer1__thickness=2000.0, weather__layer1__coverage=0.8,
+                    weather__layer1__density=1.0)  # fmt: skip
+    assert np.abs(cloudy - clear).mean() > 10.0
+    none = render(gl_ctx, **base, weather__enabled=True, weather__layer1__coverage=0.0,
+                  weather__cloud_shadows=0.0)  # fmt: skip
+    assert np.abs(none - clear).max() <= 2.0  # nothing to draw
+    # shadows only: the camera (~7 km up, looking down) is below the layer, which stays out
+    # of view but darkens the sunlit terrain
+    high = {**base, "weather__enabled": True, "weather__layer1__base": 12000.0,
+            "weather__layer1__thickness": 3000.0, "weather__layer1__coverage": 1.0,
+            "weather__layer1__density": 1.0}  # fmt: skip
+    shaded = render(gl_ctx, 0.2, **high, weather__cloud_shadows=1.0)
+    unshaded = render(gl_ctx, 0.2, **high, weather__cloud_shadows=0.0)
+    assert shaded.mean() < unshaded.mean() - 3.0
+    assert math.isfinite(shaded.mean())

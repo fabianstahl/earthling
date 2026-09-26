@@ -40,6 +40,7 @@ from earthling.render.shadows import SHADOW_UNIT, ShadowMaps, compute_cascades
 from earthling.render.sky_luts import AtmosphereLuts
 from earthling.render.terrain import TerrainLayer
 from earthling.render.tracks import TrackGeometryOptions, TrackLayer
+from earthling.render.weather import WeatherSystem
 
 
 class FullscreenPasses:
@@ -74,6 +75,7 @@ class SceneTarget:
         self.glow: moderngl.Texture | None = None
         self.glow_fbo: moderngl.Framebuffer | None = None  # emissive objects, shares depth
         self.glow_clear_fbo: moderngl.Framebuffer | None = None
+        self.color_fbo: moderngl.Framebuffer | None = None
 
     def ensure(self, width: int, height: int) -> moderngl.Framebuffer:
         size = (max(1, width), max(1, height))
@@ -88,6 +90,8 @@ class SceneTarget:
             # drawing: shares the scene depth (glowing objects redraw at their own depth,
             # so depth writes are harmless); clearing: colour only
             self.glow_fbo = self.ctx.framebuffer([self.glow], self.depth)
+            # colour only: passes that sample the depth texture while drawing (clouds)
+            self.color_fbo = self.ctx.framebuffer([self.color])
             self.glow_clear_fbo = self.ctx.framebuffer([self.glow])
             self.size = size
         return self.fbo
@@ -103,6 +107,7 @@ class SceneTarget:
 
     def release(self) -> None:
         for obj in (
+            self.color_fbo,
             self.glow_clear_fbo,
             self.glow_fbo,
             self.glow,
@@ -112,7 +117,8 @@ class SceneTarget:
         ):
             if obj is not None:
                 obj.release()
-        self.fbo = self.color = self.depth = self.glow = self.glow_fbo = self.glow_clear_fbo = None
+        self.fbo = self.color = self.depth = self.glow = self.glow_fbo = None
+        self.glow_clear_fbo = self.color_fbo = None
 
 
 class Renderer:
@@ -136,6 +142,7 @@ class Renderer:
         self.shadows = ShadowMaps(ctx)
         self.time = 0.0  # animation time in seconds (drives pulsing effects)
         self.jitter_px = (0.0, 0.0)  # sub-pixel projection offset (export anti-aliasing)
+        self.jitter_index = 0  # sub-frame number (changes the volumetric dither per sample)
         # temporary replacements of property values (preview / export quality)
         self.overrides: dict[str, object] = {}
         self.store: PropertyStore | None = None
@@ -144,6 +151,7 @@ class Renderer:
         self.camera_height = 1500.0
         self.fullscreen = FullscreenPasses(ctx, self.shaders)
         self.atmosphere = AtmosphereLuts(ctx, self.shaders, self.fullscreen)
+        self.weather = WeatherSystem(ctx, self.shaders, self.fullscreen)
         self._atmosphere_uniforms: dict[str, object] = {}
         self.bloom = Bloom(ctx)
         lut = optical_depth_lut()
@@ -276,12 +284,15 @@ class Renderer:
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         if selection is not None:
-            extra = {"u_camera_forward": tuple(float(v) for v in camera.forward), **shadow_uniforms}
+            extra = {"u_camera_forward": tuple(float(v) for v in camera.forward), **shadow_uniforms,
+                     **self._weather_uniforms(camera)}  # fmt: skip
             self.terrain.draw(
                 camera, view_proj, selection.draw, extra_uniforms=extra, morph=selection.morph
             )
         self._render_tracks(camera, view_proj, width, height)
         self.outlines.render(camera, view_proj)
+        self._render_weather(camera, view_proj, width, height)
+        target.use()
         self.ctx.disable(moderngl.DEPTH_TEST)  # the camera path is drawn on top
         self.camera_path.render(camera, view_proj)
         bloom = self._render_glow(camera, view_proj, width, height)
@@ -317,6 +328,31 @@ class Renderer:
             **self.terrain.lighting_uniforms,
             **self._atmosphere_uniforms,
         }
+
+    @property
+    def animation_time(self) -> float:
+        return self.time if self.timeline_time is None else self.timeline_time
+
+    def _weather_uniforms(self, camera: Camera) -> dict[str, object]:
+        """Cloud layers for the terrain shader (cloud shadows)."""
+        self.weather.update(self.store, self.animation_time)
+        if not self.weather.layers:
+            return {"u_layer_count": 0, "u_cloud_shadow_strength": 0.0}
+        self.weather.bind()
+        return {**self.weather.uniforms(),
+                "u_camera_enu": tuple(float(v) for v in camera.position)}  # fmt: skip
+
+    def _render_weather(self, camera: Camera, view_proj, width: int, height: int) -> None:
+        if not self.weather.layers or self.lighting is None:
+            return
+        uniforms = {
+            **lighting_uniforms(self.lighting),
+            **self._atmosphere_uniforms,
+            "u_camera_enu": tuple(float(v) for v in camera.position),
+        }
+        self.weather.render_clouds(self.target.color_fbo, self.target.depth, camera, view_proj,
+                                   uniforms, width, height, jitter=self.jitter_index)  # fmt: skip
+        self.atmosphere.bind()  # the cloud pass used texture unit 0
 
     def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:
         s = self.store

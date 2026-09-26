@@ -338,4 +338,7 @@ def build_registry() -> PropertyRegistry:
     ):
         registry.extend(group)
     registry.extend(layer_properties())
+    from earthling.render.weather import weather_properties
+
+    registry.extend(weather_properties())
     return registry
