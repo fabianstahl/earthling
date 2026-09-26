@@ -126,3 +126,15 @@ def test_first_frame_text_survives_atlas_repacks(gl_ctx):
     first = draw()  # fresh atlas: glyphs get added (and repacked) while drawing
     second = draw()  # all glyphs known
     assert np.abs(first - second).max() <= 1
+
+
+def test_german_formatting():
+    from earthling.render.hud import word
+
+    t = datetime(2026, 3, 4, 9, 5)
+    assert format_date(t, "long", "de") == "4. März 2026"
+    assert format_date(t, "short", "de") == "4. Mär."
+    assert format_number(12345.678, 1, "de") == "12.345,7"
+    assert format_number(2375.0, 0, "de") == "2.375"
+    assert word("de", "day").format(n=22) == "Tag 22"
+    assert word("de", "time").format(t=t) == "09:05 Uhr"
