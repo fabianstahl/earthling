@@ -85,11 +85,37 @@ def _tile_job(provider, session: Session, tiles: list[tuple[int, int, int]]) -> 
     )
 
 
-def _dem_jobs(session: Session, source, tiles: list[tuple[int, int, int]]) -> list[DownloadJob]:
-    area = session.aoi.aoi
+# a DEM source's files are fetched only under heightmap tiles whose sample spacing is at most
+# this many times its native resolution (coarser tiles use the next source, e.g. a global one)
+SOURCE_DETAIL_FACTOR = 16.0
+
+
+def source_area(source, tiles: list[tuple[int, int, int]], area):
+    """The part of ``area`` where ``source`` is worth downloading for ``tiles``."""
+    from earthling.core.geo import ground_resolution_m, tile_bounds_lonlat
+
     coverage = source.coverage_area
     if coverage is not None:
         area = area.intersection(coverage.lonlat)
+    if area.is_empty:
+        return area
+    west, south, east, north = area.bounds
+    lat = (south + north) / 2.0
+    limit = source.native_resolution_m * SOURCE_DETAIL_FACTOR
+    boxes = []
+    for z, x, y in tiles:
+        if ground_resolution_m(lat, z) > limit:
+            continue
+        b = tile_bounds_lonlat(z, x, y)
+        if b[0] < east and b[2] > west and b[1] < north and b[3] > south:
+            boxes.append(shapely.box(*b))
+    if not boxes:
+        return shapely.Polygon()
+    return area.intersection(shapely.union_all(boxes))
+
+
+def _dem_jobs(session: Session, source, tiles: list[tuple[int, int, int]]) -> list[DownloadJob]:
+    area = source_area(source, tiles, session.aoi.aoi)
     cancel = threading.Event()
     baker = DemBaker(source, session.cache)
     jobs = []
@@ -97,11 +123,11 @@ def _dem_jobs(session: Session, source, tiles: list[tuple[int, int, int]]) -> li
 
         def download(cb):
             # listing may need the network (STAC catalogues): done when the job runs
-            files = [
+            files = [] if area.is_empty else [
                 f
                 for f in source.files_for_bounds(area.bounds)
                 if shapely.box(*f.bounds).intersects(area)
-            ]
+            ]  # fmt: skip
             return download_sources(source, files, session.cache, on_progress=cb, cancel=cancel)
 
         jobs.append(DownloadJob(f"DEM sources ({source.name})", download, cancel.set))
