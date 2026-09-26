@@ -453,6 +453,33 @@ Lightning strikes at a keyframeable rate (deterministic schedule), branching bol
 cloud base to the ground with glow, and flashes that light up clouds, sky and terrain.
 → A night storm with lightning over the mountains.
 
+### Phase 17 – Presentation polish
+
+**17.1 Readable tracks**
+A soft, dark casing around the track lines (width, colour, opacity) so they stand out on busy
+imagery; casings are drawn below all lines. Tracks no longer write depth: overlapping tracks
+blend instead of hiding each other.
+→ Coloured routes stay readable over forests, snow and farmland.
+
+**17.2 German on-screen text**
+A language setting for the overlays (stats labels, date and number formats): English or German.
+→ Videos for a German audience without English words in the picture.
+
+**17.3 Map styles**
+Blend the imagery into a dark map (land and sea tones from the DEM, a hillshade) with glowing
+country borders, keyframeable; imagery brightness and saturation controls.
+→ A country overview that starts as a clean map and turns into satellite imagery.
+
+**17.4 Smooth terrain detail**
+Load finer tiles ahead of the camera (and a margin beyond the frame), no holes where a detail
+source has no data, and fade between detail levels instead of switching.
+→ Zooms from space to the valley without missing tiles or popping shading.
+
+**17.5 More POI icons**
+Built-in icons for power/charging, bad weather and a supermarket; icons without captions;
+multi-line captions (e.g. stage markers with name, length and ascent).
+→ Symbols tell the story without text.
+
 ---
 
 ## 5. Risks & notes

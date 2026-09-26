@@ -361,6 +361,20 @@ class TrackLayer:
             self.ctx.blend_func = moderngl.ONE, moderngl.ONE  # emission adds up
         else:
             self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        # depth test only: tracks on top of each other blend (a faint line must not hide the
+        # one below), and clouds / rain keep the terrain depth
+        fbo = self.ctx.fbo
+        fbo.depth_mask = False
+        casing = store is not None and store["tracks.casing"] > 0.0
+        parts = (0, 1) if casing and not glow_pass else (1,)
+        for part in parts:
+            _set(program, "u_part", part)
+            self._draw_tracks(program, camera, store)
+        fbo.depth_mask = True
+        self.ctx.disable(moderngl.BLEND)
+        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+
+    def _draw_tracks(self, program, camera: Camera, store) -> None:
         single = store is not None and store["tracks.color_mode"] == "single"
         base = {
             "opacity": store["tracks.opacity"] if store is not None else 1.0,
@@ -406,8 +420,6 @@ class TrackLayer:
             _set(program, "u_head_m", min(self.head_m, 1e12) if walked else 1e12)
             _set(program, "u_tail_m", self.tail_m if walked else 0.0)
             vao.render(moderngl.TRIANGLE_STRIP)
-        self.ctx.disable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 
     @staticmethod
     def _group_style(store, g: _GpuTrack, single: bool):

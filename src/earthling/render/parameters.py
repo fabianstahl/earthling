@@ -221,6 +221,11 @@ TRACKS = section(
         uniform="u_track_outline"),
     flt("tracks.glow", "Glow emission", 1.2, 0.0, 20.0, step=0.1, decimals=1,
         uniform="u_track_glow", tooltip="Light the track emits into the glow effect"),
+    flt("tracks.casing", "Casing", 0.0, 0.0, 30.0, step=0.5, decimals=1, unit="px",
+        uniform="u_track_casing",
+        tooltip="Soft border around the tracks: sets them apart from busy imagery"),
+    color("tracks.casing_color", "Casing colour", (0.03, 0.03, 0.05), uniform="u_casing_color"),
+    flt("tracks.casing_opacity", "Casing opacity", 0.75, 0.0, 1.0, uniform="u_casing_opacity"),
 )  # fmt: skip
 
 PROGRESS = section(

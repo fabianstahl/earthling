@@ -12,6 +12,7 @@ uniform float u_focal_px;   // pixels per radian (for widths in metres)
 uniform float u_track_width = 4.0;
 uniform int u_track_width_mode = 0;  // 0 pixels, 1 metres
 uniform float u_track_min_px = 1.5;  // metre widths never get thinner than this
+uniform float u_track_casing = 0.0;  // soft border around the line (pixels, each side)
 
 out float v_side;
 out float v_dist;
@@ -42,7 +43,7 @@ void main() {
     if (u_track_width_mode == 1) {
         width_px = max(u_track_width * u_focal_px / max(clip.w, 1e-3), u_track_min_px);
     }
-    width_px += 2.0;  // room for anti-aliasing
+    width_px += 2.0 + 2.0 * u_track_casing;  // room for anti-aliasing and the casing
     vec2 offset_px = normal * in_side * 0.5 * width_px * miter;
     clip.xy += offset_px / (0.5 * u_viewport) * clip.w;
     gl_Position = clip;

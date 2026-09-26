@@ -201,3 +201,43 @@ def test_head_hides_the_rest_of_the_track(gl_ctx):
     red = (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)
     rows = np.where(red.any(axis=1))[0]  # image rows are bottom-up: row 0 = south
     assert rows.max() < 105 and rows.min() < 80  # only the southern (first) half is drawn
+
+
+def _top_down(gl_ctx, tracks, **props):
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.renderer import Renderer
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, tracks)
+    renderer.store = Scene().store
+    for pid, value in {"tracks.elevation": "gpx", "tracks.height_offset": 0.0,
+                       "tracks.width": 6.0, "glow.enabled": False, "haze.aerial": 0.0,
+                       **props}.items():  # fmt: skip
+        renderer.store.set(pid, value)
+    renderer.timezone = "UTC"
+    mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
+    camera = Camera(position=mid + np.array([0.0, 0.0, 3000.0]), heading=0.0, pitch=-89.9)
+    fbo = gl_ctx.simple_framebuffer((200, 200))
+    renderer.render(fbo, 200, 200, camera)
+    img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3).astype(int)
+    return img, renderer
+
+
+def test_casing_darkens_around_the_line(gl_ctx):
+    plain, _ = _top_down(gl_ctx, [straight_track()])
+    cased, _ = _top_down(gl_ctx, [straight_track()], **{"tracks.casing": 4.0})
+    beside = (slice(90, 110), slice(104, 107))  # just right of the ~6 px line
+    assert cased[beside].mean() < plain[beside].mean() - 20
+    red = lambda img: (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)  # noqa: E731
+    assert abs(int(red(cased)[100].sum()) - int(red(plain)[100].sum())) <= 1  # same line
+
+
+def test_tracks_do_not_write_depth(gl_ctx):
+    """A (nearly transparent) line must not hide tracks below it or cut the clouds / rain,
+    which march up to the scene depth: only the terrain writes depth."""
+    img, renderer = _top_down(gl_ctx, [straight_track()])
+    red = (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)
+    assert red[100].any()  # the line is drawn (no terrain in this test)
+    x = int(np.flatnonzero(red[100])[0])
+    assert renderer.read_depth(x, 99) == pytest.approx(1.0)  # still the cleared depth
