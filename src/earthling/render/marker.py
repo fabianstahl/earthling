@@ -50,7 +50,12 @@ class MarkerLayer:
             self.ctx.blend_func = moderngl.ONE, moderngl.ONE
         else:
             self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        # depth test only: the marker must not hide POIs anchored where the hiker stands
+        # (their occlusion test reads the scene depth), nor cut clouds and rain
+        fbo = self.ctx.fbo
+        fbo.depth_mask = False
         vao.render(moderngl.TRIANGLE_STRIP, vertices=4)
+        fbo.depth_mask = True
         self.ctx.disable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 

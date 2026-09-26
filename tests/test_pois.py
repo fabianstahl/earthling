@@ -1,9 +1,11 @@
+import moderngl
 import numpy as np
 import pytest
 from PIL import Image
 
 from earthling.core.pois import POP_IN_S, Poi, pop_in, slug, visibility_state
 from earthling.core.scene import Scene
+from earthling.render.camera import Camera
 from earthling.render.pois import builtin_icons, load_icon, resolve_icon
 
 
@@ -164,3 +166,23 @@ def test_poi_slightly_below_the_drawn_terrain_stays_visible(gl_ctx):
 
     assert at(1480.0) > 200  # 20 m under the drawn surface: still shown
     assert at(1300.0) == 0  # really buried: hidden
+
+
+def test_hiker_marker_does_not_write_depth(gl_ctx):
+    """While we stop at a break, the marker stands exactly at the break's POI: its depth would
+    hide the POI (the occlusion test reads the scene depth)."""
+    renderer, _ = render_poi(gl_ctx, Poi("camp", "Camp", 7.0, 46.0, "builtin:turnaround"))
+    from test_terrain import FRAME
+
+    anchor = np.asarray(FRAME.geodetic_to_enu(46.0, 7.0, 1503.0), dtype=np.float64)  # plateau
+    camera = Camera(position=anchor + np.array([0.0, -800.0, 400.0]))
+    camera.look_at(anchor)
+    renderer.render(gl_ctx.simple_framebuffer((320, 240)), 320, 240, camera)
+    target = renderer.target.fbo
+    target.use()
+    before = np.frombuffer(target.read(components=1, attachment=-1, dtype="f4"), dtype="f4").copy()
+    renderer.marker.position = np.asarray(anchor, dtype=np.float64)
+    gl_ctx.enable(moderngl.DEPTH_TEST)  # as in the scene pass
+    renderer.marker.render(camera, camera.view_projection(320 / 240), 320, 240, 0.0, None)
+    after = np.frombuffer(target.read(components=1, attachment=-1, dtype="f4"), dtype="f4")
+    assert np.array_equal(before, after)
