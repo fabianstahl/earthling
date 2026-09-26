@@ -85,7 +85,10 @@ class WeatherSystem:
 
     # --- per frame ----------------------------------------------------------------------
     def active(self, store) -> bool:
-        return store is not None and bool(store["weather.enabled"])
+        return store is not None and bool(store["weather.enabled"] or store["rain.enabled"])
+
+    def raining(self, store) -> bool:
+        return store is not None and bool(store["rain.enabled"]) and store["rain.intensity"] > 0
 
     def update(self, store, time: float) -> None:
         """Collect the enabled layers for this frame."""
@@ -95,7 +98,7 @@ class WeatherSystem:
         if not self.active(store):
             return
         self._ensure_noise()
-        for i in range(1, CLOUD_LAYERS + 1):
+        for i in range(1, CLOUD_LAYERS + 1 if store["weather.enabled"] else 1):
             p = f"weather.layer{i}."
             if not store[p + "enabled"] or store[p + "density"] <= 0.0:
                 continue
@@ -111,8 +114,75 @@ class WeatherSystem:
         self.shadow_strength = store["weather.cloud_shadows"] if self.layers else 0.0
 
     def extra_layers(self, store, time: float) -> list[tuple]:
-        """Further layers (the rain deck, see step 16.2)."""
-        return []
+        """The rain cloud deck (a dense, dark layer)."""
+        if not store["rain.enabled"]:
+            return []
+        wx, wy = wind_vector(store["rain.wind"] * 2.0, store["rain.wind_dir"])
+        albedo = 1.0 - 0.75 * store["rain.darkness"]
+        return [(
+            (store["rain.cloud_base"], store["rain.cloud_thickness"], store["rain.coverage"],
+             store["rain.cloud_density"] * EXTINCTION_PER_DENSITY),
+            (4500.0, wx * time, wy * time, 0.5),
+            (albedo * 0.92, albedo * 0.94, albedo, 1.0),
+        )]  # fmt: skip
+
+    def rain_uniforms(self, store) -> dict[str, object]:
+        """Wet ground and rain haze for terrain, tracks and clouds."""
+        if not self.raining(store):
+            return {"u_wetness": 0.0, "u_rain_haze": 0.0}
+        visibility = max(store["rain.visibility_km"] * 1000.0, 50.0)
+        return {
+            "u_wetness": float(store["rain.wetness"] * min(1.0, store["rain.intensity"] * 1.5)),
+            "u_rain_haze": float(3.0 / visibility * store["rain.intensity"]),
+        }
+
+    def dim_lighting(self, store, lighting) -> None:
+        """Less sky light under the rain deck (the sun is handled by the cloud shadows)."""
+        if not self.raining(store):
+            return
+        factor = 1.0 - 0.55 * store["rain.darkness"] * store["rain.coverage"]
+        lighting.sky_ambient = tuple(c * factor for c in lighting.sky_ambient)
+        lighting.ground_ambient = tuple(c * factor for c in lighting.ground_ambient)
+        grey = sum(lighting.sky_ambient) / 3.0
+        lighting.fog_ambient = (grey * 0.9, grey * 0.92, grey)
+
+    def render_rain(self, fbo, depth, camera, view_proj, lighting, store, width: int,
+                    height: int, time: float) -> None:  # fmt: skip
+        if not self.raining(store):
+            return
+        from pyglm import glm
+
+        program = self.passes("rain")
+        sky = lighting.sky_ambient
+        light = tuple(1.6 * c + 0.12 * s for c, s in zip(sky, lighting.sun_radiance, strict=True))
+        wx, wy = wind_vector(store["rain.wind"], store["rain.wind_dir"])
+        for name, value in {
+            "u_depth": 0,
+            "u_log_depth_coef": camera.log_depth_coef,
+            "u_cam_forward": tuple(float(v) for v in camera.forward),
+            "u_camera_height": float(lighting.camera_height),
+            "u_time": float(time),
+            "u_rain_intensity": float(store["rain.intensity"]),
+            "u_rain_base": float(store["rain.cloud_base"]),
+            "u_rain_wind": (wx, wy),
+            "u_rain_light": light,
+            "u_pixel_angle": float(math.radians(camera.fov_y)) / max(height, 1),
+        }.items():
+            if name in program:
+                program[name] = value
+        program["u_inv_view_proj"].write(glm.inverse(view_proj))
+        previous = depth.compare_func
+        depth.compare_func = ""
+        depth.use(0)
+        fbo.use()
+        self.ctx.viewport = (0, 0, width, height)
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.enable(moderngl.BLEND)
+        self.ctx.blend_func = moderngl.ONE, moderngl.ONE
+        self.passes.draw("rain")
+        self.ctx.disable(moderngl.BLEND)
+        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        depth.compare_func = previous
 
     def uniforms(self) -> dict[str, object]:
         """Layer uniforms for the cloud pass and the terrain (cloud shadows)."""
@@ -212,4 +282,27 @@ def weather_properties() -> list:
             flt(p + "detail", f"{name}: fraying", d["detail"], 0.0, 1.0),
             flt(p + "brightness", f"{name}: brightness", d["brightness"], 0.0, 3.0),
         ]  # fmt: skip
-    return section("Weather: Clouds & Fog", *defs)
+    return section("Weather: Clouds & Fog", *defs) + rain_properties()
+
+
+def rain_properties() -> list:
+    from earthling.render.parameters import boolean, flt, section
+
+    return section(
+        "Weather: Rain & Thunder",
+        boolean("rain.enabled", "Rain", False),
+        flt("rain.intensity", "Intensity", 0.7, 0.0, 1.0),
+        flt("rain.cloud_base", "Rain clouds: base", 2200.0, 0.0, 8000.0, step=50.0, decimals=0,
+            unit="m"),
+        flt("rain.cloud_thickness", "Rain clouds: thickness", 3000.0, 100.0, 8000.0, step=50.0,
+            decimals=0, unit="m"),
+        flt("rain.coverage", "Rain clouds: coverage", 0.85, 0.0, 1.0),
+        flt("rain.cloud_density", "Rain clouds: density", 1.0, 0.0, 3.0),
+        flt("rain.darkness", "Rain clouds: darkness", 0.6, 0.0, 1.0),
+        flt("rain.wind", "Wind", 3.0, 0.0, 30.0, step=0.5, unit="m/s",
+            tooltip="Slants the rain and moves the rain clouds"),
+        flt("rain.wind_dir", "Wind towards", 90.0, 0.0, 360.0, step=5.0, decimals=0, unit="°"),
+        flt("rain.visibility_km", "Visibility", 6.0, 0.2, 50.0, step=0.1, decimals=1, unit="km",
+            logarithmic=True),
+        flt("rain.wetness", "Wet ground", 0.8, 0.0, 1.0),
+    )  # fmt: skip

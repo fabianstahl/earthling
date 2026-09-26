@@ -139,6 +139,7 @@ void main() {
             float sun_t = exp(-tau) * (1.0 - exp(-2.0 * tau) * 0.5);  // Beer + powder
             vec3 albedo = layer_albedo(rel);
             vec3 ambient = mix(u_ground_ambient, u_sky_ambient, 0.35 + 0.65 * hf);
+            ambient = mix(ambient, vec3(dot(ambient, vec3(0.3333))), 0.6);  // grey bases
             vec3 light = u_sun_radiance * sun_t * phase + ambient * 0.8;
             for (int f = 0; f < u_flash_count; ++f) {
                 float dist = length(rel - u_flash_pos[f].xyz);

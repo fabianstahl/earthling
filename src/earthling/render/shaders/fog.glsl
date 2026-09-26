@@ -15,6 +15,7 @@ uniform sampler3D u_ap_inscatter;     // aerial perspective volume: (screen uv, 
 uniform sampler3D u_ap_transmittance;
 uniform vec2 u_ap_screen = vec2(1.0);  // render target size (froxels span the screen)
 uniform float u_ap_max_dist = 300e3;
+uniform float u_rain_haze = 0.0;      // rain: extinction per metre (reduced visibility)
 
 float phase_hg(float mu, float g) {
     float gg = g * g;
@@ -49,6 +50,10 @@ vec3 apply_atmosphere(vec3 color, vec3 dir, float dist) {
         float t = exp(-tau);
         vec3 light = u_fog_ambient + u_fog_sun * (4.0 * 3.14159265) * phase_hg(dot(dir, sun), u_fog_glow);
         color = color * t + light * (1.0 - t);
+    }
+    if (u_rain_haze > 0.0) {
+        float t = exp(-min(dist * u_rain_haze, 60.0));
+        color = color * t + u_fog_ambient * 1.1 * (1.0 - t);
     }
     return color;
 }

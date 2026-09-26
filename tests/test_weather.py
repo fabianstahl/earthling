@@ -96,3 +96,42 @@ def test_cloud_layer_renders_and_casts_shadows(gl_ctx):
     unshaded = render(gl_ctx, 0.2, **high, weather__cloud_shadows=0.0)
     assert shaded.mean() < unshaded.mean() - 3.0
     assert math.isfinite(shaded.mean())
+
+
+def test_rain_dims_the_light_and_wets_the_ground(gl_ctx):
+    from earthling.render.lighting import compute_lighting
+
+    renderer = Renderer(gl_ctx)
+    store = Scene().store
+    weather = renderer.weather
+    assert weather.rain_uniforms(store) == {"u_wetness": 0.0, "u_rain_haze": 0.0}
+    store.set("rain.enabled", True)
+    store.set("rain.intensity", 1.0)
+    store.set("rain.visibility_km", 3.0)
+    u = weather.rain_uniforms(store)
+    assert u["u_wetness"] == pytest.approx(store["rain.wetness"])
+    assert u["u_rain_haze"] == pytest.approx(1.0 / 1000.0)
+    weather.update(store, 5.0)
+    assert len(weather.layers) == 1  # only the rain deck (weather layers are off)
+    assert weather.layers[0][0][0] == store["rain.cloud_base"]
+    lighting = compute_lighting(store, 46.0, 7.0, "UTC")
+    before = lighting.sky_ambient
+    weather.dim_lighting(store, lighting)
+    assert all(a < b for a, b in zip(lighting.sky_ambient, before, strict=True))
+
+
+def test_rain_renders_streaks(gl_ctx):
+    import datetime
+
+    base = {"sun__datetime": datetime.datetime(2026, 7, 1, 12, 0), "haze__aerial": 0.0}
+    dry = render(gl_ctx, 0.08, **base)
+    # rain clouds far above the (low) camera, no deck in view: only streaks, haze, wet ground
+    wet = render(gl_ctx, 0.08, **base, rain__enabled=True, rain__intensity=1.0,
+                 rain__cloud_base=40000.0, rain__coverage=0.0)  # fmt: skip
+    assert np.abs(wet - dry).mean() > 2.0
+    streaks_only = render(gl_ctx, 0.08, **base, rain__enabled=True, rain__intensity=1.0,
+                          rain__cloud_base=40000.0, rain__coverage=0.0, rain__wetness=0.0,
+                          rain__visibility_km=50.0)  # fmt: skip
+    # thin vertical streaks: high horizontal contrast compared with the dry image
+    dx = lambda img: np.abs(np.diff(img.mean(axis=2), axis=1)).mean()  # noqa: E731
+    assert dx(streaks_only) > dx(dry)

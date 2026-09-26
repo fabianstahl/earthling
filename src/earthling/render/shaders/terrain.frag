@@ -5,6 +5,7 @@
 #include "shadows.glsl"
 #include "weather.glsl"
 uniform vec3 u_camera_enu;
+uniform float u_wetness = 0.0;  // rain: darker, more saturated ground
 in vec2 v_hm_uv;
 in vec2 v_tile_uv;
 in float v_skirt;  // 1 on the skirts hiding cracks between nodes
@@ -170,10 +171,11 @@ void main() {
     // "flat" presentation: same overall brightness as the scene, without relief
     vec3 flat_light = mix(u_ground_ambient, u_sky_ambient, 0.75) + u_sun_radiance * 0.65;
 
-    vec3 albedo_a = srgb_to_linear(layer_albedo(u_layer_a, li)) * layer_gain(u_layer_a);
+    vec3 wet = mix(vec3(1.0), vec3(0.55, 0.58, 0.62), u_wetness);
+    vec3 albedo_a = srgb_to_linear(layer_albedo(u_layer_a, li)) * layer_gain(u_layer_a) * wet;
     vec3 color = albedo_a * mix(flat_light, lit, layer_shading(u_layer_a));
     if (u_layer_mix > 0.0) {
-        vec3 albedo_b = srgb_to_linear(layer_albedo(u_layer_b, li)) * layer_gain(u_layer_b);
+        vec3 albedo_b = srgb_to_linear(layer_albedo(u_layer_b, li)) * layer_gain(u_layer_b) * wet;
         vec3 color_b = albedo_b * mix(flat_light, lit, layer_shading(u_layer_b));
         color = mix(color, color_b, u_layer_mix);
     }

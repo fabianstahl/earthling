@@ -217,6 +217,8 @@ class Renderer:
                 camera_height=height,
                 when=self.track_time(),
             )
+            self.weather.update(s, self.animation_time)
+            self.weather.dim_lighting(s, self.lighting)
             self.terrain.lighting_uniforms = lighting_uniforms(self.lighting)
 
     # --- frame ------------------------------------------------------------------------
@@ -334,12 +336,12 @@ class Renderer:
         return self.time if self.timeline_time is None else self.timeline_time
 
     def _weather_uniforms(self, camera: Camera) -> dict[str, object]:
-        """Cloud layers for the terrain shader (cloud shadows)."""
-        self.weather.update(self.store, self.animation_time)
+        """Cloud layers for the terrain shader (cloud shadows), wet ground, rain haze."""
+        rain = self.weather.rain_uniforms(self.store)
         if not self.weather.layers:
-            return {"u_layer_count": 0, "u_cloud_shadow_strength": 0.0}
+            return {"u_layer_count": 0, "u_cloud_shadow_strength": 0.0, **rain}
         self.weather.bind()
-        return {**self.weather.uniforms(),
+        return {**self.weather.uniforms(), **rain,
                 "u_camera_enu": tuple(float(v) for v in camera.position)}  # fmt: skip
 
     def _render_weather(self, camera: Camera, view_proj, width: int, height: int) -> None:
@@ -352,6 +354,9 @@ class Renderer:
         }
         self.weather.render_clouds(self.target.color_fbo, self.target.depth, camera, view_proj,
                                    uniforms, width, height, jitter=self.jitter_index)  # fmt: skip
+        self.weather.render_rain(self.target.color_fbo, self.target.depth, camera, view_proj,
+                                 self.lighting, self.store, width, height,
+                                 self.animation_time)  # fmt: skip
         self.atmosphere.bind()  # the cloud pass used texture unit 0
 
     def _render_shadows(self, camera: Camera, width: int, height: int) -> dict[str, object]:
@@ -398,7 +403,11 @@ class Renderer:
         self.tracks.ensure_built(options, dem_version=id(data))
         self._update_progress()
         if self.lighting is not None:
-            self.tracks.uniforms = {**lighting_uniforms(self.lighting), **self._atmosphere_uniforms}
+            self.tracks.uniforms = {
+                **lighting_uniforms(self.lighting),
+                **self._atmosphere_uniforms,
+                **self.weather.rain_uniforms(s),
+            }
         self.tracks.render(camera, view_proj, width, height, s)
         if self.tracks.visible:
             self.marker.render(camera, view_proj, width, height, self.time, s)
