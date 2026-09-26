@@ -10,6 +10,8 @@ uniform float u_night = 0.0;      // 0 day .. 1 full night (stars fade in)
 uniform mat3 u_to_celestial;      // ENU -> equatorial frame (for the star field)
 uniform float u_pixel_angle;      // radians per pixel (star size)
 uniform sampler2D u_skyview_lut;
+uniform vec3 u_flash_sky = vec3(0.0);   // lightning: glow of the sky / clouds
+uniform vec3 u_flash_dir = vec3(0.0, 0.0, 1.0);
 
 float hash13(vec3 p) {
     p = fract(p * 0.1031);
@@ -72,6 +74,8 @@ void main() {
     if (u_night > 0.0 && !below_horizon) {
         radiance += stars(dir) * u_night * u_star_brightness * 0.02 * trans;
     }
+    // lightning lights up the sky, most strongly towards the strike
+    radiance += u_flash_sky * (0.25 + 1.5 * pow(max(dot(dir, u_flash_dir), 0.0), 6.0));
     // faint airglow so the night sky is not pitch black
     radiance += vec3(0.0004, 0.0006, 0.0012) * u_night * (below_horizon ? 0.3 : 1.0);
     // height fog in front of the sky (the aerial perspective part is already in `scatter`)

@@ -282,7 +282,9 @@ def weather_properties() -> list:
             flt(p + "detail", f"{name}: fraying", d["detail"], 0.0, 1.0),
             flt(p + "brightness", f"{name}: brightness", d["brightness"], 0.0, 3.0),
         ]  # fmt: skip
-    return section("Weather: Clouds & Fog", *defs) + rain_properties()
+    from earthling.render.lightning import lightning_properties
+
+    return section("Weather: Clouds & Fog", *defs) + rain_properties() + lightning_properties()
 
 
 def rain_properties() -> list:

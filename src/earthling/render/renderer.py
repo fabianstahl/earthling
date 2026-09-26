@@ -32,6 +32,7 @@ from earthling.render.lighting import (
     enu_to_celestial,
     lighting_uniforms,
 )
+from earthling.render.lightning import LightningLayer
 from earthling.render.marker import MarkerLayer
 from earthling.render.overlays import OutlineLayer
 from earthling.render.pois import PoiLayer
@@ -152,6 +153,7 @@ class Renderer:
         self.fullscreen = FullscreenPasses(ctx, self.shaders)
         self.atmosphere = AtmosphereLuts(ctx, self.shaders, self.fullscreen)
         self.weather = WeatherSystem(ctx, self.shaders, self.fullscreen)
+        self.lightning = LightningLayer(ctx, self.shaders)
         self._atmosphere_uniforms: dict[str, object] = {}
         self.bloom = Bloom(ctx)
         lut = optical_depth_lut()
@@ -219,6 +221,9 @@ class Renderer:
             )
             self.weather.update(s, self.animation_time)
             self.weather.dim_lighting(s, self.lighting)
+            self.lightning.update(s, self.animation, self.animation_time, camera, self.frame,
+                                  self.terrain.data)  # fmt: skip
+            self._apply_flash(s)
             self.terrain.lighting_uniforms = lighting_uniforms(self.lighting)
 
     # --- frame ------------------------------------------------------------------------
@@ -293,6 +298,7 @@ class Renderer:
             )
         self._render_tracks(camera, view_proj, width, height)
         self.outlines.render(camera, view_proj)
+        self.lightning.render(camera, view_proj, width, height, self.store, glow=False)
         self._render_weather(camera, view_proj, width, height)
         target.use()
         self.ctx.disable(moderngl.DEPTH_TEST)  # the camera path is drawn on top
@@ -331,6 +337,33 @@ class Renderer:
             **self._atmosphere_uniforms,
         }
 
+    def _apply_flash(self, s) -> None:
+        """Lightning flashes light up the whole scene for a moment."""
+        flash = self.lightning.flash() * s["lightning.intensity"]
+        if flash <= 0.0 or self.lighting is None:
+            return
+        color = tuple(c**2.2 for c in s["lightning.color"])
+        lit = self.lighting
+        lit.sky_ambient = tuple(
+            a + c * flash * 0.07 for a, c in zip(lit.sky_ambient, color, strict=True)
+        )
+        lit.ground_ambient = tuple(
+            a + c * flash * 0.025 for a, c in zip(lit.ground_ambient, color, strict=True)
+        )
+        lit.fog_ambient = tuple(
+            a + c * flash * 0.05 for a, c in zip(lit.fog_ambient, color, strict=True)
+        )
+
+    def _flash_sky_uniforms(self, camera: Camera) -> dict[str, object]:
+        s = self.store
+        if s is None or not self.lightning.active:
+            return {"u_flash_sky": (0.0, 0.0, 0.0)}
+        strike, flash, top, _ = max(self.lightning.active, key=lambda a: a[1])
+        rel = top - camera.position
+        direction = rel / max(float(np.linalg.norm(rel)), 1.0)
+        color = [c**2.2 * flash * s["lightning.intensity"] * 0.15 for c in s["lightning.color"]]
+        return {"u_flash_sky": tuple(color), "u_flash_dir": tuple(float(v) for v in direction)}
+
     @property
     def animation_time(self) -> float:
         return self.time if self.timeline_time is None else self.timeline_time
@@ -345,11 +378,17 @@ class Renderer:
                 "u_camera_enu": tuple(float(v) for v in camera.position)}  # fmt: skip
 
     def _render_weather(self, camera: Camera, view_proj, width: int, height: int) -> None:
-        if not self.weather.layers or self.lighting is None:
+        if self.lighting is None:
+            return
+        if not self.weather.layers:  # rain without clouds is still possible
+            self.weather.render_rain(self.target.color_fbo, self.target.depth, camera, view_proj,
+                                     self.lighting, self.store, width, height,
+                                     self.animation_time)  # fmt: skip
             return
         uniforms = {
             **lighting_uniforms(self.lighting),
             **self._atmosphere_uniforms,
+            **self.lightning.flash_uniforms(self.store, camera),
             "u_camera_enu": tuple(float(v) for v in camera.position),
         }
         self.weather.render_clouds(self.target.color_fbo, self.target.depth, camera, view_proj,
@@ -459,6 +498,9 @@ class Renderer:
             if name in program:
                 program[name] = value
         program["u_night"] = self.lighting.night
+        for name, value in self._flash_sky_uniforms(camera).items():
+            if name in program:
+                program[name] = value
         program["u_pixel_angle"] = float(np.radians(camera.fov_y)) / max(1, height)
         m = enu_to_celestial(self.lighting.when, self.frame.lat, self.frame.lon)
         program["u_to_celestial"].write(m.T.astype("f4").tobytes())  # column-major
@@ -481,6 +523,8 @@ class Renderer:
         self.tracks.render(camera, view_proj, width, height, s, glow_pass=True)
         if self.tracks.visible:
             self.marker.render(camera, view_proj, width, height, self.time, s, glow_pass=True)
+        self.lightning.render(camera, view_proj, width, height, s, glow=True)
+        glow_fbo.use()
         self.ctx.depth_func = "<"
         self.ctx.disable(moderngl.DEPTH_TEST)
         assert self.target.glow is not None
