@@ -385,7 +385,8 @@ class TrackLayer:
             "width": store["tracks.width"] if store is not None else 5.0,
             "glow": store["tracks.glow"] if store is not None else 1.2,
         }
-        for g in self._gpu:
+        # planned routes first: the walked tracks are drawn on top of them
+        for g in sorted(self._gpu, key=lambda g: g.track.role == "walked"):
             if not g.track.visible:
                 continue
             style = self._group_style(store, g, single)

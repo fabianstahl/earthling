@@ -301,3 +301,30 @@ def test_depth_bias_keeps_tracks_above_coarse_terrain(gl_ctx):
         return ((img[..., 0] > img[..., 2] + 60) & (img[..., 0] > img[..., 1] + 40)).sum()
 
     assert red_pixels(0.0) < 5 and red_pixels(0.01) > 50
+
+
+def test_hairpins_have_no_miter_spikes(gl_ctx):
+    """A zig-zag track stays within a narrow band around its centre line (no long spikes)."""
+    n = 60
+    lat = 46.0 + np.linspace(0.0, 0.01, n)
+    lon = 7.0 + np.where(np.arange(n) % 2 == 0, 0.0, 0.0012)  # hairpins every point
+    seg = Segment(lat, lon, np.full(n, 1500.0), np.full(n, np.datetime64("NaT", "ms")))
+    img, _ = _top_down(gl_ctx, [Track("zz", Path("zz.gpx"), [seg])], **{"tracks.smoothing": 1,
+                       "tracks.width": 10.0})  # fmt: skip
+    red = (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)
+    cols = np.flatnonzero(red.any(axis=0))
+    width = cols.max() - cols.min()
+    # the zig-zag spans ~90 m = ~24 px at 3 km with a 50 degree fov, plus the 10 px line
+    assert width < 24 + 10 + 16
+
+
+def test_walked_tracks_are_drawn_on_top_of_planned_routes(gl_ctx):
+    from earthling.render.tracks import track_color
+
+    walked, planned = straight_track(), straight_track()
+    walked.name, planned.name, planned.role = "walked", "planned", "planned"
+    # the planned route comes later in the list, but must end up below
+    img, _ = _top_down(gl_ctx, [walked, planned])
+    centre = img[90:110, 99:101].reshape(-1, 3).mean(axis=0)
+    expected = np.array(track_color(0)) * 255
+    assert np.argmax(centre) == np.argmax(expected) == 0  # the walked (orange-red) colour

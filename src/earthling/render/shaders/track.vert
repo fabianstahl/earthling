@@ -39,7 +39,8 @@ void main() {
     d_out = length(d_out) > 1e-6 ? normalize(d_out) : d_in;
     vec2 tangent = normalize(d_in + d_out + vec2(1e-6));
     vec2 normal = vec2(-tangent.y, tangent.x);
-    float miter = 1.0 / max(dot(normal, vec2(-d_in.y, d_in.x)), 0.35);
+    // limited miter: at hairpins a long miter sticks out of the line as a spike
+    float miter = 1.0 / max(dot(normal, vec2(-d_in.y, d_in.x)), 0.7);
 
     float width_px = u_track_width;
     if (u_track_width_mode == 1) {
