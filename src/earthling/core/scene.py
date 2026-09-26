@@ -53,6 +53,7 @@ class Scene:
         self.ui: dict[str, Any] = {}  # window/dock layout (owned by the main window)
         self.path: Path | None = None
         self.dirty = False
+        self.pois: list = []  # earthling.core.pois.Poi
         self._dynamic: dict[str, list[str]] = {}  # key -> property ids (project specific)
         self.dynamic_listeners: list[Callable[[], None]] = []  # e.g. rebuild the panel
         self._dirty_listeners: list[Callable[[bool], None]] = []
@@ -83,6 +84,13 @@ class Scene:
         for listener in list(self.dynamic_listeners):
             listener()
 
+    def set_pois(self, pois) -> None:
+        """Replace the points of interest (and their keyframeable properties)."""
+        from earthling.core.pois import all_poi_properties
+
+        self.pois = list(pois)
+        self.set_dynamic("pois", all_poi_properties(self.pois))
+
     # --- dirty state ------------------------------------------------------------------
     def mark_dirty(self, dirty: bool = True) -> None:
         if dirty != self.dirty:
@@ -101,11 +109,16 @@ class Scene:
             "animation": self.animation.to_json(),
             "camera": self.camera,
             "ui": self.ui,
+            "pois": [poi.to_json() for poi in self.pois],
         }
 
     def load_json(self, doc: dict[str, Any]) -> list[str]:
         """Replace the scene contents. Returns non-fatal problems (unknown properties...)."""
         doc = migrate(dict(doc))
+        from earthling.core.pois import Poi
+
+        # POIs first: their properties must exist before the values are loaded
+        self.set_pois([Poi.from_json(p) for p in doc.get("pois", [])])
         for d in self.registry:  # properties missing in the file get their defaults
             self.store.set(d.id, d.default)
         problems = self.store.load_json(doc.get("properties", {}))

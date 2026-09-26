@@ -70,6 +70,7 @@ class FrameRenderer:
         self.renderer = renderer
         self.ctx: moderngl.Context = renderer.ctx
         self.animation = animation
+        renderer.animation = animation
         self.store = animation.store
         self.rig = rig or CameraRig(animation, self.store)
         self.quality = quality or ExportQuality.from_store(self.store)
