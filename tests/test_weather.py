@@ -135,3 +135,17 @@ def test_rain_renders_streaks(gl_ctx):
     # thin vertical streaks: high horizontal contrast compared with the dry image
     dx = lambda img: np.abs(np.diff(img.mean(axis=2), axis=1)).mean()  # noqa: E731
     assert dx(streaks_only) > dx(dry)
+
+
+def test_layers_above_shade_the_clouds_below(gl_ctx):
+    base = {"sun__datetime": __import__("datetime").datetime(2026, 7, 1, 12, 0),
+            "haze__aerial": 0.0, "weather__enabled": True, "weather__cloud_shadows": 0.0,
+            "weather__layer1__base": 2700.0, "weather__layer1__thickness": 2000.0,
+            "weather__layer1__coverage": 0.8, "weather__layer1__density": 1.0}  # fmt: skip
+    # a dense deck above the camera (out of view, and no ground shadows)
+    deck = {"weather__layer3__enabled": True, "weather__layer3__base": 12000.0,
+            "weather__layer3__thickness": 3000.0, "weather__layer3__coverage": 1.0,
+            "weather__layer3__density": 1.0}  # fmt: skip
+    lit = render(gl_ctx, **base)
+    shaded = render(gl_ctx, **base, **deck)
+    assert shaded.mean() < lit.mean() - 5.0

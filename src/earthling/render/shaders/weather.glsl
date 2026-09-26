@@ -44,20 +44,35 @@ float weather_height(vec3 rel, float camera_height) {
     return camera_height + rel.z + dot(rel.xy, rel.xy) / (2.0 * 6371e3);
 }
 
-// Transmittance of the sun light through all layers above a point (one sample per layer).
-float cloud_shadow(vec3 rel, vec3 camera_enu, float camera_height, vec3 sun) {
-    if (u_layer_count == 0 || u_cloud_shadow_strength <= 0.0 || sun.z <= 0.01) return 1.0;
-    float h = weather_height(rel, camera_height);
-    vec2 xy = camera_enu.xy + rel.xy;
+// Optical depth towards the sun through the layers above height h (one sample per layer).
+// ``above_only``: skip layers the point is inside of (for cloud samples, whose own layer is
+// raymarched separately).
+float layers_optical_depth(vec2 xy, float h, vec3 sun, bool above_only) {
     float tau = 0.0;
     for (int i = 0; i < u_layer_count; ++i) {
         vec4 shape = u_layer_shape[i];
         float mid = shape.x + 0.5 * shape.y;
-        if (h >= mid) continue;
+        if (h >= mid || (above_only && h >= shape.x)) continue;
         float t = (mid - h) / sun.z;
         vec2 p = xy + sun.xy * t;
         float slant = shape.y / max(sun.z, 0.25);
         tau += cloud_density_lod(i, p, mid, 1.5, 0.0) * slant * 0.6;
     }
+    return tau;
+}
+
+// Transmittance of the sun light through all layers above a point (ground shadows).
+float cloud_shadow(vec3 rel, vec3 camera_enu, float camera_height, vec3 sun) {
+    if (u_layer_count == 0 || u_cloud_shadow_strength <= 0.0 || sun.z <= 0.01) return 1.0;
+    float h = weather_height(rel, camera_height);
+    float tau = layers_optical_depth(camera_enu.xy + rel.xy, h, sun, false);
     return mix(1.0, exp(-tau), u_cloud_shadow_strength);
+}
+
+// Sun transmittance through the layers entirely above a cloud sample (e.g. fog under the
+// rain deck is not lit by the sun).
+float shadow_from_layers_above(vec3 rel, vec3 camera_enu, float camera_height, vec3 sun) {
+    if (u_layer_count < 2 || sun.z <= 0.01) return 1.0;
+    float h = weather_height(rel, camera_height);
+    return exp(-layers_optical_depth(camera_enu.xy + rel.xy, h, sun, true));
 }

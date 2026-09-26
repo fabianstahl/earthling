@@ -137,6 +137,7 @@ void main() {
                 ds *= 1.9;
             }
             float sun_t = exp(-tau) * (1.0 - exp(-2.0 * tau) * 0.5);  // Beer + powder
+            sun_t *= shadow_from_layers_above(rel, u_camera_enu, u_camera_height, sun);
             vec3 albedo = layer_albedo(rel);
             vec3 ambient = mix(u_ground_ambient, u_sky_ambient, 0.35 + 0.65 * hf);
             ambient = mix(ambient, vec3(dot(ambient, vec3(0.3333))), 0.6);  // grey bases
