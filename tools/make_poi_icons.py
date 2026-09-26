@@ -176,6 +176,57 @@ def draw_supermarket() -> Image.Image:
     return finish(shadow(img))
 
 
+def draw_couscous() -> Image.Image:
+    """A meal: a bowl of couscous with vegetables and a spoon."""
+    img, d = badge((200, 120, 40))
+    d.pieslice((*p(0.24, 0.3), *p(0.76, 0.78)), 0, 180, fill=(170, 90, 40, 255))  # bowl
+    d.ellipse((*p(0.26, 0.47), *p(0.74, 0.61)), fill=(236, 196, 110, 255))  # couscous
+    d.ellipse((*p(0.34, 0.4), *p(0.66, 0.56)), fill=(236, 196, 110, 255))
+    for x, y, c in ((0.42, 0.46, (220, 60, 40)), (0.55, 0.44, (60, 150, 60)),
+                    (0.5, 0.5, (240, 140, 30)), (0.6, 0.5, (220, 60, 40))):  # fmt: skip
+        d.ellipse((*p(x - 0.03, y - 0.03), *p(x + 0.03, y + 0.03)), fill=(*c, 255))
+    d.line([p(0.62, 0.42), p(0.72, 0.24)], fill=(120, 120, 130, 255), width=6 * SS)  # spoon
+    d.ellipse((*p(0.69, 0.2), *p(0.76, 0.27)), fill=(120, 120, 130, 255))
+    return finish(shadow(img))
+
+
+def draw_summit_decision() -> Image.Image:
+    """A decision: a signpost pointing up to a summit."""
+    img, d = badge((110, 70, 160))
+    d.polygon([p(0.22, 0.72), p(0.46, 0.34), p(0.56, 0.48), p(0.63, 0.4), p(0.8, 0.72)],
+              fill=(120, 130, 145, 255))  # fmt: skip
+    d.polygon([p(0.46, 0.34), p(0.52, 0.44), p(0.41, 0.42)], fill=(255, 255, 255, 255))  # snow
+    d.line([p(0.34, 0.8), p(0.34, 0.32)], fill=(110, 70, 40, 255), width=6 * SS)  # post
+    d.polygon(
+        [p(0.34, 0.33), p(0.58, 0.33), p(0.64, 0.39), p(0.58, 0.45), p(0.34, 0.45)],
+        fill=(240, 190, 40, 255),
+    )  # sign pointing on
+    d.polygon([p(0.46, 0.22), p(0.53, 0.3), p(0.39, 0.3)], fill=(110, 70, 160, 255))  # up
+    return finish(shadow(img))
+
+
+def draw_cold() -> Image.Image:
+    """Freezing: a snowflake and a thermometer deep in the blue."""
+    img, d = badge((60, 150, 230))
+    ink, w = (60, 150, 230, 255), 5 * SS
+    cx, cy, r = 0.43, 0.5, 0.2
+    for k in range(3):  # six-armed snowflake
+        a = math.pi / 3 * k
+        dx, dy = math.cos(a) * r, math.sin(a) * r
+        d.line([p(cx - dx, cy - dy), p(cx + dx, cy + dy)], fill=ink, width=w)
+        for sgn in (-1, 1):
+            ex, ey = cx + sgn * dx * 0.65, cy + sgn * dy * 0.65
+            for b in (a + 0.6, a - 0.6):
+                bx, by = math.cos(b) * 0.07 * sgn, math.sin(b) * 0.07 * sgn
+                d.line([p(ex, ey), p(ex + bx, ey + by)], fill=ink, width=w - SS)
+    d.rounded_rectangle((*p(0.66, 0.26), *p(0.74, 0.66)), radius=8 * SS, fill=(90, 90, 100, 255))
+    d.rounded_rectangle((*p(0.68, 0.28), *p(0.72, 0.64)), radius=5 * SS, fill=(235, 240, 245, 255))
+    d.ellipse((*p(0.63, 0.62), *p(0.77, 0.76)), fill=(90, 90, 100, 255))
+    d.ellipse((*p(0.65, 0.64), *p(0.75, 0.74)), fill=(60, 150, 230, 255))
+    d.rectangle((*p(0.685, 0.56), *p(0.715, 0.66)), fill=(60, 150, 230, 255))  # low reading
+    return finish(shadow(img))
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     draw_pin().save(OUT / "pin.png")
@@ -185,6 +236,9 @@ def main() -> None:
     draw_flag().save(OUT / "flag.png")
     draw_power().save(OUT / "power.png")
     draw_supermarket().save(OUT / "supermarket.png")
+    draw_couscous().save(OUT / "couscous.png")
+    draw_summit_decision().save(OUT / "summit.png")
+    draw_cold().save(OUT / "cold.png")
     storm = [draw_storm_frame(i / 30) for i in range(30)]
     storm[0].save(OUT / "storm.png", save_all=True, append_images=storm[1:], duration=60,
                   loop=0, disposal=0, blend=0, format="PNG")  # fmt: skip
