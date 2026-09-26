@@ -402,6 +402,57 @@ replacing the analytic sky, with real aerial perspective.
 normal maps at close range.
 **13.3 Export quality** – supersampling / temporal AA for export, optional motion blur.
 
+
+### Phase 14 – Real projects: track groups & time
+
+**14.1 Track groups**
+A project can load several groups of GPX files (`[[tracks]]` in `earthling.toml`), e.g. the
+planned route of a long-distance trail and the tracks actually walked. Every group has its own
+resolution zones (only the relevant part in high detail, the rest as a coarse overview), a style
+(colour per track or single colour, width, dashed line, glow) and a role: progress, the hiker
+marker, the stats and the labels follow the walked tracks, while planned routes are drawn in full.
+Per-group properties (visibility, opacity, colour, highlight of one track with dimming of the
+others) are keyframeable.
+→ The whole trail as context, the walked part in detail.
+
+**14.2 Sun from the GPX time**
+Optionally, the sun follows the local time at the head of the drawn track (with an offset), so
+a day's route animates from its real start to its real end with the matching light.
+→ A day tour from sunrise to sunset without manual sun keys.
+
+### Phase 15 – Points of interest
+
+**15.1 POI layer**
+Points of interest in the scene: position (on the map or snapped to the track), icon (PNG,
+animated GIF/APNG or sprite sheet), size, caption. Built-in effects (pop-in, bounce, pulse, wobble,
+spin) and frame animation speed; visibility, opacity, scale and effects are keyframeable per POI.
+Anchored in 3D, hidden behind terrain, drawn crisp after tone mapping.
+→ Coffee stops, closed paths, camps … appear and move in the video.
+
+**15.2 POI editing**
+A POI dock: add a POI at the hiker position or by clicking the terrain, choose an icon, edit name
+and caption; every POI gets its own section in the parameter panel (keys, dope sheet, graph
+editor). Placeholder icons (animated coffee, turnaround sign, tent, camera) are included.
+→ POIs are created and animated without editing files.
+
+### Phase 16 – Weather
+
+**16.1 Fog and cloud layers**
+Volumetric cloud and fog layers (three independent layers: base height, thickness, coverage,
+density, noise scale, wind), raymarched against the scene depth and lit by sun and sky, with
+moving cloud shadows on the terrain.
+→ Drifting fog banks between the ridges, clouds casting shadows.
+
+**16.2 Rain**
+A rain cloud deck at a defined height, rain streaks below it (depth-aware, wind-driven),
+darkened wet ground and reduced visibility.
+→ Rainy descents look rainy.
+
+**16.3 Thunderstorms**
+Lightning strikes at a keyframeable rate (deterministic schedule), branching bolts from the
+cloud base to the ground with glow, and flashes that light up clouds, sky and terrain.
+→ A night storm with lightning over the mountains.
+
 ---
 
 ## 5. Risks & notes
