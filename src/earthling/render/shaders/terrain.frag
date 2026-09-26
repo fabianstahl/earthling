@@ -22,6 +22,7 @@ uniform sampler2D u_borders;  // distance to border lines in node uv units (r: c
 uniform bool u_has_borders;
 uniform bool u_borders_overlay = false;
 uniform bool u_borders_regions = true;
+uniform float u_borders_opacity = 1.0;
 uniform float u_border_width = 2.5;
 uniform vec3 u_border_color = vec3(1.0, 0.85, 0.3);
 uniform float u_border_glow = 12.0;
@@ -179,15 +180,15 @@ void main() {
         vec3 color_b = albedo_b * mix(flat_light, lit, layer_shading(u_layer_b));
         color = mix(color, color_b, u_layer_mix);
     }
-    if (u_borders_overlay) {
-        float region = line_coverage(li.region_px, u_region_width);
+    if (u_borders_overlay && u_borders_opacity > 0.0) {
+        float region = line_coverage(li.region_px, u_region_width) * u_borders_opacity;
         color = mix(color, srgb_to_linear(u_region_color) * flat_light * 0.8, region * 0.8);
-        float border = line_coverage(li.border_px, u_border_width);
+        float border = line_coverage(li.border_px, u_border_width) * u_borders_opacity;
         vec3 border_rgb = srgb_to_linear(u_border_color);
         color = mix(color, border_rgb * flat_light, border);
         // glow: emitted light, visible at night too
         float glow = exp(-li.border_px / max(u_border_glow, 0.1)) * u_border_glow_strength
-                   * li.border_reach;
+                   * li.border_reach * u_borders_opacity;
         color += border_rgb * glow * (0.15 + 0.35 * max(flat_light.g, 0.02));
     }
     if (u_contours_overlay) {

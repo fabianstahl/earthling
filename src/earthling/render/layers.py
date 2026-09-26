@@ -92,10 +92,21 @@ LAYERS: list[Layer] = [
         "Border map",
         """
     float t = clamp((li.height - 300.0) / 4500.0, 0.0, 1.0);
-    vec3 base = mix(u_bmap_land, vec3(1.0), 0.5 * t);
+    vec3 base = mix(u_bmap_land, vec3(1.0), u_bmap_relief * t);
+    base = mix(u_bmap_sea, base, smoothstep(-1.0, 1.5, li.height));  // sea: DEM at sea level
     base = mix(base, u_region_color * 0.7, line_coverage(li.region_px, u_region_width) * 0.7);
     return mix(base, u_border_color, line_coverage(li.border_px, u_border_width));""",
         color("layer_borders.land", "Land colour", (0.82, 0.8, 0.74), uniform="u_bmap_land"),
+        color("layer_borders.sea", "Sea colour", (0.62, 0.74, 0.84), uniform="u_bmap_sea"),
+        flt(
+            "layer_borders.relief",
+            "Mountains lighter",
+            0.5,
+            0.0,
+            1.0,
+            uniform="u_bmap_relief",
+            tooltip="High terrain blends towards white",
+        ),
         shading=0.7,
         tile_source="borders",
     ),
@@ -220,6 +231,8 @@ BORDERS = section(
     "Borders",
     boolean("borders.overlay", "Overlay on any layer", False, uniform="u_borders_overlay"),
     boolean("borders.regions", "Regional borders", True, uniform="u_borders_regions"),
+    flt("borders.opacity", "Overlay opacity", 1.0, 0.0, 1.0, uniform="u_borders_opacity",
+        tooltip="Fades the overlay lines and glow (e.g. from a map view into the imagery)"),
     flt("borders.width", "Country line width", 2.5, 0.5, 12.0, step=0.1, decimals=1, unit="px",
         uniform="u_border_width"),
     color("borders.color", "Country line colour", (1.0, 0.82, 0.3), uniform="u_border_color"),

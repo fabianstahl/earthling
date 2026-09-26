@@ -70,3 +70,40 @@ def test_every_layer_renders_differently(gl_ctx):
     mixed = img[16:32, 16:32].reshape(-1, 3).mean(axis=0).sum()
     lo, hi = sorted([means["satellite"].sum(), means["hillshade"].sum()])
     assert lo - 5 <= mixed <= hi + 5
+
+
+def test_border_map_has_sea_and_land_colours(gl_ctx):
+    from earthling.core.scene import Scene
+    from earthling.render import lod
+    from earthling.render.camera import Camera, OrbitController
+    from earthling.render.renderer import Renderer
+    from test_terrain import FakeTerrainData
+
+    def centre(height):
+        data = FakeTerrainData()
+        data.heights[:] = height
+        renderer = Renderer(gl_ctx)
+        renderer.set_scene(LocalFrame(46.0, 7.0, 0.0), [])
+        renderer.store = Scene().store
+        for pid, value in {"haze.aerial": 0.0, "layers.a": "borders",
+                           "layer_borders.land": (0.8, 0.1, 0.1),
+                           "layer_borders.sea": (0.1, 0.1, 0.8), "layer_borders.relief": 0.0,
+                           "layer_borders.shading": 0.0}.items():  # fmt: skip
+            renderer.store.set(pid, value)
+        renderer.timezone = "UTC"
+        tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+        renderer.set_terrain_source(data, lod.NodeSet({10: [(int(tx), int(ty))]}))
+        camera = Camera()
+        renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 32)
+        orbit = OrbitController(camera)
+        orbit.frame_bounds(*renderer.scene_bounds())
+        orbit.pitch = -80.0
+        orbit.apply()
+        renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 32)
+        fbo = gl_ctx.simple_framebuffer((32, 32))
+        renderer.render(fbo, 32, 32, camera)
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(32, 32, 3)
+        return img[12:20, 12:20].reshape(-1, 3).mean(axis=0)
+
+    sea, land = centre(0.0), centre(1500.0)
+    assert sea[2] > sea[0] + 30 and land[0] > land[2] + 30
