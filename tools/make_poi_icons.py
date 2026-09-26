@@ -135,6 +135,47 @@ def draw_flag() -> Image.Image:
     return finish(shadow(img))
 
 
+def draw_power() -> Image.Image:
+    """Electricity / charging: a lightning bolt."""
+    img, d = badge((245, 185, 20))
+    d.polygon([p(0.56, 0.24), p(0.32, 0.54), p(0.47, 0.54), p(0.42, 0.78), p(0.68, 0.44),
+               p(0.53, 0.44), p(0.6, 0.24)], fill=(30, 30, 35, 255))  # fmt: skip
+    return finish(shadow(img))
+
+
+def _cloud(d: ImageDraw.ImageDraw, fill) -> None:
+    for x0, y0, x1, y1 in ((0.26, 0.36, 0.5, 0.56), (0.38, 0.26, 0.66, 0.54),
+                           (0.54, 0.34, 0.76, 0.56)):  # fmt: skip
+        d.ellipse((*p(x0, y0), *p(x1, y1)), fill=fill)
+    d.rounded_rectangle((*p(0.3, 0.44), *p(0.72, 0.56)), radius=10 * SS, fill=fill)
+
+
+def draw_storm_frame(phase: float) -> Image.Image:
+    """Bad weather: a dark cloud with falling rain and a flashing bolt (animated)."""
+    img, d = badge((70, 90, 125))
+    flash = phase < 0.08 or 0.14 < phase < 0.2  # double flash, then a pause
+    _cloud(d, (95, 105, 125, 255) if not flash else (150, 160, 180, 255))
+    for i, x in enumerate((0.34, 0.46, 0.58, 0.68)):
+        y = 0.6 + ((phase * 2.0 + i * 0.27) % 1.0) * 0.16
+        d.line([p(x, y), p(x - 0.025, y + 0.06)], fill=(60, 120, 220, 255), width=5 * SS)
+    if flash:
+        d.polygon([p(0.52, 0.52), p(0.44, 0.66), p(0.5, 0.66), p(0.46, 0.78), p(0.58, 0.62),
+                   p(0.52, 0.62), p(0.56, 0.52)], fill=(255, 215, 40, 255))  # fmt: skip
+    return finish(shadow(img))
+
+
+def draw_supermarket() -> Image.Image:
+    """Supermarket: a shopping cart."""
+    img, d = badge((30, 120, 200))
+    ink, w = (30, 30, 35, 255), 7 * SS
+    d.line([p(0.24, 0.33), p(0.32, 0.33), p(0.4, 0.6), p(0.7, 0.6)], fill=ink, width=w,
+           joint="curve")  # fmt: skip
+    d.polygon([p(0.34, 0.38), p(0.76, 0.38), p(0.7, 0.54), p(0.39, 0.54)], fill=ink)
+    for x in (0.44, 0.65):
+        d.ellipse((*p(x - 0.045, 0.64), *p(x + 0.045, 0.73)), fill=ink)
+    return finish(shadow(img))
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     draw_pin().save(OUT / "pin.png")
@@ -142,6 +183,11 @@ def main() -> None:
     draw_tent().save(OUT / "tent.png")
     draw_camera().save(OUT / "camera.png")
     draw_flag().save(OUT / "flag.png")
+    draw_power().save(OUT / "power.png")
+    draw_supermarket().save(OUT / "supermarket.png")
+    storm = [draw_storm_frame(i / 30) for i in range(30)]
+    storm[0].save(OUT / "storm.png", save_all=True, append_images=storm[1:], duration=60,
+                  loop=0, disposal=0, blend=0, format="PNG")  # fmt: skip
     frames = [draw_coffee_frame(i / 24) for i in range(24)]
     # animated PNG (APNG); disposal "none" + blend "source" stores complete frames
     frames[0].save(OUT / "coffee.png", save_all=True, append_images=frames[1:], duration=70,

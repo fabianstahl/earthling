@@ -187,6 +187,8 @@ class PoiLayer:
             anchor = self._anchor(poi, frame, terrain_data, exaggeration)
             rel = anchor - np.asarray(camera.position, dtype=np.float64)
             vertices = self._geometry(poi, icon, rel, store, since, pop, opacity, k, atlas)
+            if not len(vertices):
+                continue
             self._draw(program, fbo, icon, atlas, vertices, camera, view_proj, width, height,
                        depth, depth_size, k)  # fmt: skip
             self.last_drawn.append(poi.id)
@@ -210,8 +212,11 @@ class PoiLayer:
             dy = -0.08 * size * strength * (0.5 + 0.5 * math.sin(phase))
         fw, fh = icon.size
         w = size * fw / max(fh, 1)
-        lift = poi.lift_px * k * pop if store[p + "pin"] else 0.0
+        iconless = poi.icon in ("", "none")  # a caption only (e.g. a country name)
+        lift = poi.lift_px * k * pop if store[p + "pin"] and not iconless else 0.0
         cx, cy = 0.0, -lift - size / 2.0 + dy
+        if iconless:
+            cy = 0.0
         index = icon.frames.index_at(since * store[p + "anim_speed"])
         rows = math.ceil(len(icon.frames.frames) / icon.cols)
         r, c = divmod(index, icon.cols)
@@ -232,19 +237,28 @@ class PoiLayer:
         icon_quad[:, 3:5] = rotated + (cx, cy)
         icon_quad[:, 5:7] = uvs
         icon_quad[:, 7], icon_quad[:, 8], icon_quad[:, 9] = opacity, 0.0, 1.0
-        parts.append(icon_quad)
+        if not iconless:
+            parts.append(icon_quad)
         if store[p + "caption"] and poi.caption:
-            text_size = 20.0 * k * pop
-            atlas.ensure(poi.caption)
-            scale = text_size / BASE_PX
-            rects, glyph_uvs = atlas.quads(poi.caption)
-            if len(rects):
-                width = atlas.width(poi.caption) * scale
-                base = cy - size / 2.0 - 8.0 * k
-                q = rects * scale
-                q[:, [0, 2]] += -width / 2.0
-                q[:, [1, 3]] += base
-                parts.append(_glyphs(rel, q, glyph_uvs, opacity, scale))
+            lines = poi.caption.split("\n")
+            atlas.ensure("".join(lines))  # all glyphs first: adding some repacks the atlas
+            title_size = store[p + "caption_size"] * k * pop
+            sizes = [title_size] + [title_size * 0.78] * (len(lines) - 1)
+            # stacked upwards from above the icon (centred on the anchor without an icon)
+            total = sum(s * 1.2 for s in sizes)
+            base = cy - size / 2.0 - 8.0 * k if not iconless else total / 2.0 - sizes[-1] * 0.25
+            for line, text_size in zip(reversed(lines), reversed(sizes), strict=True):
+                scale = text_size / BASE_PX
+                rects, glyph_uvs = atlas.quads(line)
+                if len(rects):
+                    width = atlas.width(line) * scale
+                    q = rects * scale
+                    q[:, [0, 2]] += -width / 2.0
+                    q[:, [1, 3]] += base
+                    parts.append(_glyphs(rel, q, glyph_uvs, opacity, scale))
+                base -= text_size * 1.2
+        if not parts:
+            return np.zeros((0, 10), dtype=np.float32)
         return np.concatenate(parts).astype(np.float32)
 
     def _draw(self, program, fbo, icon, atlas, vertices, camera, view_proj, width, height,

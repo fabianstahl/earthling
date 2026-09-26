@@ -73,6 +73,8 @@ def poi_properties(poi: Poi) -> list:
         flt(p + "anim_speed", "Animation speed", 1.0, 0.0, 10.0, step=0.05,
             tooltip="Playback speed of animated icons (GIF, APNG, sprite sheets)"),
         boolean(p + "caption", "Show caption", True),
+        flt(p + "caption_size", "Caption size", 20.0, 6.0, 72.0, step=0.5, decimals=1, unit="px",
+            tooltip="First caption line; further lines (\n) are a little smaller"),
         boolean(p + "pin", "Pin line", True),
     )  # fmt: skip
 

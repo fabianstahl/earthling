@@ -127,3 +127,26 @@ def test_poi_rendering(gl_ctx):
     _, wobbled = render_poi(gl_ctx, poi, time=1.1, poi__camp__effect="wobble",
                             poi__camp__effect_strength=3.0)  # fmt: skip
     assert np.abs(wobbled - img).sum() > 1000
+
+
+def test_captions_without_icon_and_with_several_lines(gl_ctx):
+    def white_rows(img):
+        white = (img[..., 0] > 200) & (img[..., 1] > 200) & (img[..., 2] > 200)
+        rows = np.flatnonzero(white.any(axis=1))
+        return (rows.max() - rows.min()) if len(rows) else 0, white.sum()
+
+    label = Poi("fr", "France", 7.0, 46.0, "none", caption="Frankreich", height_offset_m=2600.0)
+    renderer, img = render_poi(gl_ctx, label, poi__fr__caption_size=72.0)
+    assert renderer.pois.last_drawn == ["fr"]
+    one_line, text_px = white_rows(img)
+    assert text_px > 30
+    sign = Poi(
+        "fr", "France", 7.0, 46.0, "builtin:turnaround", size_px=300.0, height_offset_m=2600.0
+    )
+    _, with_icon = render_poi(gl_ctx, sign)
+    red = lambda im: ((im[..., 0] > 170) & (im[..., 1] < 70) & (im[..., 2] < 70)).sum()  # noqa: E731
+    assert red(with_icon) > 20 and red(img) == 0  # "none": no icon
+    stacked = Poi("fr", "France", 7.0, 46.0, "none", caption="Etappe 2\n382 km",
+                  height_offset_m=2600.0)  # fmt: skip
+    _, img2 = render_poi(gl_ctx, stacked, poi__fr__caption_size=72.0)
+    assert white_rows(img2)[0] > one_line * 1.6
