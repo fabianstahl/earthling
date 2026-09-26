@@ -10,7 +10,8 @@ uniform vec4 u_layer_color[MAX_CLOUD_LAYERS];  // albedo rgb, brightness
 uniform float u_weather_time = 0.0;             // seconds (noise evolution)
 uniform float u_cloud_shadow_strength = 0.0;
 
-// ``lod``: noise mip level (from the sample footprint); ``detail``: 0 .. 1 fine erosion
+// ``lod``: noise mip level from the sample footprint (negative when magnified: the finer
+// detail noise then still gets its full resolution); ``detail``: 0 .. 1 fine erosion
 float cloud_density_lod(int i, vec2 xy, float h, float lod, float detail_amount) {
     vec4 shape = u_layer_shape[i];
     float hf = (h - shape.x) / max(shape.y, 1.0);
@@ -24,12 +25,12 @@ float cloud_density_lod(int i, vec2 xy, float h, float lod, float detail_amount)
     if (c <= 0.001) return 0.0;
     float profile = smoothstep(0.0, 0.18, hf) * smoothstep(1.0, 0.5, hf);
     vec3 uvw = vec3(p, h + u_weather_time * 0.3) / nz.x;
-    vec4 n = textureLod(u_cloud_noise, uvw, lod);
+    vec4 n = textureLod(u_cloud_noise, uvw, max(lod, 0.0));
     float base = n.r * profile;
     float d = clamp((base - (1.0 - c)) / max(c, 1e-3), 0.0, 1.0);
     if (d <= 0.0) return 0.0;
     if (detail_amount > 0.0) {
-        float detail = textureLod(u_cloud_noise, uvw * 3.7, lod + 1.9).g;
+        float detail = textureLod(u_cloud_noise, uvw * 3.7, max(lod + 1.9, 0.0)).g;
         d = clamp(d - (1.0 - detail) * nz.w * 0.35 * detail_amount, 0.0, 1.0);
     }
     return d * shape.w;

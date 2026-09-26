@@ -149,3 +149,26 @@ def test_layers_above_shade_the_clouds_below(gl_ctx):
     lit = render(gl_ctx, **base)
     shaded = render(gl_ctx, **base, **deck)
     assert shaded.mean() < lit.mean() - 5.0
+
+
+def test_clouds_fade_into_the_rain_haze(gl_ctx):
+    import datetime
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    renderer.set_terrain_source(FakeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))
+    scene = Scene()
+    for pid, value in {"sun.datetime": datetime.datetime(2026, 7, 1, 12, 0), "rain.enabled": True,
+                       "rain.visibility_km": 2.0}.items():  # fmt: skip
+        scene.store.set(pid, value)
+    renderer.store = scene.store
+    renderer.timezone = "UTC"
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 64)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.apply()
+    renderer.render(gl_ctx.simple_framebuffer((64, 64)), 64, 64, camera)
+    program = renderer.weather.passes("clouds")
+    assert program["u_rain_haze"].value == pytest.approx(3.0 / 2000.0 * 0.7, rel=1e-3)

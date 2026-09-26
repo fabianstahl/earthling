@@ -389,6 +389,7 @@ class Renderer:
             **lighting_uniforms(self.lighting),
             **self._atmosphere_uniforms,
             **self.lightning.flash_uniforms(self.store, camera),
+            **self.weather.rain_uniforms(self.store),  # clouds fade into the rain haze
             "u_camera_enu": tuple(float(v) for v in camera.position),
         }
         self.weather.render_clouds(self.target.color_fbo, self.target.depth, camera, view_proj,

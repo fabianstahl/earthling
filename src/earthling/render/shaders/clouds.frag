@@ -121,7 +121,7 @@ void main() {
             float hf;
             // noise level from the sample footprint (pixel size / step) vs. the voxel size
             float footprint = max(t * u_pixel_angle, dt * 0.5);
-            float lod = max(log2(footprint / (u_layer_noise[i].x / 128.0)), 0.0);
+            float lod = log2(footprint / (u_layer_noise[i].x / 128.0));
             float detail = 1.0 - smoothstep(8000.0, 20000.0, t);
             float d = total_density_lod(rel, lod, detail, hf);
             d *= 1.0 - smoothstep(0.7 * u_max_distance, u_max_distance, t);
@@ -133,7 +133,7 @@ void main() {
             for (int j = 0; j < 5; ++j) {
                 along += ds;
                 float hj;
-                tau += total_density_lod(rel + sun * along, lod + 1.0, 0.0, hj) * ds;
+                tau += total_density_lod(rel + sun * along, max(lod, 0.0) + 1.0, 0.0, hj) * ds;
                 ds *= 1.9;
             }
             float sun_t = exp(-tau) * (1.0 - exp(-2.0 * tau) * 0.5);  // Beer + powder
