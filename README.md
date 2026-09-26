@@ -37,12 +37,12 @@ timeline and export 4K video.
 
 | | |
 |---|---|
-| ![Texture layers: satellite, border map, slope classes, contour map](docs/images/layers.jpg) | ![Points of interest with animated icons and captions](docs/images/pois.jpg) |
-| **Texture layers:** satellite, border map, avalanche slope classes, contour map | **Points of interest:** animated icons with captions along the route |
-| ![Fog and clouds drifting between the ridges](docs/images/weather.jpg) | ![A night thunderstorm with rain and lightning](docs/images/storm.jpg) |
-| **Weather:** fog banks and cloud layers with shadows | **Thunderstorms:** rain, lightning and flashes lighting up the scene |
-| ![The track glowing at night](docs/images/night.jpg) | |
-| **Night:** stars, and a glowing track | |
+| ![Texture layers: satellite, border map, slope classes, contour map](docs/images/layers.jpg) | ![An animated coffee-stop icon above Trient](docs/images/pois.jpg) |
+| **Texture layers:** satellite, border map, avalanche slope classes, contour map | **Points of interest:** animated icons with captions and effects |
+| ![Fog and clouds drifting between the ridges](docs/images/weather.jpg) | ![A branching lightning bolt next to the glowing route in the rain](docs/images/storm.jpg) |
+| **Weather:** fog banks and cloud layers with shadows | **Thunderstorms:** rain, branching lightning and flashes lighting up the scene |
+| ![Afterglow and the first stars over the glowing track](docs/images/night.jpg) | ![The graph editor with keyframe curves](docs/images/graph.jpg) |
+| **Dusk and night:** afterglow, stars and a glowing track | **Graph editor:** eased keyframe curves for every animated property |
 
 The pictures come from the demo project in [examples/alps_demo](examples/alps_demo), two
 synthetic days on the Tour du Mont Blanc. [tools/make_readme_images.py](tools/make_readme_images.py)

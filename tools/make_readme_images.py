@@ -145,43 +145,71 @@ def weather() -> None:
     save(render(scene, time=3.0), "weather")
 
 
+STORM_SEED, STORM_STRIKE = 11, 0
+
+
+def storm_scene(seed: int = STORM_SEED) -> Scene:
+    return new_scene(enu(46.075, 7.0, 2500.0), enu(46.04, 7.045, 2100.0),
+                     sun__datetime=dt.datetime(2026, 7, 1, 1, 30), rain__enabled=True,
+                     rain__cloud_base=3400.0, rain__intensity=0.55, rain__visibility_km=15.0,
+                     lightning__rate=30.0, lightning__seed=seed, lightning__radius_km=4.0,
+                     lightning__branching=1.0, lightning__intensity=0.8,
+                     light__night_ambient=3.0, post__exposure=0.4, labels__visible=False,
+                     marker__visible=False,
+                     progress__head=1.0, tracks__width=7.0, tracks__glow=2.5,
+                     view__fov=60.0)  # fmt: skip
+
+
 def storm() -> None:
-    """A thunderstorm at night with rain and lightning over the Fenêtre d'Arpette."""
+    """A thunderstorm at night: rain, a branching bolt, the day's route glowing."""
     from earthling.render.lightning import strikes_between
 
-    scene = new_scene(enu(46.07, 7.02, 2200.0), enu(46.035, 7.06, 2300.0),
-                      sun__datetime=dt.datetime(2026, 7, 1, 1, 30), rain__enabled=True,
-                      rain__cloud_base=3000.0, rain__intensity=0.9, lightning__rate=30.0,
-                      lightning__seed=3, light__night_ambient=3.0, post__exposure=1.0,
-                      labels__visible=False, progress__head=0.8, view__fov=55.0)  # fmt: skip
-    strikes = strikes_between(lambda _t: 30.0, 3, 0.0, 10.0)
-    save(render(scene, time=strikes[0].start + 0.02), "storm")
+    strikes = strikes_between(lambda _t: 30.0, STORM_SEED, 0.0, 10.0)
+    save(render(storm_scene(), time=strikes[STORM_STRIKE].start + 0.02), "storm")
+
+
+def storm_candidates() -> None:
+    """Contact sheet of candidate strikes (pick STORM_SEED / STORM_STRIKE)."""
+    from earthling.render.lightning import strikes_between
+
+    tiles = []
+    for seed in (3, 5, 11):
+        for i, strike in enumerate(strikes_between(lambda _t: 30.0, seed, 0.0, 10.0)[:4]):
+            img = render(storm_scene(seed), time=strike.start + 0.02, size=(480, 270))
+            tiles.append(caption(img, f"{seed}/{i}"))
+    sheet = Image.new("RGB", (480 * 4, 270 * 3))
+    for k, tile in enumerate(tiles):
+        sheet.paste(tile, ((k % 4) * 480, (k // 4) * 270))
+    sheet.save(ROOT / "renders" / "stills" / "storm_candidates.jpg")
 
 
 def pois() -> None:
-    """Animated POI icons along day 2 at midday."""
-    scene = new_scene(enu(46.085, 7.095, 3900.0), enu(46.042, 7.055, 1700.0),
-                      sun__datetime=dt.datetime(2026, 7, 2, 13, 0), progress__head=1.0,
-                      labels__visible=False, view__fov=55.0)  # fmt: skip
+    """A big animated coffee stop in Trient, the next pass marked further up."""
+    scene = new_scene(enu(46.0655, 6.982, 2050.0), enu(46.052, 7.012, 1350.0),
+                      sun__datetime=dt.datetime(2026, 7, 2, 10, 30), progress__head=1.0,
+                      labels__visible=False, marker__visible=False,
+                      view__fov=55.0)  # fmt: skip
     scene.set_pois([
-        Poi("cafe", "Trient", 7.003, 46.057, "builtin:coffee", caption="Kaffeepause"),
+        Poi("cafe", "Trient", 7.003, 46.057, "builtin:coffee", caption="Coffee break",
+            size_px=190, lift_px=40),
         Poi("pass", "Fenêtre d'Arpette", 7.043, 46.038, "builtin:flag",
-            caption="Fenêtre d'Arpette\n2665 m"),
-        Poi("photo", "View", 7.068, 46.033, "builtin:camera"),
-        Poi("camp", "Champex", 7.116, 46.03, "builtin:tent", caption="Champex"),
+            caption="Fenêtre d'Arpette\n2665 m", size_px=80),
     ])  # fmt: skip
-    for poi in scene.pois:
-        scene.store.set(f"poi.{poi.id}.caption_size", 26.0)
-    save(render(scene, time=1.5), "pois")
+    s = scene.store
+    s.set("poi.cafe.caption_size", 40.0)
+    s.set("poi.pass.caption_size", 26.0)
+    s.set("poi.cafe.effect", "bounce")
+    s.set("poi.cafe.effect_strength", 0.4)
+    save(render(scene, time=1.7), "pois")
 
 
 def night() -> None:
-    """Stars over the Col de Balme, the track glowing in the dark."""
-    scene = new_scene(enu(46.00, 6.93, 2400.0), enu(46.035, 6.97, 2300.0),
-                      sun__datetime=dt.datetime(2026, 7, 1, 23, 50), progress__head=1.0,
-                      light__night_ambient=5.0, post__exposure=0.8, labels__visible=False,
-                      view__fov=60.0,
-                      tracks__glow=3.0)  # fmt: skip
+    """Late dusk: the afterglow in the north-west, the first stars, the track glowing."""
+    scene = new_scene(enu(46.005, 7.005, 3150.0), enu(46.06, 6.93, 2700.0),
+                      sun__datetime=dt.datetime(2026, 7, 1, 22, 10), progress__head=0.62,
+                      sky__stars=10.0, light__night_ambient=1.2, post__exposure=2.6,
+                      labels__visible=False, marker__visible=False, view__fov=62.0,
+                      tracks__glow=2.0)  # fmt: skip
     save(render(scene), "night")
 
 
@@ -218,8 +246,62 @@ def gui() -> None:
     app.exec()
 
 
+def graph() -> None:
+    """The graph editor: keyframe curves with Bézier handles."""
+    from PyQt6.QtCore import Qt, QTimer
+    from PyQt6.QtWidgets import QApplication
+
+    from earthling.app.main_window import MainWindow
+    from earthling.app.viewport import configure_default_surface_format
+
+    configure_default_surface_format()
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    window = MainWindow()
+    window.resize(1700, 1500)
+    window.show()
+    project = ROOT / "examples" / "alps_demo"
+    window.open_project(project)
+    window.load_scene(project / "showcase.json")
+    window.timeline.set_time(12.0)
+    editor = window.timeline_widget.graph_editor
+    window.timeline_widget.tabs.setCurrentWidget(editor)
+    window.resizeDocks([window.timeline_dock], [1000], Qt.Orientation.Vertical)
+    channels = editor.channel_list
+    for i in range(channels.count()):
+        item = channels.item(i)
+        keep = "(timing)" not in item.text()
+        item.setCheckState(Qt.CheckState.Checked if keep else Qt.CheckState.Unchecked)
+    editor.view.set_normalized(True)
+    editor.view.frame_all()
+    view = editor.view
+    for pid in view.channels[:2]:  # show the Bézier handles of a few keys
+        curve = window.scene.animation.curves[pid]
+        view.selection |= {(pid, k.time) for k in curve.keys[:3]}
+    view.update()
+
+    def grab() -> None:
+        window.scene.mark_dirty(False)
+        window.undo_stack.setClean()
+        image = editor.grab().toImage()
+        path = OUT / "graph.png"
+        OUT.mkdir(parents=True, exist_ok=True)
+        image.save(str(path))
+        img = Image.open(path).convert("RGB")
+        w, h = img.size
+        target_h = int(w * 9 / 16)
+        if h > target_h:  # 16:9 like the other gallery images
+            img = img.crop((0, 0, w, target_h))
+        save(img, "graph")
+        path.unlink()
+        app.quit()
+
+    QTimer.singleShot(4000, grab)
+    app.exec()
+
+
 IMAGES = {"hero": hero, "layers": layers, "weather": weather, "storm": storm, "pois": pois,
-          "night": night, "gui": gui}  # fmt: skip
+          "night": night, "gui": gui, "graph": graph,
+          "storm_candidates": storm_candidates}  # fmt: skip
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or IMAGES:
