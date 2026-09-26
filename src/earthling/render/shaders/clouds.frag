@@ -16,6 +16,7 @@ uniform vec3 u_sun_radiance;
 uniform vec3 u_sky_ambient;
 uniform vec3 u_ground_ambient;
 uniform int u_steps = 64;
+const float FIRST_STEP_M = 40.0;     // step length at the cloud entry (see main)
 uniform float u_max_distance = 150e3;
 uniform float u_jitter = 0.0;        // sub-frame index (dither changes per anti-aliasing sample)
 uniform float u_pixel_angle = 0.001; // radians per pixel (noise level of detail)
@@ -114,9 +115,22 @@ void main() {
         if (seg.y <= seg.x) continue;
         float len = seg.y - seg.x;
         int steps = clamp(int(float(u_steps) * clamp(len / 6000.0, 0.25, 1.0)), 8, u_steps);
-        float dt = len / float(steps);
+        // Steps grow geometrically from the entry point: dense clouds are opaque within a few
+        // hundred metres, so even steps along long (grazing) segments would be all-or-nothing
+        // samples that flicker with the smallest camera move.
+        float n = float(steps);
+        float warp = clamp(log(len / (n * FIRST_STEP_M)), 0.0, 8.0);
+        float norm = warp > 1e-3 ? 1.0 / (exp(warp) - 1.0) : 0.0;
         for (int k = 0; k < steps && transmittance > 0.01; ++k) {
-            float t = seg.x + (float(k) + dither) * dt;
+            float u = (float(k) + dither) / n;
+            float t, dt;
+            if (warp > 1e-3) {
+                t = seg.x + len * (exp(warp * u) - 1.0) * norm;
+                dt = len * warp * exp(warp * u) * norm / n;
+            } else {
+                t = seg.x + len * u;
+                dt = len / n;
+            }
             vec3 rel = dir * t;
             float hf;
             // noise level from the sample footprint (pixel size / step) vs. the voxel size

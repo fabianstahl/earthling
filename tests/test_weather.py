@@ -174,3 +174,23 @@ def test_clouds_fade_into_the_rain_haze(gl_ctx):
     assert program["u_rain_haze"].value == pytest.approx(3.0 / 2000.0 * 0.7, rel=1e-3)
     sky = renderer.fullscreen("sky")  # the sky vanishes in the haze too (no dark holes)
     assert sky["u_rain_haze"].value == pytest.approx(3.0 / 2000.0 * 0.7, rel=1e-3)
+
+
+def test_cloud_shadows_are_continuous_at_sunrise(gl_ctx):
+    """No cut-off at low sun: images just below and above ~0.6 degrees differ only slightly."""
+    import datetime
+
+    from earthling.render.lighting import solar_position
+
+    when = datetime.datetime(2026, 7, 1, 5, 30)
+    elevation = solar_position(when.replace(tzinfo=datetime.UTC), 46.0, 7.0).elevation
+    base = {"sun__datetime": when, "haze__aerial": 0.0, "sun__intensity": 6.0,
+            "weather__enabled": True, "weather__cloud_shadows": 1.0,
+            "weather__layer1__base": 2700.0, "weather__layer1__thickness": 2000.0,
+            "weather__layer1__coverage": 0.8, "weather__layer1__density": 1.0,
+            "weather__layer3__enabled": True, "weather__layer3__base": 12000.0,
+            "weather__layer3__thickness": 3000.0, "weather__layer3__coverage": 1.0,
+            "weather__layer3__density": 1.0}  # fmt: skip
+    below = render(gl_ctx, **base, sun__elevation_offset=0.45 - elevation)
+    above = render(gl_ctx, **base, sun__elevation_offset=0.75 - elevation)
+    assert np.abs(above - below).mean() < 10.0  # was ~38 with the cut-off
