@@ -106,3 +106,16 @@ def test_bolts_do_not_write_depth(gl_ctx):
     pixels = np.frombuffer(color.read(), dtype=np.float16).reshape(64, 64, 4)
     assert pixels[..., :3].max() > 1.0  # the bolt is drawn
     assert np.frombuffer(depth.read(), dtype=np.float32).min() == 1.0  # but leaves no depth
+
+
+def test_branching_adds_forks_of_forks():
+    top, bottom = np.array([0.0, 0.0, 4000.0]), np.array([300.0, 0.0, 1500.0])
+    counts = {}
+    for b in (0.0, 1.0):
+        paths = [bolt_paths(top, bottom, Strike(slot, 0.0, 7), branching=b) for slot in range(20)]
+        counts[b] = np.mean([len(p) for p in paths])
+        again = bolt_paths(top, bottom, Strike(3, 0.0, 7), branching=b)
+        assert [len(p[0]) for p in again] == [len(p[0]) for p in paths[3]]  # deterministic
+    assert counts[1.0] > 2.5 * counts[0.0]
+    rich = bolt_paths(top, bottom, Strike(5, 0.0, 7), branching=1.0)
+    assert min(i for _, i in rich) < 0.35  # forks of forks are fainter than first branches

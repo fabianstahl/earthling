@@ -75,8 +75,12 @@ def flash_intensity(strike: Strike, t: float) -> float:
     return value * (1.0 - dt / DURATION_S) ** 0.5
 
 
-def bolt_paths(top: np.ndarray, bottom: np.ndarray, strike: Strike, levels: int = 7):
-    """Jagged main channel and a few branches: [(points (n, 3), intensity)]."""
+def bolt_paths(top: np.ndarray, bottom: np.ndarray, strike: Strike, levels: int = 7,
+               branching: float = 0.3):  # fmt: skip
+    """Jagged main channel and branches: [(points (n, 3), intensity)].
+
+    ``branching`` 0..1: how many branches split off the main channel, and how often these fork
+    again (fainter with every generation)."""
     rng = np.random.default_rng(strike.seed * 1_000_003 + strike.slot)
 
     def jag(a: np.ndarray, b: np.ndarray, roughness: float, depth: int) -> np.ndarray:
@@ -98,17 +102,30 @@ def bolt_paths(top: np.ndarray, bottom: np.ndarray, strike: Strike, levels: int 
     main = jag(top, bottom, 0.22, levels)
     paths = [(main, 1.0)]
     total = np.linalg.norm(bottom - top)
-    for _ in range(int(rng.integers(2, 5))):
-        i = int(rng.integers(len(main) // 10, max(len(main) * 6 // 10, len(main) // 10 + 1)))
-        start = main[i]
-        down = (bottom - top) / max(total, 1e-9)
-        lateral = rng.normal(size=3)
-        lateral[2] = 0.0
-        lateral /= max(np.linalg.norm(lateral), 1e-9)
-        direction = down * rng.uniform(0.4, 0.8) + lateral * rng.uniform(0.5, 1.0)
-        direction /= np.linalg.norm(direction)
-        end = start + direction * total * rng.uniform(0.15, 0.4)
-        paths.append((jag(start, end, 0.25, levels - 2), 0.35))
+    down = (bottom - top) / max(total, 1e-9)
+    branching = min(max(branching, 0.0), 1.0)
+
+    def branch_off(parent: np.ndarray, length: float, intensity: float, depth: int) -> None:
+        count = int(rng.integers(2, 5)) if depth == levels - 2 else int(rng.integers(0, 3))
+        count = int(round(count * (0.5 + 2.5 * branching))) if depth == levels - 2 else count
+        for _ in range(count):
+            if depth < levels - 2 and rng.uniform() > branching:
+                continue  # forks of forks only with more branching
+            lo = len(parent) // 10
+            i = int(rng.integers(lo, max(len(parent) * 6 // 10, lo + 1)))
+            start = parent[i]
+            lateral = rng.normal(size=3)
+            lateral[2] = 0.0
+            lateral /= max(np.linalg.norm(lateral), 1e-9)
+            direction = down * rng.uniform(0.4, 0.8) + lateral * rng.uniform(0.5, 1.0)
+            direction /= np.linalg.norm(direction)
+            end = start + direction * length * rng.uniform(0.15, 0.4)
+            points = jag(start, end, 0.25, max(depth, 2))
+            paths.append((points, intensity))
+            if depth > 3:
+                branch_off(points, length * 0.45, intensity * 0.6, depth - 1)
+
+    branch_off(main, total, 0.35, levels - 2)
     return paths
 
 
@@ -150,7 +167,11 @@ class LightningLayer:
             bottom = np.array([x, y, ground])
             top = np.array([x + (strike.rand(7) - 0.5) * 1500.0,
                             y + (strike.rand(8) - 0.5) * 1500.0, top_h])  # fmt: skip
-            paths = bolt_paths(top, bottom, strike) if store["lightning.bolts"] else []
+            paths = (
+                bolt_paths(top, bottom, strike, branching=store["lightning.branching"])
+                if store["lightning.bolts"]
+                else []
+            )
             self.active.append((strike, flash_intensity(strike, time), top, paths))
 
     @staticmethod
@@ -304,5 +325,7 @@ def lightning_properties() -> list:
         integer("lightning.seed", "Lightning seed", 1, 0, 9999, animatable=False,
                 tooltip="Another seed gives other strike times and bolt shapes"),
         boolean("lightning.bolts", "Show bolts", True),
+        flt("lightning.branching", "Bolt branching", 0.3, 0.0, 1.0,
+            tooltip="Few simple branches (0) up to richly forked bolts (1)"),
         color("lightning.color", "Lightning colour", (0.78, 0.83, 1.0)),
     )  # fmt: skip
