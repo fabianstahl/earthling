@@ -93,7 +93,8 @@ LAYERS: list[Layer] = [
         """
     float t = clamp((li.height - 300.0) / 4500.0, 0.0, 1.0);
     vec3 base = mix(u_bmap_land, vec3(1.0), u_bmap_relief * t);
-    base = mix(u_bmap_sea, base, smoothstep(-1.0, 1.5, li.height));  // sea: DEM at sea level
+    // sea: DEM at sea level (a soft ramp: a sharp threshold follows the coarse sample grid)
+    base = mix(u_bmap_sea, base, smoothstep(0.5, 30.0, li.height));
     base = mix(base, u_region_color * 0.7, line_coverage(li.region_px, u_region_width) * 0.7);
     return mix(base, u_border_color, line_coverage(li.border_px, u_border_width));""",
         color("layer_borders.land", "Land colour", (0.82, 0.8, 0.74), uniform="u_bmap_land"),
