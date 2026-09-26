@@ -521,7 +521,7 @@ class Renderer:
         glow_fbo.use()
         self.ctx.viewport = (0, 0, width, height)
         self.ctx.enable(moderngl.DEPTH_TEST)  # test against the scene depth ...
-        self.ctx.depth_func = "<="  # ... which already contains the tracks themselves
+        self.ctx.depth_func = "<="  # ... (terrain only: tracks do not write depth)
         self.tracks.render(camera, view_proj, width, height, s, glow_pass=True)
         if self.tracks.visible:
             self.marker.render(camera, view_proj, width, height, self.time, s, glow_pass=True)

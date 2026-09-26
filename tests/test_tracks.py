@@ -241,3 +241,16 @@ def test_tracks_do_not_write_depth(gl_ctx):
     assert red[100].any()  # the line is drawn (no terrain in this test)
     x = int(np.flatnonzero(red[100])[0])
     assert renderer.read_depth(x, 99) == pytest.approx(1.0)  # still the cleared depth
+
+
+def test_overlapping_tracks_do_not_add_up_their_glow(gl_ctx):
+    def glow_max(tracks):
+        _, renderer = _top_down(
+            gl_ctx, tracks, **{"glow.enabled": True, "tracks.color_mode": "single"}
+        )
+        glow = renderer.target.glow
+        return np.frombuffer(glow.read(), dtype=np.float16).astype(np.float32).max()
+
+    one = glow_max([straight_track()])
+    twice = glow_max([straight_track(), straight_track()])  # the same line drawn twice
+    assert one > 0.0 and twice == pytest.approx(one, rel=0.05)
