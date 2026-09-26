@@ -303,6 +303,8 @@ STATS = section(
     enum("stats.scope", "Totals and profile", "hike",
          [("hike", "Whole hike"), ("day", "Current day")]),
     boolean("stats.show_day", "Day number", True),
+    enum("stats.day_style", "Day as", "day", [("day", "Day 5"), ("count", "5 days")],
+         tooltip="The current day, or the number of days so far (e.g. for a summary)"),
     boolean("stats.show_date", "Date", True),
     boolean("stats.show_time", "Time of day", False),
     enum("stats.language", "Language", "en", [("en", "English"), ("de", "Deutsch")],

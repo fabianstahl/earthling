@@ -25,9 +25,9 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
           "September", "October", "November", "December"]  # fmt: skip
 # on-screen words per language (stats.language)
 WORDS = {
-    "en": {"day": "Day {n}", "distance": "distance", "ascent": "ascent",
+    "en": {"day": "Day {n}", "days": "{n} days", "distance": "distance", "ascent": "ascent",
            "elevation": "elevation", "time": "{t:%H:%M}", "months": MONTHS},
-    "de": {"day": "Tag {n}", "distance": "Strecke", "ascent": "Aufstieg",
+    "de": {"day": "Tag {n}", "days": "{n} Tage", "distance": "Strecke", "ascent": "Aufstieg",
            "elevation": "Höhe", "time": "{t:%H:%M} Uhr",
            "months": ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
                       "September", "Oktober", "November", "Dezember"]},
@@ -306,7 +306,8 @@ class HudLayer:
         day_scope = store["stats.scope"] == "day"
         # --- content sizes
         lang = store["stats.language"]
-        title = word(lang, "day").format(n=v.day) if store["stats.show_day"] else ""
+        day_word = "days" if store["stats.day_style"] == "count" else "day"
+        title = word(lang, day_word).format(n=v.day) if store["stats.show_day"] else ""
         subtitle = ""
         if store["stats.show_date"] and v.time is not None:
             subtitle = format_date(v.time, store["stats.date_format"], lang)

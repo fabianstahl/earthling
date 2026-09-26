@@ -138,3 +138,23 @@ def test_german_formatting():
     assert format_number(2375.0, 0, "de") == "2.375"
     assert word("de", "day").format(n=22) == "Tag 22"
     assert word("de", "time").format(t=t) == "09:05 Uhr"
+
+
+def test_day_count_title(gl_ctx):
+    """A summary shows the number of days instead of the current day."""
+    store = Scene().store
+    store.set("stats.visible", True)
+    atlas = FontAtlas(gl_ctx)
+    hud = HudLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    fbo = gl_ctx.simple_framebuffer((960, 540))
+
+    def draw():
+        fbo.use()
+        fbo.clear(0.0, 0.0, 0.0, 1.0)
+        hud.render(fbo, 960, 540, store, fake_path(), 40_000.0, "UTC")
+        return np.frombuffer(fbo.read(components=3), dtype=np.uint8).astype(int)
+
+    day = draw()
+    store.set("stats.day_style", "count")
+    count = draw()
+    assert hud.last_stats.day == 2 and np.abs(day - count).sum() > 1000  # other title text
