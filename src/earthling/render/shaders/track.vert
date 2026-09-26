@@ -13,6 +13,8 @@ uniform float u_track_width = 4.0;
 uniform int u_track_width_mode = 0;  // 0 pixels, 1 metres
 uniform float u_track_min_px = 1.5;  // metre widths never get thinner than this
 uniform float u_track_casing = 0.0;  // soft border around the line (pixels, each side)
+uniform float u_track_depth_bias = 0.002;  // pulled towards the camera by this share of the
+                                           // distance: stays on top of coarse distant terrain
 
 out float v_side;
 out float v_dist;
@@ -51,5 +53,5 @@ void main() {
     v_dist = in_dist;
     v_width_px = width_px;
     v_world = p;
-    v_log_z = 1.0 + clip.w;
+    v_log_z = 1.0 + clip.w * (1.0 - u_track_depth_bias);
 }

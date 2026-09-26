@@ -221,6 +221,10 @@ TRACKS = section(
         uniform="u_track_outline"),
     flt("tracks.glow", "Glow emission", 1.2, 0.0, 20.0, step=0.1, decimals=1,
         uniform="u_track_glow", tooltip="Light the track emits into the glow effect"),
+    flt("tracks.depth_bias", "Stay on top", 0.002, 0.0, 0.05, step=0.001, decimals=3,
+        uniform="u_track_depth_bias",
+        tooltip="Share of the distance the track is lifted towards the camera, so it is not "
+                "swallowed by the coarser terrain far away"),
     flt("tracks.casing", "Casing", 0.0, 0.0, 30.0, step=0.5, decimals=1, unit="px",
         uniform="u_track_casing",
         tooltip="Soft border around the tracks: sets them apart from busy imagery"),

@@ -270,3 +270,34 @@ def test_tracks_on_top_of_each_other_do_not_mix_colours(gl_ctx):
     brightest = rgb[np.argmax(rgb.sum(axis=1))]
     top = np.array(track_color(1)) ** 2.2
     assert np.allclose(brightest / brightest.max(), top / top.max(), atol=0.05)
+
+
+def test_depth_bias_keeps_tracks_above_coarse_terrain(gl_ctx):
+    from earthling.core.geo import lonlat_to_tile
+    from earthling.core.scene import Scene
+    from earthling.render import lod
+    from earthling.render.camera import Camera
+    from earthling.render.renderer import Renderer
+    from test_terrain import FakeTerrainData
+
+    def red_pixels(bias):
+        renderer = Renderer(gl_ctx)
+        renderer.set_scene(FRAME, [straight_track(ele=1490.0)])  # 10 m under the plateau
+        tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+        renderer.set_terrain_source(FakeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))
+        renderer.store = Scene().store
+        for pid, value in {"tracks.elevation": "gpx", "tracks.height_offset": 0.0,
+                           "tracks.width": 6.0, "glow.enabled": False, "haze.aerial": 0.0,
+                           "marker.visible": False, "tracks.depth_bias": bias}.items():  # fmt: skip
+            renderer.store.set(pid, value)
+        renderer.timezone = "UTC"
+        mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
+        camera = Camera(position=mid + np.array([0.0, -2500.0, 1500.0]), heading=0.0, pitch=-31.0)
+        renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 200)
+        fbo = gl_ctx.simple_framebuffer((200, 200))
+        renderer.render(fbo, 200, 200, camera)
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3)
+        img = img.astype(int)
+        return ((img[..., 0] > img[..., 2] + 60) & (img[..., 0] > img[..., 1] + 40)).sum()
+
+    assert red_pixels(0.0) < 5 and red_pixels(0.01) > 50
