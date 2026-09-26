@@ -115,6 +115,7 @@ def cmd_render(args) -> int:
     if not scene_path.is_absolute():
         scene_path = session.project.folder / scene_path
     scene = Scene()
+    scene.set_dynamic("track_groups", session.track_group_properties())
     for problem in scene.load(scene_path):
         print(f"warning: {problem}", file=sys.stderr)
     preset = PRESETS[args.preset]
@@ -124,7 +125,7 @@ def cmd_render(args) -> int:
     out = Path(args.out) if args.out else scene_path.with_suffix(preset.extension)
     ctx = moderngl.create_standalone_context(require=430)
     renderer = Renderer(ctx)
-    renderer.set_scene(session.frame, session.tracks)
+    renderer.set_scene(session.frame, session.all_tracks)
     renderer.set_terrain_source(session.terrain_data(), session.terrain_nodes())
     renderer.store = scene.store
     renderer.timezone = session.config.project.timezone

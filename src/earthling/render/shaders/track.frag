@@ -21,6 +21,19 @@ uniform float u_head_m = 1e12;       // visible range on the global distance axi
 uniform float u_tail_m = 0.0;
 uniform float u_head_fade = 150.0;   // metres over which the line fades in behind the head
 uniform float u_head_boost = 1.5;    // extra brightness right at the head
+uniform float u_dash_px = 0.0;       // dash length on screen, 0 = solid
+
+// Dashes of about u_dash_px on screen at any zoom: the period snaps to powers of two metres
+// and crossfades between neighbouring octaves, so dashes neither crawl nor pop.
+float dash_mask(float dist) {
+    float m_per_px = max(fwidth(dist), 1e-5);
+    float level = log2(u_dash_px * 2.0 * m_per_px);
+    float l0 = floor(level);
+    float f = level - l0;
+    float on0 = 1.0 - step(0.5, fract(dist / exp2(l0)));
+    float on1 = 1.0 - step(0.5, fract(dist / exp2(l0 + 1.0)));
+    return mix(on0, on1, f);
+}
 
 void main() {
     write_log_depth(v_log_z);
@@ -31,6 +44,7 @@ void main() {
     float gd = v_dist + u_track_offset;
     if (gd > u_head_m || gd < u_tail_m) discard;
     alpha *= smoothstep(u_tail_m, u_tail_m + 5.0, gd);
+    if (u_dash_px > 0.0) alpha *= dash_mask(v_dist);
     // the freshly drawn part near the head is brighter
     float near_head = u_head_m < 1e11 ? 1.0 - smoothstep(0.0, max(u_head_fade, 1.0), u_head_m - gd) : 0.0;
     if (alpha <= 0.0) discard;

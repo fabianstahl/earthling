@@ -53,9 +53,35 @@ class Scene:
         self.ui: dict[str, Any] = {}  # window/dock layout (owned by the main window)
         self.path: Path | None = None
         self.dirty = False
+        self._dynamic: dict[str, list[str]] = {}  # key -> property ids (project specific)
+        self.dynamic_listeners: list[Callable[[], None]] = []  # e.g. rebuild the panel
         self._dirty_listeners: list[Callable[[bool], None]] = []
         # Note: store changes do not mark the scene dirty by themselves (animation playback
         # changes the store all the time); editors mark it via the undo stack / mark_dirty().
+
+    # --- project specific properties -----------------------------------------------------
+    def set_dynamic(self, key: str, defs) -> None:
+        """Replace the property set ``key`` (e.g. per track group or per POI). Values and
+        animation curves of ids that stay are kept."""
+        defs = list(defs)
+        keep = {d.id for d in defs}
+        for pid in self._dynamic.get(key, []):
+            if pid not in keep:
+                self.registry.remove(pid)
+                self.store.values.pop(pid, None)
+                self.animation.curves.pop(pid, None)
+        for d in defs:
+            if d.id in self.registry:
+                self.registry.remove(d.id)
+            self.registry.add(d)
+            value = self.store.values.get(d.id, d.default)
+            try:
+                self.store.values[d.id] = d.coerce(value)
+            except (TypeError, ValueError):
+                self.store.values[d.id] = d.coerce(d.default)
+        self._dynamic[key] = [d.id for d in defs]
+        for listener in list(self.dynamic_listeners):
+            listener()
 
     # --- dirty state ------------------------------------------------------------------
     def mark_dirty(self, dirty: bool = True) -> None:

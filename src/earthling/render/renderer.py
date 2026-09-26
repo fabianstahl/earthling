@@ -164,7 +164,7 @@ class Renderer:
         if data is not None:  # the Data > on-demand switch also covers the label download
             data.allow_download = bool(getattr(self.terrain.data, "on_demand", True))
         self.labels.enricher = self.labels.make_enricher(
-            self.frame, self.terrain.data, self.tracks.tracks
+            self.frame, self.terrain.data, self.tracks.walked()
         )
 
     def scene_bounds(self):

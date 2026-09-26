@@ -5,18 +5,63 @@ Independent of Qt so it can be used by the GUI, the CLI and tests alike.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from functools import cached_property
+from pathlib import Path
 
 import numpy as np
+import shapely
 
-from earthling.core.aoi import AreaOfInterest, TilePlan, compute_aoi, plan_tiles
-from earthling.core.config import ConfigError, Project
+from earthling.core.aoi import AreaOfInterest, TilePlan, compute_aoi, plan_tiles_multi
+from earthling.core.config import AreaSection, ConfigError, Project, TrackGroupDef
 from earthling.core.geo import LocalFrame, frame_for_bbox
-from earthling.core.gpx import Track, load_gpx_folder
+from earthling.core.gpx import Track, load_gpx_file, load_gpx_folder
 from earthling.data.cache import TileCache
 from earthling.data.providers import TileProvider, get_provider
 
 DEFAULT_FRAME = LocalFrame(46.0, 7.0, 0.0)
+
+
+@dataclass
+class TrackGroup:
+    definition: TrackGroupDef
+    tracks: list[Track] = field(default_factory=list)
+    area: AreaSection | None = None
+    aoi: AreaOfInterest | None = None
+
+    @property
+    def name(self) -> str:
+        return self.definition.name
+
+    @property
+    def label(self) -> str:
+        return self.definition.label or self.definition.name.replace("_", " ").title()
+
+    @property
+    def role(self) -> str:
+        return self.definition.role
+
+    @property
+    def labels(self) -> bool:
+        flag = self.definition.labels
+        return self.role == "walked" if flag is None else flag
+
+
+def load_group_tracks(path: Path) -> tuple[list[Track], list[str]]:
+    """GPX tracks of a folder, a file or a glob pattern."""
+    if path.is_dir():
+        return load_gpx_folder(path)
+    files = sorted(path.parent.glob(path.name)) if any(c in path.name for c in "*?[") else [path]
+    tracks: list[Track] = []
+    errors: list[str] = []
+    for f in files:
+        try:
+            tracks.extend(load_gpx_file(f))
+        except Exception as exc:  # gpxpy raises various exception types
+            errors.append(f"{f.name}: {exc}")
+    if not files or not any(f.exists() for f in files):
+        errors.append(f"no GPX files found: {path}")
+    return tracks, errors
 
 
 class Session:
@@ -25,8 +70,11 @@ class Session:
         from earthling.data.project_sources import register_project_sources
 
         self.project_sources = register_project_sources(project)
-        self.tracks: list[Track]
-        self.tracks, self.load_errors = load_gpx_folder(project.gpx_dir)
+        self.load_errors: list[str] = []
+        self.groups: list[TrackGroup] = self._load_groups()
+        self.all_tracks: list[Track] = [t for g in self.groups for t in g.tracks]
+        # "the hike": the walked tracks (progress, marker, stats, labels follow them)
+        self.tracks: list[Track] = [t for t in self.all_tracks if t.role == "walked"]
         try:
             self.imagery_providers: list[TileProvider] = [
                 get_provider(pid) for pid in self.config.sources.imagery
@@ -51,6 +99,57 @@ class Session:
             raise ConfigError("sources.dem must name at least one source")
         self.cache = TileCache(project.cache_dir)
 
+    def _load_groups(self) -> list[TrackGroup]:
+        config = self.project.config
+        definitions = config.tracks or (
+            TrackGroupDef(name="tracks", gpx=str(config.project.gpx_dir), label="Tracks"),
+        )
+        groups = []
+        for d in definitions:
+            path = Path(d.gpx).expanduser()
+            if not path.is_absolute():
+                path = self.project.folder / path
+            tracks, errors = load_group_tracks(path)
+            self.load_errors += errors
+            for track in tracks:
+                track.group, track.role = d.name, d.role
+                track.spacing_m = d.spacing_m
+            area = d.area or config.area
+            groups.append(TrackGroup(d, tracks, area, compute_aoi(tracks, area)))
+        return groups
+
+    def track_group_properties(self) -> list:
+        """Keyframeable style properties of every track group ("trackgroup.<name>.*")."""
+        from earthling.render.parameters import boolean, color, enum, flt, section
+
+        defs = []
+        for g in self.groups:
+            planned = g.role == "planned"
+            p = f"trackgroup.{g.name}."
+            members = [("none", "None")] + [(t.name, t.name) for t in g.tracks]
+            defs += section(
+                f"Tracks: {g.label}",
+                boolean(p + "visible", "Show", True),
+                flt(p + "opacity", "Opacity", 0.9 if planned else 1.0, 0.0, 1.0),
+                enum(p + "color_mode", "Colours", "per_track" if planned else "auto",
+                     [("auto", "As in the Tracks section"), ("per_track", "One colour per track"),
+                      ("single", "Group colour")]),
+                color(p + "color", "Group colour",
+                      (0.95, 0.95, 0.95) if planned else (1.0, 0.35, 0.15)),
+                flt(p + "width", "Width factor", 0.6 if planned else 1.0, 0.05, 5.0, step=0.05),
+                flt(p + "dash", "Dashes", 10.0 if planned else 0.0, 0.0, 100.0, step=1.0,
+                    decimals=0, unit="px", tooltip="Dash length on screen (0 = solid line)"),
+                flt(p + "glow", "Glow factor", 0.3 if planned else 1.0, 0.0, 5.0),
+                enum(p + "highlight", "Highlight", "none", members,
+                     tooltip="Show one track in the highlight colour and dim the others"),
+                color(p + "highlight_color", "Highlight colour", (0.25, 0.95, 0.35)),
+                flt(p + "dim", "Others while highlighting", 0.35, 0.0, 1.0),
+            )  # fmt: skip
+        return defs
+
+    def group(self, name: str) -> TrackGroup | None:
+        return next((g for g in self.groups if g.name == name), None)
+
     @property
     def dem_source(self):
         return self.dem_sources[0]
@@ -65,19 +164,45 @@ class Session:
 
     @cached_property
     def aoi(self) -> AreaOfInterest | None:
-        return compute_aoi(self.tracks, self.config.area)
+        """All groups together (the union of their areas)."""
+        aois = [g.aoi for g in self.groups if g.aoi is not None]
+        if not aois:
+            return None
+        if len(aois) == 1:
+            return aois[0]
+        return AreaOfInterest(
+            aoi=shapely.union_all([a.aoi for a in aois]),
+            zones=[shapely.union_all([a.zones[0] for a in aois])],
+            tracks=shapely.union_all([a.tracks for a in aois]),
+        )
+
+    @cached_property
+    def detail_aoi(self) -> AreaOfInterest | None:
+        """The groups with labels (by default the walked ones): labels, local frame."""
+        aois = [g.aoi for g in self.groups if g.aoi is not None and g.labels]
+        if len(aois) == 1:
+            return aois[0]
+        if not aois:
+            return self.aoi
+        return AreaOfInterest(
+            aoi=shapely.union_all([a.aoi for a in aois]),
+            zones=[shapely.union_all([a.zones[0] for a in aois])],
+            tracks=shapely.union_all([a.tracks for a in aois]),
+        )
 
     @cached_property
     def frame(self) -> LocalFrame:
-        if self.aoi is None:
+        aoi = self.detail_aoi
+        if aoi is None:
             return DEFAULT_FRAME
-        return frame_for_bbox(*self.aoi.bounds)
+        return frame_for_bbox(*aoi.bounds)
 
     @cached_property
     def plan(self) -> TilePlan | None:
-        if self.aoi is None:
+        areas = [(g.aoi, g.area) for g in self.groups if g.aoi is not None and g.area is not None]
+        if not areas:
             return None
-        return plan_tiles(self.aoi, self.config.area)
+        return plan_tiles_multi(areas)
 
     @cached_property
     def mean_track_elevation(self) -> float:
@@ -101,13 +226,17 @@ class Session:
                     yield np.asarray(interior.coords)
 
         zone_colors = [(0.95, 0.95, 0.4, 0.8), (0.9, 0.6, 0.3, 0.7), (0.8, 0.4, 0.3, 0.6)]
-        for index, zone in enumerate(self.aoi.zones[:-1]):
-            color = zone_colors[index % len(zone_colors)]
-            for ring in rings(zone):
-                lines.append((self.frame.geodetic_to_enu(ring[:, 1], ring[:, 0], h), color, True))
-        for ring in rings(self.aoi.aoi):
-            enu = self.frame.geodetic_to_enu(ring[:, 1], ring[:, 0], h)
-            lines.append((enu, (1.0, 1.0, 1.0, 0.9), True))
+        for group in self.groups:
+            if group.aoi is None:
+                continue
+            for index, zone in enumerate(group.aoi.zones[:-1]):
+                color = zone_colors[index % len(zone_colors)]
+                for ring in rings(zone):
+                    enu = self.frame.geodetic_to_enu(ring[:, 1], ring[:, 0], h)
+                    lines.append((enu, color, True))
+            for ring in rings(group.aoi.aoi):
+                enu = self.frame.geodetic_to_enu(ring[:, 1], ring[:, 0], h)
+                lines.append((enu, (1.0, 1.0, 1.0, 0.9), True))
         return lines
 
     def first_local_start(self):
@@ -184,9 +313,9 @@ class Session:
         """OpenStreetMap label features of the area (loaded on demand)."""
         from earthling.data.labels import LabelData
 
-        if self.aoi is None:
+        if self.detail_aoi is None:
             return None
-        return LabelData(self.cache, self.aoi.bounds)
+        return LabelData(self.cache, self.detail_aoi.bounds)
 
     @cached_property
     def borders(self):

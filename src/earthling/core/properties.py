@@ -119,6 +119,9 @@ class PropertyRegistry:
         self._defs[d.id] = d
         return d
 
+    def remove(self, pid: str) -> None:
+        self._defs.pop(pid, None)
+
     def extend(self, defs: Iterable[PropertyDef]) -> None:
         for d in defs:
             self.add(d)

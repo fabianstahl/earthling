@@ -238,6 +238,83 @@ class CopernicusGlo30(DemSource):
         return files
 
 
+class TerrariumDemSource(DemSource):
+    """AWS Terrain Tiles ("terrarium" PNG encoding, worldwide, Web Mercator XYZ): a coarse
+    global fallback, e.g. for overview areas far from the tracks. Each heightmap tile samples
+    a 3 x 3 mosaic of source tiles of the same zoom (bilinear, exact sample positions)."""
+
+    id = "aws_terrarium"
+    name = "AWS Terrain Tiles (worldwide, coarse)"
+    native_resolution_m = 30.0
+    direct = True
+    concurrency = 8
+    max_requests_per_second = 20.0
+    url_template = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+    max_zoom = 15
+    license = License(
+        "Terrain Tiles on AWS Open Data (attribution required)",
+        "Elevation: Mapzen Terrain Tiles (SRTM, GMTED2010, ETOPO1 and others)",
+        "https://github.com/tilezen/joerd/blob/master/docs/attribution.md",
+        commercial_use=True,
+    )
+
+    def __init__(self) -> None:
+        self._tiles: OrderedDict[tuple[int, int, int], np.ndarray | None] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def files_for_bounds(self, bounds, client=None):
+        return []
+
+    def _source_tile(self, z: int, x: int, y: int, client: httpx.Client) -> np.ndarray | None:
+        n = 1 << z
+        if not 0 <= y < n:
+            return None
+        x %= n
+        key = (z, x, y)
+        with self._lock:
+            if key in self._tiles:
+                self._tiles.move_to_end(key)
+                return self._tiles[key]
+        response = client.get(self.url_template.format(z=z, x=x, y=y))
+        if response.status_code in (403, 404):
+            heights = None
+        else:
+            response.raise_for_status()
+            rgb = np.asarray(Image.open(io.BytesIO(response.content)).convert("RGB"), np.float32)
+            heights = rgb[..., 0] * 256.0 + rgb[..., 1] + rgb[..., 2] / 256.0 - 32768.0
+            heights = np.maximum(heights, 0.0)  # sea level instead of bathymetry
+        with self._lock:
+            self._tiles[key] = heights
+            while len(self._tiles) > 256:
+                self._tiles.popitem(last=False)
+        return heights
+
+    def fetch_tile(self, z, x, y, client):
+        zs = min(z, self.max_zoom)
+        shift = z - zs
+        sx, sy = x >> shift, y >> shift
+        mosaic = np.full((768, 768), np.nan, dtype=np.float32)
+        for j in range(3):
+            for i in range(3):
+                tile = self._source_tile(zs, sx + i - 1, sy + j - 1, client)
+                if tile is not None:
+                    mosaic[j * 256 : (j + 1) * 256, i * 256 : (i + 1) * 256] = tile
+        # heightmap sample s (-1..257) of tile (z, x, y) in mosaic pixel-centre coordinates
+        scale = 1.0 / (1 << shift)
+        s = np.arange(-1, GRID_INTERVALS + 2, dtype=np.float64)
+        px = 256.0 + ((x - (sx << shift)) + s / GRID_INTERVALS) * 256.0 * scale - 0.5
+        py = 256.0 + ((y - (sy << shift)) + s / GRID_INTERVALS) * 256.0 * scale - 0.5
+        x0 = np.clip(np.floor(px).astype(int), 0, 766)
+        y0 = np.clip(np.floor(py).astype(int), 0, 766)
+        fx = np.clip(px - x0, 0.0, 1.0)[None, :]
+        fy = np.clip(py - y0, 0.0, 1.0)[:, None]
+        m = mosaic
+        top = m[y0][:, x0] * (1 - fx) + m[y0][:, x0 + 1] * fx
+        bottom = m[y0 + 1][:, x0] * (1 - fx) + m[y0 + 1][:, x0 + 1] * fx
+        heights = (top * (1 - fy) + bottom * fy).astype(np.float32)
+        return None if np.isnan(heights).all() else heights
+
+
 class StacDemSource(DemSource):
     """Raster files listed by a STAC API collection (one item per map sheet and edition).
 
@@ -313,7 +390,7 @@ class SwissAlti3d(StacDemSource):
 
 
 DEM_SOURCES: dict[str, DemSource] = {
-    s.id: s for s in (CopernicusGlo30(), IgnRgeAlti(), SwissAlti3d())
+    s.id: s for s in (CopernicusGlo30(), IgnRgeAlti(), SwissAlti3d(), TerrariumDemSource())
 }
 
 

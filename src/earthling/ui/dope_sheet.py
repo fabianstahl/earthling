@@ -259,9 +259,13 @@ class KeyButton(QToolButton):
         self.setAutoRaise(True)
         self.setFixedSize(20, 20)
         self.clicked.connect(lambda: editor.toggle_key(pid))
+        # bound methods (not lambdas): disconnected automatically when the panel is rebuilt
         editor.changed.connect(self.update)
-        editor.timeline.time_changed.connect(lambda t: self.update())
+        editor.timeline.time_changed.connect(self._on_time_changed)
         self.setToolTip("Insert / delete a key at the current time")
+
+    def _on_time_changed(self, time: float) -> None:
+        self.update()
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)

@@ -74,6 +74,8 @@ class MainWindow(QMainWindow):
             on_edit=self._on_panel_edit,
             row_extra=lambda d: KeyButton(d.id, self.keys) if d.animatable else None,
         )
+        # project specific properties (track groups, POIs) appear as their own sections
+        self.scene.dynamic_listeners.append(self.property_panel._build)
         self.parameters_dock.setWidget(self.property_panel)
         self.parameters_dock.setMinimumWidth(340)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.parameters_dock)
@@ -317,7 +319,7 @@ class MainWindow(QMainWindow):
 
     @property
     def tracks(self) -> list[Track]:
-        return self.session.tracks if self.session else []
+        return self.session.all_tracks if self.session else []
 
     # --- project handling --------------------------------------------------------------
     def open_project(self, folder: str | Path) -> bool:
@@ -336,9 +338,10 @@ class MainWindow(QMainWindow):
         self.session = session
         self._remember_recent(project.folder)
         self._update_title()
-        self.tracks_dock.set_tracks(session.tracks)
+        self.tracks_dock.set_tracks(session.all_tracks)
+        self.scene.set_dynamic("track_groups", session.track_group_properties())
         self.viewport.set_scene(
-            session.frame, session.tracks, timezone=session.config.project.timezone
+            session.frame, session.all_tracks, timezone=session.config.project.timezone
         )
         self.viewport.set_outlines(session.outline_lines())
         self._reload_terrain(reframe=True)

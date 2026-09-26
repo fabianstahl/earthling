@@ -106,6 +106,22 @@ class SourcesSection(_Model):
     topo: tuple[str, ...] = ("opentopomap",)
 
 
+class TrackGroupDef(_Model):
+    """A group of GPX files (``[[tracks]]``), see ROADMAP step 14.1.
+
+    ``role = "walked"``: the hike itself (progress, hiker marker, stats, labels follow it);
+    ``role = "planned"``: e.g. the official route of a trail, always drawn in full. Every group
+    may have its own resolution zones (``[tracks.area]``, default: the project's ``[area]``)."""
+
+    name: str = Field(pattern=r"^[a-z0-9_]+$")
+    gpx: str  # folder, file or glob pattern, relative to the project folder
+    label: str = ""
+    role: Literal["walked", "planned"] = "walked"
+    area: AreaSection | None = None
+    spacing_m: float | None = Field(default=None, gt=0)  # geometry resampling (default by role)
+    labels: bool | None = None  # label area (default: walked groups)
+
+
 class ProviderDef(_Model):
     """A data source defined in the project (``[[providers]]``), see docs/adding-a-region.md.
 
@@ -161,6 +177,14 @@ class Config(_Model):
     area: AreaSection = AreaSection()
     sources: SourcesSection = SourcesSection()
     providers: tuple[ProviderDef, ...] = ()
+    tracks: tuple[TrackGroupDef, ...] = ()
+
+    @model_validator(mode="after")
+    def _unique_groups(self) -> Self:
+        names = [g.name for g in self.tracks]
+        if len(set(names)) != len(names):
+            raise ValueError("track group names must be unique")
+        return self
 
     @classmethod
     def from_toml(cls, text: str) -> Config:

@@ -13,7 +13,7 @@ cumulative distance along its track, which drives the animated progress in later
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import moderngl
 import numpy as np
@@ -266,6 +266,9 @@ class TrackLayer:
         allp = np.vstack(pts)
         return allp.min(axis=0), allp.max(axis=0)
 
+    def walked(self) -> list[Track]:
+        return [t for t in self.tracks if t.role == "walked"]
+
     def ensure_built(self, options: TrackGeometryOptions, dem_version: object = None) -> None:
         key = (
             options.elevation_source,
@@ -279,8 +282,13 @@ class TrackLayer:
             return
         self.release()
         offset = 0.0
-        for index, track in enumerate(self.tracks):
-            segments = build_track_positions(track, self.frame, options, self.heights_at)
+        group_index: dict[str, int] = {}
+        for track in self.tracks:
+            index = group_index.get(track.group, 0)
+            group_index[track.group] = index + 1
+            spacing = track.spacing_m or (options.spacing_m if track.role == "walked" else 25.0)
+            track_options = replace(options, spacing_m=spacing)
+            segments = build_track_positions(track, self.frame, track_options, self.heights_at)
             if not segments:
                 continue
             origin = segments[0].enu[0].copy()
@@ -293,16 +301,17 @@ class TrackLayer:
                 self.ctx.buffer(indices.tobytes()),
                 float(segments[-1].dist[-1]),
                 {},
-                offset_m=offset,
+                offset_m=offset if track.role == "walked" else 0.0,
                 enu=np.vstack([s.enu for s in segments]),
                 dist=np.concatenate([s.dist for s in segments]),
                 time=np.concatenate([s.time for s in segments]),
                 ele=np.concatenate([s.ele for s in segments]),
                 ground=np.concatenate([s.ground for s in segments]),
             )
-            offset += gpu.length_m
+            if track.role == "walked":  # progress runs along the walked tracks only
+                offset += gpu.length_m
             self._gpu.append(gpu)
-        self.path = ProgressPath(self._gpu)
+        self.path = ProgressPath([g for g in self._gpu if g.track.role == "walked"])
         self._built_key = key
 
     def render(
@@ -331,8 +340,16 @@ class TrackLayer:
         else:
             self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         single = store is not None and store["tracks.color_mode"] == "single"
+        base = {
+            "opacity": store["tracks.opacity"] if store is not None else 1.0,
+            "width": store["tracks.width"] if store is not None else 5.0,
+            "glow": store["tracks.glow"] if store is not None else 1.2,
+        }
         for g in self._gpu:
             if not g.track.visible:
+                continue
+            style = self._group_style(store, g, single)
+            if style is None:
                 continue
             vao = g.vaos.get(program.glo)
             if vao is None:
@@ -355,15 +372,47 @@ class TrackLayer:
                 )
                 g.vaos[program.glo] = vao
             _set(program, "u_offset", camera.relative(g.origin))
-            color = store["tracks.color"] if single else track_color(g.index)
+            color, opacity, width, glow, dash = style
             _set(program, "u_color", tuple(c**2.2 for c in color))
+            _set(program, "u_track_opacity", base["opacity"] * opacity)
+            _set(program, "u_track_width", base["width"] * width)
+            _set(program, "u_track_glow", base["glow"] * glow)
+            _set(program, "u_dash_px", dash)
             _set(program, "u_track_length", g.length_m)
             _set(program, "u_track_offset", g.offset_m)
-            _set(program, "u_head_m", min(self.head_m, 1e12))
-            _set(program, "u_tail_m", self.tail_m)
+            walked = g.track.role == "walked"  # planned routes are always drawn in full
+            _set(program, "u_head_m", min(self.head_m, 1e12) if walked else 1e12)
+            _set(program, "u_tail_m", self.tail_m if walked else 0.0)
             vao.render(moderngl.TRIANGLE_STRIP)
         self.ctx.disable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+
+    @staticmethod
+    def _group_style(store, g: _GpuTrack, single: bool):
+        """(colour, opacity, width factor, glow factor, dash px) or None when hidden."""
+        default_color = store["tracks.color"] if single and store is not None else None
+        if default_color is None:
+            default_color = track_color(g.index)
+        p = f"trackgroup.{g.track.group}."
+        if store is None or p + "visible" not in store.registry:
+            return default_color, 1.0, 1.0, 1.0, 0.0
+        if not store[p + "visible"] or store[p + "opacity"] <= 0.0:
+            return None
+        mode = store[p + "color_mode"]
+        if mode == "single":
+            color = store[p + "color"]
+        elif mode == "per_track":
+            color = track_color(g.index)
+        else:
+            color = default_color
+        opacity = store[p + "opacity"]
+        highlight = store[p + "highlight"]
+        if highlight != "none":
+            if g.track.name == highlight:
+                color = store[p + "highlight_color"]
+            else:
+                opacity *= store[p + "dim"]
+        return color, opacity, store[p + "width"], store[p + "glow"], store[p + "dash"]
 
     def release(self) -> None:
         for g in self._gpu:

@@ -63,9 +63,16 @@ def compute_aoi(tracks: list[Track], area: AreaSection) -> AreaOfInterest | None
     min_lon, min_lat, max_lon, max_lat = geom.bounds
     fwd, inv = _local_transformers((min_lon + max_lon) / 2, (min_lat + max_lat) / 2)
     local = transform(fwd.transform, geom).simplify(10.0)
+    simplified: dict[float, shapely.Geometry] = {}
 
     def buffered(km: float) -> shapely.Geometry:
-        poly = local.buffer(max(km, 0.001) * 1000.0, quad_segs=16)
+        # the line only needs to be accurate to ~1 % of the buffer distance
+        tolerance = max(10.0, km * 1000.0 * 0.01)
+        line = simplified.get(tolerance)
+        if line is None:
+            line = simplified[tolerance] = local.simplify(tolerance)
+        poly = line.buffer(max(km, 0.001) * 1000.0, quad_segs=16 if km < 50 else 6)
+        poly = poly.simplify(tolerance)
         return transform(inv.transform, poly)
 
     zones = [buffered(z.within_km) for z in area.zones]
@@ -127,14 +134,28 @@ def _pyramid(regions: list[tuple[shapely.Geometry, int]], min_zoom: int) -> dict
 
 
 def plan_tiles(aoi: AreaOfInterest, area: AreaSection, min_zoom: int = MIN_PLAN_ZOOM) -> TilePlan:
+    return plan_tiles_multi([(aoi, area)], min_zoom)
+
+
+def plan_tiles_multi(
+    areas: list[tuple[AreaOfInterest, AreaSection]], min_zoom: int = MIN_PLAN_ZOOM
+) -> TilePlan:
+    """One tile plan for several areas (track groups), each with its own zones."""
     plan = TilePlan()
-    zones = list(zip(aoi.zones, area.zones, strict=True))
-    # The AOI itself uses the outermost zone's resolution.
-    outer = area.zones[-1]
-    imagery = [(g, z.imagery_zoom) for g, z in zones] + [(aoi.aoi, outer.imagery_zoom)]
-    dem = [(g, z.dem_zoom) for g, z in zones] + [(aoi.aoi, outer.dem_zoom)]
-    plan.levels["imagery"] = _pyramid(imagery, min(min_zoom, area.max_imagery_zoom))
-    plan.levels["dem"] = _pyramid(dem, min(min_zoom, area.max_dem_zoom))
+    imagery: list[tuple[shapely.Geometry, int]] = []
+    dem: list[tuple[shapely.Geometry, int]] = []
+    for aoi, area in areas:
+        zones = list(zip(aoi.zones, area.zones, strict=True))
+        # The AOI itself uses the outermost zone's resolution.
+        outer = area.zones[-1]
+        imagery += [(g, z.imagery_zoom) for g, z in zones] + [(aoi.aoi, outer.imagery_zoom)]
+        dem += [(g, z.dem_zoom) for g, z in zones] + [(aoi.aoi, outer.dem_zoom)]
+    if not imagery:
+        return plan
+    max_imagery = max(z for _, z in imagery)
+    max_dem = max(z for _, z in dem)
+    plan.levels["imagery"] = _pyramid(imagery, min(min_zoom, max_imagery))
+    plan.levels["dem"] = _pyramid(dem, min(min_zoom, max_dem))
     return plan
 
 

@@ -127,3 +127,36 @@ def test_ign_sources_registered():
     assert "TILEMATRIX=15&TILEROW=2&TILECOL=1" in ign.tile_url(15, 1, 2)
     alti = DEM_SOURCES["ign_rgealti"]
     assert alti.direct and alti.coverage == "france" and alti.oversample == 2
+
+
+def test_terrarium_source_decodes_and_joins_seamlessly():
+    import io
+
+    from PIL import Image
+
+    from earthling.data.dem import TerrariumDemSource
+
+    def handler(request):
+        z, x, y = (int(v) for v in request.url.path.removesuffix(".png").split("/")[-3:])
+        # height = 10 m per source pixel column across the world at this zoom (a ramp)
+        cols = (x * 256 + np.arange(256)).astype(np.float64)
+        h = np.tile(cols * 10.0 - 5000.0, (256, 1))  # negative in the west: "sea"
+        v = h + 32768.0
+        rgb = np.stack([np.floor(v / 256), np.floor(v % 256), (v % 1) * 256], axis=-1)
+        buf = io.BytesIO()
+        Image.fromarray(rgb.astype(np.uint8)).save(buf, format="PNG")
+        return httpx.Response(200, content=buf.getvalue())
+
+    source = TerrariumDemSource()
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    z, x, y = 5, 3, 11
+    a = source.fetch_tile(z, x, y, client)
+    b = source.fetch_tile(z, x + 1, y, client)
+    assert a.shape == (HEIGHTMAP_SAMPLES, HEIGHTMAP_SAMPLES)
+    assert np.allclose(a[:, 257], b[:, 1])  # shared edge samples
+    # sample s lies on the corner between source pixels: halfway between their centres
+    cols = x * 256 + np.arange(-1, 258) - 0.5
+    expected = np.maximum(cols * 10.0 - 5000.0, 0.0)
+    assert np.allclose(a[100], expected, atol=0.5)
+    far_west = source.fetch_tile(z, 0, y, client)
+    assert far_west[5, 5] == 0.0  # bathymetry clamped to sea level

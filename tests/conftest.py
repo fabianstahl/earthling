@@ -36,3 +36,12 @@ def _no_modal_dialogs(monkeypatch):
     for name in ("warning", "critical", "information"):
         monkeypatch.setattr(QMessageBox, name, lambda *a, **k: QMessageBox.StandardButton.Ok)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolated_gpx_cache(tmp_path_factory, monkeypatch):
+    """Parsed-GPX cache in a temporary folder (not the user's ~/.cache)."""
+    import earthling.core.gpx as gpx
+
+    monkeypatch.setattr(gpx, "PARSE_CACHE_DIR", tmp_path_factory.getbasetemp() / "gpx_cache")
+    yield
