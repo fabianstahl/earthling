@@ -213,6 +213,7 @@ def _top_down(gl_ctx, tracks, **props):
     renderer.store = Scene().store
     for pid, value in {"tracks.elevation": "gpx", "tracks.height_offset": 0.0,
                        "tracks.width": 6.0, "glow.enabled": False, "haze.aerial": 0.0,
+                       "marker.visible": False,
                        **props}.items():  # fmt: skip
         renderer.store.set(pid, value)
     renderer.timezone = "UTC"
@@ -254,3 +255,18 @@ def test_overlapping_tracks_do_not_add_up_their_glow(gl_ctx):
     one = glow_max([straight_track()])
     twice = glow_max([straight_track(), straight_track()])  # the same line drawn twice
     assert one > 0.0 and twice == pytest.approx(one, rel=0.05)
+
+
+def test_tracks_on_top_of_each_other_do_not_mix_colours(gl_ctx):
+    """The upper track replaces the glow of the one below; no third colour appears."""
+    from earthling.render.tracks import track_color
+
+    below, above = straight_track(), straight_track()
+    below.name, above.name = "below", "above"
+    _, renderer = _top_down(gl_ctx, [below, above], **{"glow.enabled": True})
+    glow = np.frombuffer(renderer.target.glow.read(), dtype=np.float16).astype(np.float32)
+    glow = glow.reshape(200, 200, 4)
+    rgb = glow[..., :3].reshape(-1, 3)
+    brightest = rgb[np.argmax(rgb.sum(axis=1))]
+    top = np.array(track_color(1)) ** 2.2
+    assert np.allclose(brightest / brightest.max(), top / top.max(), atol=0.05)

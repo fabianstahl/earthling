@@ -121,6 +121,7 @@ class Session:
     def track_group_properties(self) -> list:
         """Keyframeable style properties of every track group ("trackgroup.<name>.*")."""
         from earthling.render.parameters import boolean, color, enum, flt, section
+        from earthling.render.tracks import track_color
 
         defs = []
         for g in self.groups:
@@ -144,6 +145,12 @@ class Session:
                      tooltip="Show one track in the highlight colour and dim the others"),
                 color(p + "highlight_color", "Highlight colour", (0.25, 0.95, 0.35)),
                 flt(p + "dim", "Others while highlighting", 0.35, 0.0, 1.0),
+            )  # fmt: skip
+            # one colour per track (used with "One colour per track")
+            defs += section(
+                f"Tracks: {g.label} – colours",
+                *(color(p + f"track{i}.color", t.name, track_color(i))
+                  for i, t in enumerate(g.tracks)),
             )  # fmt: skip
         return defs
 

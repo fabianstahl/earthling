@@ -358,10 +358,10 @@ class TrackLayer:
             _set(program, name, value)
         self.ctx.enable(moderngl.BLEND)
         if glow_pass:
-            # the brightest emission wins: without depth writes, a track overlapping itself
-            # (switchbacks, or a long route seen from far away) must not add up its glow
-            self.ctx.blend_func = moderngl.ONE, moderngl.ONE
-            self.ctx.blend_equation = moderngl.MAX
+            # emission composited "over" in draw order (premultiplied): a track overlapping
+            # itself does not add up its glow, and a track on top of another one replaces its
+            # glow instead of mixing both colours into a third one
+            self.ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
         else:
             self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         # depth test only: tracks on top of each other blend (a faint line must not hide the
@@ -440,7 +440,8 @@ class TrackLayer:
         if mode == "single":
             color = store[p + "color"]
         elif mode == "per_track":
-            color = track_color(g.index)
+            pid = p + f"track{g.index}.color"
+            color = store[pid] if pid in store.registry else track_color(g.index)
         else:
             color = default_color
         opacity = store[p + "opacity"]

@@ -70,7 +70,9 @@ void main() {
     float nz = sqrt(max(0.0, 1.0 - a * a));
 #ifdef GLOW_PASS
     float boost = 1.0 + u_head_boost * near_head;
-    f_color = vec4(u_color * u_track_glow * boost * (0.5 + 0.5 * nz) * alpha * u_track_opacity, 1.0);
+    // premultiplied, composited "over" in draw order (see TrackLayer.render)
+    float a_glow = alpha * u_track_opacity;
+    f_color = vec4(u_color * u_track_glow * boost * (0.5 + 0.5 * nz) * a_glow, a_glow);
     return;
 #endif
     float shade = 0.55 + 0.45 * nz;
