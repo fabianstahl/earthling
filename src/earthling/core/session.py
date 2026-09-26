@@ -281,9 +281,14 @@ class Session:
             lat = (south + north) / 2.0
 
             def used_at(i: int, z: int) -> bool:
-                # fine sources only where the heightmaps are fine enough to benefit
-                limit = providers[i].native_resolution_m * SOURCE_DETAIL_FACTOR
-                return ground_resolution_m(lat, z) <= limit or i == len(providers) - 1
+                # file-based fine sources only where the heightmaps are fine enough to benefit
+                # (direct sources serve any zoom at the same cost; the last one is the fallback)
+                source = providers[i]
+                if source.direct or i == len(providers) - 1:
+                    return True
+                return (
+                    ground_resolution_m(lat, z) <= source.native_resolution_m * SOURCE_DETAIL_FACTOR
+                )
 
         needs = needed_tiles([p.coverage_area for p in providers], levels, used_at)
         out = []

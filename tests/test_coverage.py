@@ -192,3 +192,22 @@ def test_needed_tiles_skips_sources_not_used_at_a_zoom():
     fine, fallback = needed_tiles([None, None], {10: keys, 14: keys}, lambda i, z: i == 1 or z > 12)
     assert 10 not in fine and 14 in fine
     assert len(fallback[10]) == 2 and 14 not in fallback
+
+
+def test_fine_file_dem_sources_leave_coarse_zooms_to_the_fallback(tmp_path):
+    from earthling.core.config import Config, Project, ProjectSection, SourcesSection
+    from earthling.core.geo import ground_resolution_m
+    from earthling.core.session import Session
+    from earthling.data.dem import SOURCE_DETAIL_FACTOR
+
+    config = Config(
+        project=ProjectSection(cache_dir=tmp_path),
+        sources=SourcesSection(dem=("swisstopo_alti3d", "aws_terrarium")),
+    )
+    session = Session(Project(Path("examples/alps_demo").resolve(), config))
+    (swiss, swiss_tiles), (world, world_tiles) = session.provider_tiles("dem")
+    lat = sum(session.aoi.bounds[1::2]) / 2.0
+    limit = swiss.native_resolution_m * SOURCE_DETAIL_FACTOR
+    assert swiss_tiles and all(ground_resolution_m(lat, z) <= limit for z in swiss_tiles)
+    coarse = min(session.plan.levels["dem"])
+    assert ground_resolution_m(lat, coarse) > limit and coarse in world_tiles
