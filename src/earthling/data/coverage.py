@@ -129,9 +129,11 @@ def tile_boxes_mercator(z: int, xy: np.ndarray) -> np.ndarray:
     return shapely.box(x0, y1 - size, x0 + size, y1)
 
 
-def needed_tiles(coverages: list[Coverage | None], tiles: dict[int, np.ndarray]):
+def needed_tiles(coverages: list[Coverage | None], tiles: dict[int, np.ndarray], used_at=None):
     """For providers in priority order: the tiles each one is needed for, i.e. tiles its
     coverage touches that are not fully covered by a higher-priority provider.
+    ``used_at(i, z)`` (optional): False where provider i is not used at zoom z at all (e.g. a
+    very fine DEM on coarse tiles); it then neither takes nor covers those tiles.
     Returns one {zoom: (n, 2) array} dict per provider."""
     out: list[dict[int, np.ndarray]] = [{} for _ in coverages]
     for z, xy in tiles.items():
@@ -139,6 +141,8 @@ def needed_tiles(coverages: list[Coverage | None], tiles: dict[int, np.ndarray])
         remaining = np.ones(len(xy), dtype=bool)
         boxes = tile_boxes_mercator(z, xy) if any(c is not None for c in coverages) else None
         for i, cov in enumerate(coverages):
+            if used_at is not None and not used_at(i, z):
+                continue
             if cov is None:
                 touches, full = np.ones(len(xy), bool), np.ones(len(xy), bool)
             else:

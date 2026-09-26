@@ -16,6 +16,8 @@ out vec4 f_color;
 
 uniform sampler2D u_imagery;
 uniform bool u_has_imagery;
+uniform sampler2D u_parent_imagery;     // geomorphing: blend in from the parent's imagery
+uniform bool u_has_parent_imagery = false;
 uniform sampler2D u_topo;
 uniform bool u_has_topo;
 uniform sampler2D u_borders;  // distance to border lines in node uv units (r: countries, g: regions)
@@ -156,6 +158,10 @@ void main() {
     li.aspect = mod(degrees(atan(li.normal_local.x, li.normal_local.y)) + 360.0, 360.0);
     li.imagery = u_has_imagery ? texture(u_imagery, v_tile_uv).rgb
                                : ramp_hypsometric((v_height - 500.0) / 4000.0);
+    if (u_morph < 1.0 && u_has_parent_imagery) {
+        vec3 parent_rgb = texture(u_parent_imagery, u_parent_uv_offset + v_tile_uv * 0.5).rgb;
+        li.imagery = mix(parent_rgb, li.imagery, u_has_imagery ? u_morph : 0.0);
+    }
     li.topo = u_has_topo ? texture(u_topo, v_tile_uv).rgb : vec3(0.85);
     {
         // node uv -> screen pixels (uses the larger footprint of anisotropic texels)

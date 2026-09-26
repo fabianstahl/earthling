@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import shapely
 
 from earthling.core.session import Session
-from earthling.data.dem import DemBaker, download_sources
+from earthling.data.dem import SOURCE_DETAIL_FACTOR, DemBaker, download_sources
 from earthling.data.downloader import DownloadProgress, TileDownloader
 
 ProgressCallback = Callable[[DownloadProgress], None]
@@ -83,11 +83,6 @@ def _tile_job(provider, session: Session, tiles: list[tuple[int, int, int]]) -> 
         lambda cb: downloader.run(tiles, cb),
         downloader.cancel,
     )
-
-
-# a DEM source's files are fetched only under heightmap tiles whose sample spacing is at most
-# this many times its native resolution (coarser tiles use the next source, e.g. a global one)
-SOURCE_DETAIL_FACTOR = 16.0
 
 
 def source_area(source, tiles: list[tuple[int, int, int]], area):

@@ -272,7 +272,20 @@ class Session:
             "dem": self.dem_sources,
         }[kind]
         levels = self.plan.levels.get("dem" if kind == "dem" else "imagery", {})
-        needs = needed_tiles([p.coverage_area for p in providers], levels)
+        used_at = None
+        if kind == "dem":
+            from earthling.core.geo import ground_resolution_m
+            from earthling.data.dem import SOURCE_DETAIL_FACTOR
+
+            west, south, east, north = self.aoi.bounds if self.aoi is not None else (0, 0, 0, 0)
+            lat = (south + north) / 2.0
+
+            def used_at(i: int, z: int) -> bool:
+                # fine sources only where the heightmaps are fine enough to benefit
+                limit = providers[i].native_resolution_m * SOURCE_DETAIL_FACTOR
+                return ground_resolution_m(lat, z) <= limit or i == len(providers) - 1
+
+        needs = needed_tiles([p.coverage_area for p in providers], levels, used_at)
         out = []
         for provider, tiles in zip(providers, needs, strict=True):
             max_zoom = getattr(provider, "max_zoom", None)

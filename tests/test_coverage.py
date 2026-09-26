@@ -184,3 +184,11 @@ def test_session_plans_tiles_per_provider(tmp_path):
     assert "Test CH" in session.provider_report()
     stacks = session.tile_sources()["imagery"]
     assert [p.id for p in stacks] == ["test_ch", "esri_world_imagery"]
+
+
+def test_needed_tiles_skips_sources_not_used_at_a_zoom():
+    keys = np.array([[533, 360], [534, 360]])
+    # source 0 (worldwide) is not used at zoom 10: source 1 gets everything there
+    fine, fallback = needed_tiles([None, None], {10: keys, 14: keys}, lambda i, z: i == 1 or z > 12)
+    assert 10 not in fine and 14 in fine
+    assert len(fallback[10]) == 2 and 14 not in fallback

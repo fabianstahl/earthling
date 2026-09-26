@@ -40,6 +40,7 @@ MESH_GRID = 64  # intervals per tile edge
 # texture unit per tile source (0 = heightmap, 2 = optical depth LUT, 3 = shadow atlas)
 TEXTURE_UNITS = {"imagery": 1, "topo": 4, "borders": 5}
 PARENT_HEIGHTMAP_UNIT = 6  # geomorphing: the parent node's heightmap
+PARENT_IMAGERY_UNIT = 14  # ... and its imagery (no sharpness / colour pop when refining)
 DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0
 
 TileKey = tuple[int, int, int]
@@ -513,16 +514,21 @@ class TerrainLayer:
         sel = lod.select_nodes(
             self.nodes,
             self.node_bounds,
-            # only resident nodes count as ready: a child that failed to load keeps its
-            # parent drawn instead of leaving a hole
-            lambda k: k in self._resident,
+            # only resident nodes with heights count as ready: a child that failed to load
+            # or has no DEM data keeps its parent drawn instead of leaving a hole
+            self._drawable,
             camera.position,
             planes,
             ppr,
             params,
         )
-        sel.request = [k for k in sel.request if k not in self._failed]
+        # resident nodes without heights are final (no data there): do not wait for them
+        sel.request = [k for k in sel.request if k not in self._failed and k not in self._resident]
         return sel
+
+    def _drawable(self, key: TileKey) -> bool:
+        node = self._resident.get(key)
+        return node is not None and node.heightmap_key is not None
 
     def update(self, camera: Camera, view_proj, viewport_height: int) -> lod.Selection | None:
         """Select nodes, upload finished ones within the budget and request missing ones."""
@@ -642,6 +648,7 @@ class TerrainLayer:
         _set(program, "u_exaggeration", self.exaggeration)
         _set(program, "u_heightmap", 0)
         _set(program, "u_parent_heightmap", PARENT_HEIGHTMAP_UNIT)
+        _set(program, "u_parent_imagery", PARENT_IMAGERY_UNIT)
         morph = morph if morph is not None and self.geomorph else {}
         if not shadow_pass:
             _set(program, "u_log_depth_coef", camera.log_depth_coef)
@@ -693,8 +700,13 @@ class TerrainLayer:
             or parent.heightmap_key not in self._heightmaps
         ):
             _set(program, "u_morph", 1.0)
+            _set(program, "u_has_parent_imagery", False)
             return
         _set(program, "u_morph", float(factor))
+        parent_imagery = parent.textures.get("imagery")
+        _set(program, "u_has_parent_imagery", parent_imagery is not None)
+        if parent_imagery is not None:
+            parent_imagery.use(PARENT_IMAGERY_UNIT)
         _set(program, "u_parent_uv_offset", (0.5 * (x & 1), 0.5 * (y & 1)))
         _set(program, "u_parent_hm_scale", parent.hm_scale)
         _set(program, "u_parent_hm_offset", parent.hm_offset)

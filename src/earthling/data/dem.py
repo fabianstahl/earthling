@@ -46,6 +46,9 @@ from earthling.data.providers import License
 log = logging.getLogger(__name__)
 
 GRID_INTERVALS = 256
+# A DEM source is used (downloaded, baked) only for heightmap tiles whose sample spacing is at
+# most this many times its native resolution; coarser tiles come from the next source.
+SOURCE_DETAIL_FACTOR = 16.0
 HEIGHTMAP_SAMPLES = GRID_INTERVALS + 3  # 259
 HEIGHT_SCALE = 0.2
 HEIGHT_OFFSET = -1000.0

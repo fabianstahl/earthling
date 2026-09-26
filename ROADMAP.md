@@ -471,8 +471,9 @@ country borders, keyframeable; imagery brightness and saturation controls.
 → A country overview that starts as a clean map and turns into satellite imagery.
 
 **17.4 Smooth terrain detail**
-Load finer tiles ahead of the camera (and a margin beyond the frame), no holes where a detail
-source has no data, and fade between detail levels instead of switching.
+No holes where a detail source has no data (the parent stays drawn, coarse tiles come from the
+next DEM source), and refined nodes fade in from the parent's imagery along with the geomorph
+instead of switching sharpness and colour at once.
 → Zooms from space to the valley without missing tiles or popping shading.
 
 **17.5 More POI icons**

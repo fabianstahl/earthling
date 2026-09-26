@@ -1,3 +1,4 @@
+import moderngl
 import numpy as np
 import pytest
 
@@ -314,3 +315,68 @@ def test_detail_normals_add_relief_without_artifacts(gl_ctx):
     assert black(relief) <= black(flat)  # no NaN normals
     uniform_a, uniform_b = render(FakeTerrainData(), 0.0), render(FakeTerrainData(), 3.0)
     assert np.abs(uniform_a.astype(int) - uniform_b.astype(int)).max() <= 1  # flat imagery
+
+
+def test_child_without_dem_keeps_the_parent_drawn(gl_ctx):
+    """A child node without heights must not leave a hole: the parent stays drawn, and the
+    export's wait for a fully loaded view still finishes."""
+    tx, ty = (int(v) for v in lonlat_to_tile(7.0, 46.0, 10))
+    kids = [(11, 2 * tx + dx, 2 * ty + dy) for dx in (0, 1) for dy in (0, 1)]
+
+    class PartialData(FakeTerrainData):
+        def heightmap_for(self, key):
+            return None if key == kids[0] else super().heightmap_for(key)
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    nodes = lod.NodeSet({10: [(tx, ty)], 11: [k[1:] for k in kids]})
+    renderer.set_terrain_source(PartialData(), nodes)
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 400)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.distance *= 0.3  # close enough to want the children (see the full-data case)
+    orbit.apply()
+    assert renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 400, timeout_s=10)
+    sel = renderer.terrain.last_selection
+    assert (10, tx, ty) in sel.draw and not any(k in sel.draw for k in kids)
+
+
+def test_refined_nodes_fade_in_from_the_parent_imagery(gl_ctx):
+    tx, ty = (int(v) for v in lonlat_to_tile(7.0, 46.0, 10))
+    kids = [(11, 2 * tx + dx, 2 * ty + dy) for dx in (0, 1) for dy in (0, 1)]
+
+    class TwoColours(FakeTerrainData):
+        def imagery_for(self, key):
+            rgb = np.zeros((64, 64, 3), dtype=np.uint8)
+            rgb[..., 0 if key[0] == 10 else 1] = 220  # parent red, children green
+            return rgb
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    renderer.set_terrain_source(
+        TwoColours(), lod.NodeSet({10: [(tx, ty)], 11: [k[1:] for k in kids]})
+    )
+    renderer.store = None
+    camera = Camera()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 400)
+    orbit = OrbitController(camera)
+    orbit.frame_bounds(*renderer.scene_bounds())
+    orbit.distance *= 0.3
+    orbit.apply()
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 400)
+    fbo = gl_ctx.simple_framebuffer((64, 64))
+    renderer.render(fbo, 64, 64, camera)  # sets up lighting and the scene target
+
+    def colour(morph):
+        renderer.target.fbo.use()
+        renderer.target.fbo.clear(0.0, 0.0, 0.0, 1.0, depth=1.0)
+        gl_ctx.enable(moderngl.DEPTH_TEST)
+        renderer.terrain.draw(camera, camera.view_projection(1.0), kids,
+                              morph={k: morph for k in kids})  # fmt: skip
+        raw = renderer.target.color.read()
+        img = np.frombuffer(raw, dtype=np.float16).reshape(64, 64, 4)[24:40, 24:40, :3]
+        return img.astype(np.float32).reshape(-1, 3).mean(axis=0)
+
+    start, done = colour(0.0), colour(1.0)
+    assert start[0] > start[1] * 2 and done[1] > done[0] * 2
