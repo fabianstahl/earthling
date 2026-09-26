@@ -495,6 +495,7 @@ class Renderer:
         for name, value in {
             **lighting_uniforms(self.lighting),
             **self._atmosphere_uniforms,
+            **self.weather.rain_uniforms(self.store),
         }.items():
             if name in program:
                 program[name] = value

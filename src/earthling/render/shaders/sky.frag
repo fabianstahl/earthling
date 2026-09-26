@@ -85,5 +85,10 @@ void main() {
         vec3 light = u_fog_ambient + u_fog_sun * (4.0 * 3.14159265) * phase_hg(dot(dir, sun), u_fog_glow);
         radiance = radiance * t + light * (1.0 - t);
     }
+    // rain: the sky disappears in the haze (like the terrain and clouds, see fog.glsl)
+    if (u_rain_haze > 0.0) {
+        float t = exp(-min(200e3 * u_rain_haze, 60.0));
+        radiance = radiance * t + u_fog_ambient * 1.1 * (1.0 - t);
+    }
     f_color = vec4(radiance, 1.0);
 }

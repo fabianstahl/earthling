@@ -270,10 +270,13 @@ class LightningLayer:
                 program[name] = value
         program["u_view_proj"].write(view_proj)
         self.ctx.enable(moderngl.BLEND | moderngl.DEPTH_TEST)
-        self.ctx.depth_mask = False
+        # depth test only: clouds and rain use the scene depth (the depth mask is a
+        # framebuffer setting in moderngl)
+        fbo = self.ctx.fbo
+        fbo.depth_mask = False
         self.ctx.blend_func = moderngl.ONE, moderngl.ONE
         vao.render(moderngl.TRIANGLES, vertices=len(vertices))
-        self.ctx.depth_mask = True
+        fbo.depth_mask = True
         self.ctx.disable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 

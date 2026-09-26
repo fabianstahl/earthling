@@ -172,3 +172,5 @@ def test_clouds_fade_into_the_rain_haze(gl_ctx):
     renderer.render(gl_ctx.simple_framebuffer((64, 64)), 64, 64, camera)
     program = renderer.weather.passes("clouds")
     assert program["u_rain_haze"].value == pytest.approx(3.0 / 2000.0 * 0.7, rel=1e-3)
+    sky = renderer.fullscreen("sky")  # the sky vanishes in the haze too (no dark holes)
+    assert sky["u_rain_haze"].value == pytest.approx(3.0 / 2000.0 * 0.7, rel=1e-3)

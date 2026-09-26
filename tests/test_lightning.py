@@ -81,3 +81,28 @@ def _render_at(gl_ctx, render, t, props):
         return render(gl_ctx, 0.2, **props)
     finally:
         renderer_module.Renderer.render = original
+
+
+def test_bolts_do_not_write_depth(gl_ctx):
+    """Clouds and rain read the scene depth: a bolt must not punch holes into them."""
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.lightning import LightningLayer
+    from earthling.render.shader_library import ShaderLibrary
+
+    camera = Camera()
+    camera.position = np.array([0.0, -3000.0, 1000.0])
+    camera.heading, camera.pitch = 0.0, 0.0
+    strike = Strike(0, 0.0, 1)
+    path = np.array([[0.0, 0.0, 3000.0], [30.0, 0.0, 1500.0], [0.0, 0.0, 0.0]])
+    layer = LightningLayer(gl_ctx, ShaderLibrary(gl_ctx))
+    layer.active = [(strike, 1.0, path[0], [(path, 1.0)])]
+    color = gl_ctx.texture((64, 64), 4, dtype="f2")
+    depth = gl_ctx.depth_texture((64, 64))
+    fbo = gl_ctx.framebuffer([color], depth)
+    fbo.use()
+    fbo.clear(0.0, 0.0, 0.0, 0.0, depth=1.0)
+    layer.render(camera, camera.view_projection(1.0), 64, 64, Scene().store, glow=False)
+    pixels = np.frombuffer(color.read(), dtype=np.float16).reshape(64, 64, 4)
+    assert pixels[..., :3].max() > 1.0  # the bolt is drawn
+    assert np.frombuffer(depth.read(), dtype=np.float32).min() == 1.0  # but leaves no depth
