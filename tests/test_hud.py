@@ -106,3 +106,23 @@ def test_session_attribution():
 
     text = Session(Project.load(Path("examples/alps_demo"))).attribution()
     assert "Esri" in text and "Copernicus" in text and "OpenStreetMap" in text
+
+
+def test_first_frame_text_survives_atlas_repacks(gl_ctx):
+    """New glyphs in later texts repack the atlas; earlier texts must not keep stale uvs."""
+    store = Scene().store
+    store.set("stats.visible", True)
+    store.set("stats.show_time", True)
+    hud = HudLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    atlas = FontAtlas(gl_ctx)
+    fbo = gl_ctx.simple_framebuffer((960, 540))
+
+    def draw():
+        fbo.use()
+        fbo.clear(0.0, 0.0, 0.0, 1.0)
+        hud.render(fbo, 960, 540, store, fake_path(), 20_000.0, "UTC")
+        return np.frombuffer(fbo.read(components=3), dtype=np.uint8).astype(int)
+
+    first = draw()  # fresh atlas: glyphs get added (and repacked) while drawing
+    second = draw()  # all glyphs known
+    assert np.abs(first - second).max() <= 1

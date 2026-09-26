@@ -245,6 +245,18 @@ class HudLayer:
         self.last_stats = None
         if store is None:
             return
+        # adding glyphs repacks the atlas, which invalidates the uvs of text already in the
+        # batch: build again until no new glyphs were needed
+        for _ in range(4):
+            generation = self.atlas_provider().generation
+            batch = self._build(width, height, store, path, head_m, timezone)
+            if self.atlas_provider().generation == generation:
+                break
+        vertices = batch.array()
+        if len(vertices):
+            self._submit(fbo, vertices, width, height, store, height / REFERENCE_HEIGHT)
+
+    def _build(self, width: int, height: int, store, path, head_m: float, timezone: str):
         batch = _Batch()
         k = height / REFERENCE_HEIGHT
         attribution_h = 0.0
@@ -259,9 +271,7 @@ class HudLayer:
                 if values is not None:
                     self._draw_panel(batch, stats, values, head_m, width, height, k, store,
                                      attribution_h)  # fmt: skip
-        vertices = batch.array()
-        if len(vertices):
-            self._submit(fbo, vertices, width, height, store, k)
+        return batch
 
     def _draw_attribution(self, batch, width, height, k, store) -> float:
         size = 11.0 * k
