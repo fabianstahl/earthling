@@ -422,6 +422,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Cannot open scene", str(exc))
             return False
         self.undo_stack.clear()
+        self._apply_scene_origin()
         self.timeline.pause()
         self.timeline.settings_changed.emit()
         self.timeline.set_time(0.0)
@@ -439,6 +440,18 @@ class MainWindow(QMainWindow):
         if problems:
             QMessageBox.warning(self, "Scene problems", "\n".join(problems[:30]))
         return True
+
+    def _apply_scene_origin(self) -> None:
+        """Rebuild the 3D scene when the scene file has its own frame origin (or the previous
+        scene had one)."""
+        session = self.session
+        if session is None or not session.set_origin(self.scene.origin):
+            return
+        self.viewport.set_scene(
+            session.frame, session.all_tracks, timezone=session.config.project.timezone
+        )
+        self.viewport.set_outlines(session.outline_lines())
+        self._reload_terrain()
 
     def save_scene(self, path: Path | None = None) -> bool:
         if path is None and self.scene.path is None:

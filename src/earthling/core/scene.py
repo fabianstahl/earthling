@@ -54,6 +54,10 @@ class Scene:
         self.path: Path | None = None
         self.dirty = False
         self.pois: list = []  # earthling.core.pois.Poi
+        # (lat, lon) of the local frame for this scene, or None for the project default
+        # (the centre of the tracks). Far from the origin the ENU "up" tilts away from the
+        # local vertical (5 degrees at 600 km): scenes there get their own origin.
+        self.origin: tuple[float, float] | None = None
         self._dynamic: dict[str, list[str]] = {}  # key -> property ids (project specific)
         self.dynamic_listeners: list[Callable[[], None]] = []  # e.g. rebuild the panel
         self._dirty_listeners: list[Callable[[bool], None]] = []
@@ -110,6 +114,7 @@ class Scene:
             "camera": self.camera,
             "ui": self.ui,
             "pois": [poi.to_json() for poi in self.pois],
+            **({"origin": list(self.origin)} if self.origin is not None else {}),
         }
 
     def load_json(self, doc: dict[str, Any]) -> list[str]:
@@ -125,6 +130,8 @@ class Scene:
         problems += self.animation.load_json(doc.get("animation", {}))
         self.camera = dict(doc.get("camera", {}))
         self.ui = dict(doc.get("ui", {}))
+        origin = doc.get("origin")
+        self.origin = (float(origin[0]), float(origin[1])) if origin else None
         return problems
 
     def reset(self, path: Path | None = None) -> None:

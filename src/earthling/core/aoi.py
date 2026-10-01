@@ -137,13 +137,25 @@ def plan_tiles(aoi: AreaOfInterest, area: AreaSection, min_zoom: int = MIN_PLAN_
     return plan_tiles_multi([(aoi, area)], min_zoom)
 
 
+WORLD = shapely.box(-180.0, -85.05, 180.0, 85.05)  # the Web Mercator square
+
+
 def plan_tiles_multi(
-    areas: list[tuple[AreaOfInterest, AreaSection]], min_zoom: int = MIN_PLAN_ZOOM
+    areas: list[tuple[AreaOfInterest, AreaSection]],
+    min_zoom: int = MIN_PLAN_ZOOM,
+    world: tuple[int, int] | None = None,
 ) -> TilePlan:
-    """One tile plan for several areas (track groups), each with its own zones."""
+    """One tile plan for several areas (track groups), each with its own zones.
+
+    ``world`` = (imagery zoom, dem zoom): the whole globe down to these zooms as well, starting
+    at zoom 0 (one root tile)."""
     plan = TilePlan()
     imagery: list[tuple[shapely.Geometry, int]] = []
     dem: list[tuple[shapely.Geometry, int]] = []
+    if world is not None:
+        imagery.append((WORLD, world[0]))
+        dem.append((WORLD, world[1]))
+        min_zoom = 0
     for aoi, area in areas:
         zones = list(zip(aoi.zones, area.zones, strict=True))
         # The AOI itself uses the outermost zone's resolution.

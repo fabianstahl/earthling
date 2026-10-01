@@ -204,12 +204,24 @@ class Session:
             return DEFAULT_FRAME
         return frame_for_bbox(*aoi.bounds)
 
+    def set_origin(self, origin: tuple[float, float] | None) -> bool:
+        """Centre the local frame on ``(lat, lon)`` (a scene's origin), or back on the tracks
+        with None. Returns whether the frame changed."""
+        old = self.frame
+        self.__dict__.pop("frame", None)
+        if origin is not None:
+            self.__dict__["frame"] = LocalFrame(float(origin[0]), float(origin[1]), 0.0)
+        return self.frame != old
+
     @cached_property
     def plan(self) -> TilePlan | None:
         areas = [(g.aoi, g.area) for g in self.groups if g.aoi is not None and g.area is not None]
         if not areas:
             return None
-        return plan_tiles_multi(areas)
+        world = self.config.world
+        return plan_tiles_multi(
+            areas, world=(world.imagery_zoom, world.dem_zoom) if world is not None else None
+        )
 
     @cached_property
     def mean_track_elevation(self) -> float:

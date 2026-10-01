@@ -125,6 +125,7 @@ def cmd_render(args) -> int:
     out = Path(args.out) if args.out else scene_path.with_suffix(preset.extension)
     ctx = moderngl.create_standalone_context(require=430)
     renderer = Renderer(ctx)
+    session.set_origin(scene.origin)
     renderer.set_scene(session.frame, session.all_tracks)
     renderer.set_terrain_source(session.terrain_data(), session.terrain_nodes())
     renderer.store = scene.store

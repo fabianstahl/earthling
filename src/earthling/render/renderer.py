@@ -21,7 +21,7 @@ from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.bloom import Bloom
-from earthling.render.camera import Camera
+from earthling.render.camera import Camera, far_for_height
 from earthling.render.hud import HudLayer
 from earthling.render.labels import LabelLayer
 from earthling.render.layers import generate_glsl, required_tile_sources
@@ -211,6 +211,7 @@ class Renderer:
         if self.frame is not None:
             height = float(self.frame.enu_to_geodetic(camera.position)[2])
             self.camera_height = height
+            camera.far = far_for_height(height)
             self.lighting = compute_lighting(
                 s,
                 self.frame.lat,

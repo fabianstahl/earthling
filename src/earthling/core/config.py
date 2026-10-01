@@ -100,6 +100,14 @@ class AreaSection(_Model):
         return max(z.dem_zoom for z in self.zones)
 
 
+class WorldSection(_Model):
+    """A coarse pyramid of the whole globe (``[world]``): views from space never show holes
+    outside the tracks' areas. Zoom 4 imagery is 341 tiles, a few MB."""
+
+    imagery_zoom: int = Field(default=4, ge=0, le=6)
+    dem_zoom: int = Field(default=3, ge=0, le=6)
+
+
 class SourcesSection(_Model):
     imagery: tuple[str, ...] = ("esri_world_imagery",)
     dem: tuple[str, ...] = ("copernicus_glo30",)
@@ -175,6 +183,7 @@ class ProviderDef(_Model):
 class Config(_Model):
     project: ProjectSection = ProjectSection()
     area: AreaSection = AreaSection()
+    world: WorldSection | None = None
     sources: SourcesSection = SourcesSection()
     providers: tuple[ProviderDef, ...] = ()
     tracks: tuple[TrackGroupDef, ...] = ()

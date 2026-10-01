@@ -81,6 +81,14 @@ class Camera:
         return 1.0 / math.log2(self.far + 1.0)
 
 
+def far_for_height(height_m: float, minimum: float = 2_000_000.0) -> float:
+    """Far plane for a camera ``height_m`` above sea level: everything up to the horizon plus
+    the terrain rising behind it (views from space see a whole hemisphere)."""
+    r = 6_371_000.0
+    h = max(height_m, 0.0)
+    return max(minimum, math.sqrt(h * (2.0 * r + h)) + 1_500_000.0)
+
+
 class OrbitController:
     """Orbits around a target point. Left drag rotates, right/middle drag pans, wheel zooms."""
 
@@ -94,7 +102,7 @@ class OrbitController:
 
     def apply(self) -> None:
         self.pitch = max(-89.5, min(89.5, self.pitch))
-        self.distance = max(10.0, min(5_000_000.0, self.distance))
+        self.distance = max(10.0, min(20_000_000.0, self.distance))
         f = forward_vector(self.heading, self.pitch)
         self.camera.heading = self.heading % 360.0
         self.camera.pitch = self.pitch
