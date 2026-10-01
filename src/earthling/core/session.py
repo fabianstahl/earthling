@@ -114,6 +114,7 @@ class Session:
             for track in tracks:
                 track.group, track.role = d.name, d.role
                 track.spacing_m = d.spacing_m
+                track.elevation = d.elevation
             area = d.area or config.area
             groups.append(TrackGroup(d, tracks, area, compute_aoi(tracks, area)))
         return groups
@@ -140,6 +141,8 @@ class Session:
                 flt(p + "width", "Width factor", 0.6 if planned else 1.0, 0.05, 5.0, step=0.05),
                 flt(p + "dash", "Dashes", 10.0 if planned else 0.0, 0.0, 100.0, step=1.0,
                     decimals=0, unit="px", tooltip="Dash length on screen (0 = solid line)"),
+                boolean(p + "dots", "Dotted", False,
+                        tooltip="Round dots instead of dashes; Dashes sets their spacing"),
                 flt(p + "glow", "Glow factor", 0.3 if planned else 1.0, 0.0, 5.0),
                 enum(p + "highlight", "Highlight", "none", members,
                      tooltip="Show one track in the highlight colour and dim the others"),

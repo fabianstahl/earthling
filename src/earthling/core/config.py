@@ -127,6 +127,9 @@ class TrackGroupDef(_Model):
     role: Literal["walked", "planned"] = "walked"
     area: AreaSection | None = None
     spacing_m: float | None = Field(default=None, gt=0)  # geometry resampling (default by role)
+    # height source of the line: "gpx" keeps the file's elevations (e.g. a flight in the air),
+    # default: the Tracks setting (on the terrain)
+    elevation: Literal["dem", "gpx"] | None = None
     labels: bool | None = None  # label area (default: walked groups)
 
 

@@ -3,6 +3,7 @@
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from earthling.core.aoi import compute_aoi, plan_tiles_multi
@@ -63,3 +64,46 @@ def test_far_plane_reaches_the_horizon_from_space():
     assert far_for_height(2000.0) == 2_000_000.0
     # from 10 000 km the horizon is ~15 000 km away
     assert far_for_height(10_000e3) > 15_000e3
+
+
+FLIGHT_GPX = """<?xml version="1.0"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+ <trk><name>Flight</name><trkseg>
+  <trkpt lat="45.80" lon="6.70"><ele>0</ele><time>2020-01-01T08:00:00Z</time></trkpt>
+  <trkpt lat="45.90" lon="6.85"><ele>9000</ele><time>2020-01-01T08:30:00Z</time></trkpt>
+  <trkpt lat="46.00" lon="7.00"><ele>0</ele><time>2020-01-01T09:00:00Z</time></trkpt>
+ </trkseg></trk>
+</gpx>
+"""
+
+
+def test_walked_groups_form_one_journey_in_time_order(gl_ctx, tmp_path):
+    from earthling.render.renderer import Renderer
+    from earthling.render.tracks import TrackGeometryOptions
+
+    (tmp_path / "flight").mkdir()
+    (tmp_path / "flight" / "f.gpx").write_text(FLIGHT_GPX, encoding="utf-8")
+    (tmp_path / "earthling.toml").write_text(f"""
+[project]
+cache_dir = "{(tmp_path / "cache").as_posix()}"
+[[tracks]]
+name = "own"
+gpx = "{(DEMO / "gpx").as_posix()}"
+[[tracks]]
+name = "flight"
+gpx = "flight"
+elevation = "gpx"
+labels = false
+""", encoding="utf-8")  # fmt: skip
+    session = Session(Project.load(tmp_path))
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(session.frame, session.all_tracks)
+    renderer.tracks.ensure_built(TrackGeometryOptions(smoothing=1))
+    path = renderer.tracks.path
+    # the flight (2020) comes before the demo hike although its group is listed second
+    assert path.tracks[0].track.group == "flight"
+    assert path.has_time
+    assert path.tracks[1].offset_m == pytest.approx(path.tracks[0].length_m)
+    # heights from the GPX file: 9 km up in the middle
+    assert np.nanmax(path.tracks[0].ele) == pytest.approx(9000.0, abs=1.0)
+    assert "trackgroup.flight.dots" in {d.id for d in session.track_group_properties()}

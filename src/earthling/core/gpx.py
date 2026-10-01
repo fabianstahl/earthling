@@ -118,6 +118,7 @@ class Track:
     group: str = "tracks"  # track group (config [[tracks]])
     role: str = "walked"  # "walked" or "planned"
     spacing_m: float | None = None  # geometry resampling override (default by role)
+    elevation: str | None = None  # "dem" / "gpx" override of the height source (group setting)
 
     @property
     def point_count(self) -> int:

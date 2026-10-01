@@ -310,6 +310,9 @@ class TrackLayer:
             group_index[track.group] = index + 1
             spacing = track.spacing_m or (options.spacing_m if track.role == "walked" else 25.0)
             track_options = replace(options, spacing_m=spacing)
+            if getattr(track, "elevation", None) == "gpx":  # e.g. a flight: heights as recorded
+                track_options = replace(track_options, elevation_source="gpx", height_offset_m=0.0,
+                                        exaggeration=1.0)  # fmt: skip
             segments = build_track_positions(track, self.frame, track_options, self.heights_at)
             if not segments:
                 continue
@@ -323,17 +326,22 @@ class TrackLayer:
                 self.ctx.buffer(indices.tobytes()),
                 float(segments[-1].dist[-1]),
                 {},
-                offset_m=offset if track.role == "walked" else 0.0,
+                offset_m=0.0,
                 enu=np.vstack([s.enu for s in segments]),
                 dist=np.concatenate([s.dist for s in segments]),
                 time=np.concatenate([s.time for s in segments]),
                 ele=np.concatenate([s.ele for s in segments]),
                 ground=np.concatenate([s.ground for s in segments]),
             )
-            if track.role == "walked":  # progress runs along the walked tracks only
-                offset += gpu.length_m
             self._gpu.append(gpu)
-        self.path = ProgressPath([g for g in self._gpu if g.track.role == "walked"])
+        # progress runs along the walked tracks only, in time order: several walked groups
+        # (e.g. hikes, bus rides, flights) form one journey
+        walked = [g for g in self._gpu if g.track.role == "walked"]
+        walked.sort(key=_start_time)
+        for g in walked:
+            g.offset_m = offset
+            offset += g.length_m
+        self.path = ProgressPath(walked)
         self._built_key = key
 
     def render(
@@ -413,12 +421,13 @@ class TrackLayer:
                 )
                 g.vaos[program.glo] = vao
             _set(program, "u_offset", camera.relative(g.origin))
-            color, opacity, width, glow, dash = style
+            color, opacity, width, glow, dash, dots = style
             _set(program, "u_color", tuple(c**2.2 for c in color))
             _set(program, "u_track_opacity", base["opacity"] * opacity)
             _set(program, "u_track_width", base["width"] * width)
             _set(program, "u_track_glow", base["glow"] * glow)
             _set(program, "u_dash_px", dash)
+            _set(program, "u_dots", int(dots and dash > 0.0))
             _set(program, "u_track_length", g.length_m)
             _set(program, "u_track_offset", g.offset_m)
             walked = g.track.role == "walked"  # planned routes are always drawn in full
@@ -428,13 +437,13 @@ class TrackLayer:
 
     @staticmethod
     def _group_style(store, g: _GpuTrack, single: bool):
-        """(colour, opacity, width factor, glow factor, dash px) or None when hidden."""
+        """(colour, opacity, width factor, glow factor, dash px, dots) or None when hidden."""
         default_color = store["tracks.color"] if single and store is not None else None
         if default_color is None:
             default_color = track_color(g.index)
         p = f"trackgroup.{g.track.group}."
         if store is None or p + "visible" not in store.registry:
-            return default_color, 1.0, 1.0, 1.0, 0.0
+            return default_color, 1.0, 1.0, 1.0, 0.0, False
         if not store[p + "visible"] or store[p + "opacity"] <= 0.0:
             return None
         mode = store[p + "color_mode"]
@@ -452,7 +461,8 @@ class TrackLayer:
                 color = store[p + "highlight_color"]
             else:
                 opacity *= store[p + "dim"]
-        return color, opacity, store[p + "width"], store[p + "glow"], store[p + "dash"]
+        dots = bool(store[p + "dots"]) if p + "dots" in store.registry else False
+        return color, opacity, store[p + "width"], store[p + "glow"], store[p + "dash"], dots
 
     def release(self) -> None:
         for g in self._gpu:
@@ -461,6 +471,12 @@ class TrackLayer:
             g.vbo.release()
             g.ibo.release()
         self._gpu = []
+
+
+def _start_time(g: _GpuTrack) -> float:
+    """First timestamp of a built track (tracks without time keep their order, at the end)."""
+    t = g.time[np.isfinite(g.time)] if g.time is not None else ()
+    return float(t[0]) if len(t) else float("inf")
 
 
 def _set(program: moderngl.Program, name: str, value) -> None:

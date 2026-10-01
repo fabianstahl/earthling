@@ -119,8 +119,8 @@ def test_group_styles_and_highlight(session):
     def style(track, index):
         return TrackLayer._group_style(s, SimpleNamespace(track=track, index=index), False)
 
-    color, opacity, width, glow, dash = style(stage_a, 0)
-    assert color == track_color(0) and dash == 10.0 and width == 0.6
+    color, opacity, width, glow, dash, dots = style(stage_a, 0)
+    assert color == track_color(0) and dash == 10.0 and width == 0.6 and not dots
     s.set("trackgroup.trail.track0.color", (0.6, 0.3, 1.0))  # own colour per track
     assert style(stage_a, 0)[0] == (0.6, 0.3, 1.0) and style(stage_b, 1)[0] == track_color(1)
     s.set("trackgroup.trail.highlight", "Stage B")
