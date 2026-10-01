@@ -12,6 +12,8 @@ target's depth texture also serves depth picking independent of the windowing sy
 
 from __future__ import annotations
 
+import math
+
 import moderngl
 import numpy as np
 from pyglm import glm
@@ -557,7 +559,8 @@ class Renderer:
     def bloom_pass(self, source: moderngl.Texture, width: int, height: int) -> moderngl.Texture:
         s = self.store
         self.bloom.ensure(width, height)
-        return self.bloom.run(source, self.fullscreen, s["glow.radius"], s["glow.levels"])
+        skip = max(0, round(math.log2(max(height, 1) / 1080.0)))  # 4K: one level coarser
+        return self.bloom.run(source, self.fullscreen, s["glow.radius"], s["glow.levels"], skip)
 
     def _tonemap(self, fbo: moderngl.Framebuffer, width: int, height: int, bloom=None) -> None:
         program = self.fullscreen("tonemap")

@@ -24,6 +24,7 @@ from earthling.render.camera import Camera
 from earthling.render.shader_library import ShaderLibrary
 
 PRIMITIVE_RESTART = 0xFFFFFFFF
+REFERENCE_HEIGHT = 1080.0  # pixel sizes (width, casing, outline, dashes) are given for 1080p
 
 # Distinct, saturated colors for tracks / days (sRGB).
 PALETTE = [
@@ -268,6 +269,7 @@ class TrackLayer:
         self._built_key: tuple | None = None
         self.uniforms: dict[str, object] = {}  # lighting/atmosphere uniforms
         self.path: ProgressPath | None = None
+        self.pixel_scale = 1.0  # image height / 1080 of the current pass
         self.head_m = float("inf")  # global distance of the visible end (progress)
         self.tail_m = 0.0  # global distance of the visible start
 
@@ -362,6 +364,13 @@ class TrackLayer:
             from earthling.core.properties import bind_uniforms
 
             bind_uniforms(program, store)
+        # pixel sizes scale with the image height: a 4K export looks like the 1080p preview
+        self.pixel_scale = height / REFERENCE_HEIGHT
+        if store is not None:
+            for name, pid in (("u_track_min_px", "tracks.min_px"),
+                              ("u_track_outline", "tracks.outline"),
+                              ("u_track_casing", "tracks.casing")):  # fmt: skip
+                _set(program, name, float(store[pid]) * self.pixel_scale)
         for name, value in self.uniforms.items():
             _set(program, name, value)
         self.ctx.enable(moderngl.BLEND)
@@ -424,9 +433,11 @@ class TrackLayer:
             color, opacity, width, glow, dash, dots = style
             _set(program, "u_color", tuple(c**2.2 for c in color))
             _set(program, "u_track_opacity", base["opacity"] * opacity)
-            _set(program, "u_track_width", base["width"] * width)
+            px = store is None or store["tracks.width_mode"] == "pixels"
+            scale = self.pixel_scale if px else 1.0
+            _set(program, "u_track_width", base["width"] * width * scale)
             _set(program, "u_track_glow", base["glow"] * glow)
-            _set(program, "u_dash_px", dash)
+            _set(program, "u_dash_px", dash * self.pixel_scale)
             _set(program, "u_dots", int(dots and dash > 0.0))
             _set(program, "u_track_length", g.length_m)
             _set(program, "u_track_offset", g.offset_m)

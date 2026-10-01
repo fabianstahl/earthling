@@ -18,6 +18,10 @@ from earthling.render.tracks import (
 FRAME = LocalFrame(46.0, 7.0, 0.0)
 
 
+# pixel sizes are given for 1080p and scale with the image height; the test images are 200 px
+PX = 1080 / 200
+
+
 def straight_track(n=200, ele=1500.0):
     lat = np.linspace(46.0, 46.01, n)  # ~1.1 km north
     lon = np.full(n, 7.0)
@@ -81,13 +85,17 @@ def test_ribbon_renders_with_pixel_width(gl_ctx):
     # look straight down on the track from 3 km above its middle
     mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
     camera = Camera(position=mid + np.array([0.0, 0.0, 3000.0]), heading=0.0, pitch=-89.9)
-    fbo = gl_ctx.simple_framebuffer((200, 200))
-    renderer.render(fbo, 200, 200, camera)
-    img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3).astype(int)
-    red = (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)
-    row = red[100]
-    assert 4 <= row.sum() <= 9  # ~6 px wide
-    assert red[:, 100].sum() > 60  # 1.1 km seen from 3 km with 50 deg fov ~ 78 px
+    # widths are given for 1080p and scale with the image height (step 18.5)
+    for size, low, high in ((1080, 4, 9), (540, 2, 5)):
+        fbo = gl_ctx.simple_framebuffer((size, size))
+        renderer.render(fbo, size, size, camera)
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8)
+        img = img.reshape(size, size, 3).astype(int)
+        red = (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)
+        assert low <= red[size // 2].sum() <= high  # ~6 px wide at 1080p, ~3 px at 540
+        # 1.1 km seen from 3 km with 50 deg fov ~ 0.39 of the image height
+        assert red[:, size // 2].sum() > 0.3 * size
+        fbo.release()
 
 
 def test_glow_adds_a_halo_and_leaves_clean_state(gl_ctx):
@@ -103,7 +111,8 @@ def test_glow_adds_a_halo_and_leaves_clean_state(gl_ctx):
     for pid, value in (
         ("tracks.elevation", "gpx"),
         ("tracks.height_offset", 0.0),
-        ("tracks.width", 6.0),
+        ("tracks.width", 6.0 * PX),
+        ("tracks.outline", PX),
         ("haze.aerial", 0.0),
         ("tracks.glow", 5.0),
     ):
@@ -212,8 +221,8 @@ def _top_down(gl_ctx, tracks, **props):
     renderer.set_scene(FRAME, tracks)
     renderer.store = Scene().store
     for pid, value in {"tracks.elevation": "gpx", "tracks.height_offset": 0.0,
-                       "tracks.width": 6.0, "glow.enabled": False, "haze.aerial": 0.0,
-                       "marker.visible": False,
+                       "tracks.width": 6.0 * PX, "tracks.outline": PX, "glow.enabled": False,
+                       "haze.aerial": 0.0, "marker.visible": False,
                        **props}.items():  # fmt: skip
         renderer.store.set(pid, value)
     renderer.timezone = "UTC"
@@ -227,7 +236,7 @@ def _top_down(gl_ctx, tracks, **props):
 
 def test_casing_darkens_around_the_line(gl_ctx):
     plain, _ = _top_down(gl_ctx, [straight_track()])
-    cased, _ = _top_down(gl_ctx, [straight_track()], **{"tracks.casing": 4.0})
+    cased, _ = _top_down(gl_ctx, [straight_track()], **{"tracks.casing": 4.0 * PX})
     beside = (slice(90, 110), slice(104, 107))  # just right of the ~6 px line
     assert cased[beside].mean() < plain[beside].mean() - 20
     red = lambda img: (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)  # noqa: E731
@@ -287,7 +296,7 @@ def test_depth_bias_keeps_tracks_above_coarse_terrain(gl_ctx):
         renderer.set_terrain_source(FakeTerrainData(), lod.NodeSet({10: [(int(tx), int(ty))]}))
         renderer.store = Scene().store
         for pid, value in {"tracks.elevation": "gpx", "tracks.height_offset": 0.0,
-                           "tracks.width": 6.0, "glow.enabled": False, "haze.aerial": 0.0,
+                           "tracks.width": 6.0 * PX, "glow.enabled": False, "haze.aerial": 0.0,
                            "marker.visible": False, "tracks.depth_bias": bias}.items():  # fmt: skip
             renderer.store.set(pid, value)
         renderer.timezone = "UTC"
@@ -310,7 +319,7 @@ def test_hairpins_have_no_miter_spikes(gl_ctx):
     lon = 7.0 + np.where(np.arange(n) % 2 == 0, 0.0, 0.0012)  # hairpins every point
     seg = Segment(lat, lon, np.full(n, 1500.0), np.full(n, np.datetime64("NaT", "ms")))
     img, _ = _top_down(gl_ctx, [Track("zz", Path("zz.gpx"), [seg])], **{"tracks.smoothing": 1,
-                       "tracks.width": 10.0})  # fmt: skip
+                       "tracks.width": 10.0 * PX})  # fmt: skip
     red = (img[..., 0] > img[..., 2] + 40) & (img[..., 0] > 80)
     cols = np.flatnonzero(red.any(axis=0))
     width = cols.max() - cols.min()

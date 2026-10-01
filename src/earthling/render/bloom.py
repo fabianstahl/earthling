@@ -35,13 +35,17 @@ class Bloom:
         self.size = size
 
     def run(
-        self, source: moderngl.Texture, fullscreen, radius: float, levels: int
+        self, source: moderngl.Texture, fullscreen, radius: float, levels: int, skip: int = 0
     ) -> moderngl.Texture:
-        """``fullscreen(name) -> program`` draws a fullscreen pass (the renderer's helper)."""
-        levels = max(1, min(levels, len(self.levels)))
+        """``fullscreen(name) -> program`` draws a fullscreen pass (the renderer's helper).
+
+        ``skip``: finest levels left out of the sum (one per doubling of the image height over
+        1080p), so the glow keeps its size and strength relative to the image."""
+        skip = max(0, min(skip, len(self.levels) - 1))
+        levels = max(1, min(levels, len(self.levels) - skip))
         down = fullscreen("bloom_down")
         src = source
-        for tex, fbo in self.levels[:levels]:
+        for tex, fbo in self.levels[: skip + levels]:
             fbo.use()
             self.ctx.viewport = (0, 0, *tex.size)
             src.use(0)
@@ -52,7 +56,7 @@ class Bloom:
         up = fullscreen("bloom_up")
         self.ctx.enable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.ONE, moderngl.ONE
-        for i in range(levels - 1, 0, -1):
+        for i in range(skip + levels - 1, skip, -1):
             small, _ = self.levels[i]
             _, target = self.levels[i - 1]
             target.use()
@@ -65,7 +69,7 @@ class Bloom:
             fullscreen.draw("bloom_up")
         self.ctx.disable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-        return self.levels[0][0]
+        return self.levels[skip][0]
 
     def release(self) -> None:
         for tex, fbo in self.levels:

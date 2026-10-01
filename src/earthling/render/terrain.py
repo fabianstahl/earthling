@@ -37,6 +37,13 @@ from earthling.render.shader_library import ShaderLibrary
 log = logging.getLogger(__name__)
 
 MESH_GRID = 64  # intervals per tile edge
+# overlay sizes in pixels (given for 1080p): scaled with the image height when drawing
+PIXEL_UNIFORMS = (
+    ("u_border_width", "borders.width"),
+    ("u_border_glow", "borders.glow"),
+    ("u_region_width", "borders.region_width"),
+    ("u_contour_width", "contours.width"),
+)
 # texture unit per tile source (0 = heightmap, 2 = optical depth LUT, 3 = shadow atlas)
 TEXTURE_UNITS = {"imagery": 1, "topo": 4, "borders": 5}
 PARENT_HEIGHTMAP_UNIT = 6  # geomorphing: the parent node's heightmap
@@ -534,6 +541,8 @@ class TerrainLayer:
 
     def update(self, camera: Camera, view_proj, viewport_height: int) -> lod.Selection | None:
         """Select nodes, upload finished ones within the budget and request missing ones."""
+        # line widths of the overlays are given for 1080p and scale with the image height
+        self.pixel_scale = viewport_height / 1080.0
         if self.nodes is None or self.data is None or self.frame is None:
             return None
         self._frame_no += 1
@@ -659,6 +668,9 @@ class TerrainLayer:
             _set(program, "u_debug_lod", self.debug_lod)
             if self.store is not None:
                 bind_uniforms(program, self.store)
+                scale = getattr(self, "pixel_scale", 1.0)
+                for name, pid in PIXEL_UNIFORMS:
+                    _set(program, name, float(self.store[pid]) * scale)
             for name, value in {**self.lighting_uniforms, **(extra_uniforms or {})}.items():
                 if name == "_matrices":
                     # to_list() yields columns -> column-major (bytes(mat) is row-major!)

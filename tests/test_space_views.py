@@ -44,3 +44,17 @@ def test_lighting_and_atmosphere_follow_the_camera(gl_ctx):
     assert np.allclose(m @ (up / np.linalg.norm(up)), (0.0, 0.0, 1.0), atol=1e-6)
     # the sun is the same direction in space, only the local elevation differs
     assert np.allclose(renderer.lighting.sun_direction, sun_near, atol=2e-3)
+
+
+def test_bloom_keeps_its_size_relative_to_the_image(gl_ctx):
+    from earthling.render.bloom import Bloom
+    from earthling.render.renderer import Renderer
+
+    renderer = Renderer(gl_ctx)
+    bloom = Bloom(gl_ctx)
+    bloom.ensure(512, 288)
+    source = gl_ctx.texture((512, 288), 4, dtype="f2")
+    full = bloom.run(source, renderer.fullscreen, 1.0, 4)
+    coarse = bloom.run(source, renderer.fullscreen, 1.0, 4, skip=1)
+    assert coarse.size[1] * 2 == full.size[1]  # one level coarser, same number of levels
+    assert bloom.run(source, renderer.fullscreen, 1.0, 99, skip=99) is not None

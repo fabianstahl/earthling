@@ -45,6 +45,8 @@ class MarkerLayer:
             from earthling.core.properties import bind_uniforms
 
             bind_uniforms(program, store)
+            # given for 1080p, scales with the image height (like the tracks)
+            _set(program, "u_marker_size", float(store["marker.size"]) * height / 1080.0)
         self.ctx.enable(moderngl.BLEND)
         if glow_pass:
             self.ctx.blend_func = moderngl.ONE, moderngl.ONE
