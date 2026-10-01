@@ -50,10 +50,10 @@ vec3 stars(vec3 dir) {
 
 void main() {
     vec4 far = u_inv_view_proj * vec4(v_ndc, 1.0, 1.0);
-    vec3 dir = normalize(far.xyz / far.w);
+    vec3 dir = u_atm_frame * normalize(far.xyz / far.w);
     float r = PLANET_RADIUS + max(u_camera_height, 1.0);
     vec3 origin = vec3(0.0, 0.0, r);
-    vec3 sun = normalize(u_sun_dir);
+    vec3 sun = u_atm_frame * normalize(u_sun_dir);
     bool below_horizon = hits_ahead(ray_sphere(origin, dir, PLANET_RADIUS));
     // the sky-view LUT is symmetric around the sun's azimuth
     float light_view_cos = 1.0;

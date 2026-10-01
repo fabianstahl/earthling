@@ -507,6 +507,8 @@ class TerrainLayer:
         """``coarse``: the (4x coarser) selection used for shadow casters."""
         assert self.nodes is not None
         planes = lod.frustum_planes(view_proj)
+        if not coarse:  # (coarse: an orthographic light frustum)
+            planes = lod.with_depth_planes(planes, camera.forward, camera.near, camera.far)
         ppr = viewport_height / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
         params = self.params
         if coarse:

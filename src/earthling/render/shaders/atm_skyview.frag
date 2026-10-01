@@ -10,7 +10,7 @@ void main() {
     float r = R_BOTTOM + max(u_camera_height, 1.0);
     float view_zenith_cos, light_view_cos;
     skyview_params(v_uv, r, view_zenith_cos, light_view_cos);
-    vec3 sun_enu = normalize(u_sun_dir);
+    vec3 sun_enu = u_atm_frame * normalize(u_sun_dir);
     // local frame: +x towards the sun's azimuth
     vec3 sun = vec3(sqrt(max(1.0 - sun_enu.z * sun_enu.z, 0.0)), 0.0, sun_enu.z);
     float s = sqrt(max(1.0 - view_zenith_cos * view_zenith_cos, 0.0));

@@ -81,7 +81,8 @@ class AtmosphereLuts:
         self.ctx.viewport = (0, 0, *fbo.size)
         self.passes.draw(f"atm_{name}")
 
-    def update(self, rayleigh: float, mie: float, camera_height: float, sun_dir, inv_view_proj):
+    def update(self, rayleigh: float, mie: float, camera_height: float, sun_dir, inv_view_proj,
+               atm_frame=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)):  # fmt: skip
         """Refresh the LUTs for this frame (``inv_view_proj``: camera-relative, glm.mat4)."""
         self.ctx.disable(moderngl.BLEND | moderngl.DEPTH_TEST)
         medium = {"u_rayleigh_scale": float(rayleigh), "u_mie_scale": float(mie)}
@@ -94,7 +95,8 @@ class AtmosphereLuts:
             self.static_updates += 1
         self.bind()
         view = {**medium, "u_camera_height": float(camera_height),
-                "u_sun_dir": tuple(float(v) for v in sun_dir)}  # fmt: skip
+                "u_sun_dir": tuple(float(v) for v in sun_dir),
+                "u_atm_frame": tuple(float(v) for v in atm_frame)}  # fmt: skip
         self._pass("skyview", view)
         program = self.shaders.compute("atm_aerial")
         for name, value in {**self.uniforms(), **view}.items():

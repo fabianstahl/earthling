@@ -495,6 +495,21 @@ plane grows with the camera height up to the horizon seen from space.
 Built-in icons for airports, ferries, buses, hotels, taxis, sights, a finish flag and a summit.
 → A journey's stops are told with symbols.
 
+**18.3 Views from space**
+Tile bounds of the coarse world tiles sample the whole tile (a zoom 0 tile's 3×3 points lie on
+one meridian plane and culled the globe). Exact near/far culling planes and depth clamping
+(every pass writes its own logarithmic depth; with 0.5 m to 16 000 km the float32 projection
+cut holes into distant terrain). Sun light, sky, aerial perspective, height fog and cloud
+heights use the camera's own local vertical and location instead of the frame origin's.
+→ The Earth as a globe with its atmosphere rim, down to the streets of a city in one shot.
+
+**18.4 Travel lines**
+Several walked groups form one journey in time order (e.g. hikes, bus rides, ferries, flights:
+progress, the sun from the GPX time and the drawn part follow the timestamps across groups).
+Per group `elevation = "gpx"` keeps the file's heights (a flight arc in the air), and a
+"Dotted" style draws round dots that neither crawl nor pop while zooming.
+→ Flights and bus rides appear as dotted lines between the hikes, at the right time.
+
 ---
 
 ## 5. Risks & notes

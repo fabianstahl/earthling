@@ -55,7 +55,8 @@ vec2 shell_segment(vec3 origin, vec3 dir, float inner, float outer) {
 }
 
 float total_density_lod(vec3 rel, float lod, float detail, out float hf_out) {
-    float h = length(vec3(0.0, 0.0, R_BOTTOM + max(u_camera_height, 1.0)) + rel) - R_BOTTOM;
+    float h = length(vec3(0.0, 0.0, R_BOTTOM + max(u_camera_height, 1.0)) + u_atm_frame * rel)
+            - R_BOTTOM;
     vec2 xy = u_camera_enu.xy + rel.xy;
     float d = 0.0;
     hf_out = 0.5;
@@ -70,7 +71,8 @@ float total_density_lod(vec3 rel, float lod, float detail, out float hf_out) {
 }
 
 vec3 layer_albedo(vec3 rel) {
-    float h = length(vec3(0.0, 0.0, R_BOTTOM + max(u_camera_height, 1.0)) + rel) - R_BOTTOM;
+    float h = length(vec3(0.0, 0.0, R_BOTTOM + max(u_camera_height, 1.0)) + u_atm_frame * rel)
+            - R_BOTTOM;
     vec3 albedo = vec3(0.0);
     float w = 0.0;
     for (int i = 0; i < u_layer_count; ++i) {
@@ -110,7 +112,7 @@ void main() {
     float weighted_t = 0.0, weight = 0.0;
     for (int i = 0; i < u_layer_count && transmittance > 0.01; ++i) {
         vec4 s = u_layer_shape[i];
-        vec2 seg = shell_segment(origin, dir, R_BOTTOM + s.x, R_BOTTOM + s.x + s.y);
+        vec2 seg = shell_segment(origin, u_atm_frame * dir, R_BOTTOM + s.x, R_BOTTOM + s.x + s.y);
         seg.y = min(seg.y, scene);
         if (seg.y <= seg.x) continue;
         float len = seg.y - seg.x;

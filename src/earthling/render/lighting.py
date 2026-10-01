@@ -59,6 +59,8 @@ class Lighting:
     fog_ambient: tuple[float, float, float] = (0.0, 0.0, 0.0)
     fog_sun: tuple[float, float, float] = (0.0, 0.0, 0.0)
     fog_density: float = 0.0  # per metre
+    # world ENU -> ENU at the camera (planet "up" = +z for the atmosphere), column-major mat3
+    atm_frame: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 
 
 def compute_lighting(
@@ -129,4 +131,5 @@ def lighting_uniforms(lighting: Lighting) -> dict[str, object]:
         "u_fog_sun": lighting.fog_sun,
         "u_fog_density": lighting.fog_density,
         "u_optical_depth": OPTICAL_DEPTH_UNIT,
+        "u_atm_frame": lighting.atm_frame,
     }

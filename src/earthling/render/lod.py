@@ -80,7 +80,10 @@ class NodeBounds:
 
 def node_bounds(frame: LocalFrame, key: TileKey, min_h: float, max_h: float) -> NodeBounds:
     z, x, y = key
-    u = np.array([0.0, 0.5, 1.0])
+    # tiles of the coarse world pyramid span up to the whole globe: sample them densely
+    # (3 x 3 points of a zoom 0 tile all lie on one meridian plane)
+    n = 3 if z >= 5 else 9
+    u = np.linspace(0.0, 1.0, n)
     tx, ty = np.meshgrid(x + u, y + u)
     lon, lat = tile_to_lonlat(tx.ravel(), ty.ravel(), z)
     pts = np.concatenate(
@@ -91,7 +94,9 @@ def node_bounds(frame: LocalFrame, key: TileKey, min_h: float, max_h: float) -> 
     )
     center = (pts.min(axis=0) + pts.max(axis=0)) / 2
     radius = float(np.linalg.norm(pts - center, axis=1).max())
-    lat_c = float(lat[4])
+    if n > 3:  # the surface bulges between the samples
+        radius *= 1.03
+    lat_c = float(lat[len(lat) // 2])
     width = 2 * MERCATOR_HALF / 2**z * math.cos(math.radians(lat_c))
     return NodeBounds(center, radius, width)
 
@@ -103,6 +108,18 @@ def frustum_planes(view_proj: glm.mat4) -> np.ndarray:
     planes = np.array(rows)
     planes /= np.linalg.norm(planes[:, :3], axis=1, keepdims=True)
     return planes
+
+
+def with_depth_planes(planes: np.ndarray, forward, near: float, far: float) -> np.ndarray:
+    """Replace the near and far planes of a perspective frustum by exact ones. Extracted
+    from the (float32) projection matrix they cancel out once far / near is large (views from
+    space: 0.5 m to 16 000 km), and the far plane culls the whole globe."""
+    f = np.asarray(forward, dtype=np.float64)
+    f = f / np.linalg.norm(f)
+    out = planes.copy()
+    out[4] = (*f, -near)
+    out[5] = (*(-f), far)
+    return out
 
 
 def sphere_visible(planes: np.ndarray, center_rel: np.ndarray, radius: float) -> bool:

@@ -42,7 +42,8 @@ float cloud_density(int i, vec2 xy, float h) {
 
 float weather_height(vec3 rel, float camera_height) {
     // camera-relative ENU offset -> height above sea level (earth curvature included)
-    return camera_height + rel.z + dot(rel.xy, rel.xy) / (2.0 * 6371e3);
+    vec3 l = u_atm_frame * rel;  // the camera's local vertical
+    return camera_height + l.z + dot(l.xy, l.xy) / (2.0 * 6371e3);
 }
 
 // Optical depth towards the sun through the layers above height h (one sample per layer).
@@ -51,7 +52,7 @@ float weather_height(vec3 rel, float camera_height) {
 float layers_optical_depth(vec2 xy, float h, vec3 sun, bool above_only) {
     float tau = 0.0;
     // continuous down to the horizon (a cut-off at low sun made clouds pop at sunrise)
-    float sz = max(sun.z, 0.02);
+    float sz = max((u_atm_frame * sun).z, 0.02);
     for (int i = 0; i < u_layer_count; ++i) {
         vec4 shape = u_layer_shape[i];
         float mid = shape.x + 0.5 * shape.y;

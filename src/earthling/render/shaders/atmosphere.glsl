@@ -2,6 +2,9 @@
 // Coordinates: metres, planet centre at origin, local "up" = +z.
 // Constants and the optical depth LUT layout must match render/atmosphere.py.
 const float PLANET_RADIUS = 6371e3;
+// world ENU -> ENU at the camera: the atmosphere's +z is the camera's local vertical (far from
+// the frame origin, e.g. seen from space, the world's +z is not)
+uniform mat3 u_atm_frame = mat3(1.0);
 const float ATMOSPHERE_RADIUS = 6471e3;
 const float ATMOSPHERE_HEIGHT = ATMOSPHERE_RADIUS - PLANET_RADIUS;
 const float RAYLEIGH_SCALE_HEIGHT = 8e3;

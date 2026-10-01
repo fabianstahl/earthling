@@ -173,7 +173,7 @@ void main() {
     }
 
     // Hemispherical ambient (sky from above, bounce light from below) + direct sun.
-    vec3 ambient = mix(u_ground_ambient, u_sky_ambient, n.z * 0.5 + 0.5);
+    vec3 ambient = mix(u_ground_ambient, u_sky_ambient, li.normal_local.z * 0.5 + 0.5);
     vec3 lit = ambient + u_sun_radiance * diffuse;
     // "flat" presentation: same overall brightness as the scene, without relief
     vec3 flat_light = mix(u_ground_ambient, u_sky_ambient, 0.75) + u_sun_radiance * 0.65;

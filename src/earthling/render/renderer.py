@@ -122,6 +122,9 @@ class SceneTarget:
         self.glow_clear_fbo = self.color_fbo = None
 
 
+GL_DEPTH_CLAMP = 0x864F
+
+
 class Renderer:
     def __init__(self, ctx: moderngl.Context) -> None:
         self.ctx = ctx
@@ -209,17 +212,24 @@ class Renderer:
         self.outlines.visible = s["view.show_outlines"]
         self.tracks.visible = s["tracks.visible"]
         if self.frame is not None:
-            height = float(self.frame.enu_to_geodetic(camera.position)[2])
+            lat, lon, height = (float(v) for v in self.frame.enu_to_geodetic(camera.position))
             self.camera_height = height
             camera.far = far_for_height(height)
+            # sun light and atmosphere where the camera is: far from the frame origin (views
+            # from space, long flights) its "up" and the local sun elevation differ
             self.lighting = compute_lighting(
                 s,
-                self.frame.lat,
-                self.frame.lon,
+                lat,
+                lon,
                 self.timezone,
                 camera_height=height,
                 when=self.track_time(),
             )
+            to_local = LocalFrame(lat, lon, 0.0).rotation @ self.frame.rotation.T
+            self.lighting.sun_direction = tuple(
+                float(v) for v in to_local.T @ np.asarray(self.lighting.sun_direction)
+            )
+            self.lighting.atm_frame = tuple(float(v) for v in to_local.T.ravel())
             self.weather.update(s, self.animation_time)
             self.weather.dim_lighting(s, self.lighting)
             self.lightning.update(s, self.animation, self.animation_time, camera, self.frame,
@@ -234,6 +244,10 @@ class Renderer:
         self.ctx.enable_only(moderngl.NOTHING)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self.ctx.depth_func = "<"
+        # every pass writes its own (logarithmic) depth: no clipping at the projection's near /
+        # far planes, whose float32 depth rounds past w for distant vertices once far / near is
+        # huge (views from space) and cut holes into the terrain
+        self.ctx.enable_direct(GL_DEPTH_CLAMP)
 
     def prepare(self, camera: Camera, width: int, height: int, timeout_s: float = 300.0) -> bool:
         """Load everything the frame needs at full detail (camera view and shadow casters),
@@ -328,6 +342,7 @@ class Renderer:
             self.lighting.camera_height,
             self.lighting.sun_direction,
             glm.inverse(view_proj),
+            self.lighting.atm_frame,
         )
         self._atmosphere_uniforms = {
             **self.atmosphere.uniforms(),

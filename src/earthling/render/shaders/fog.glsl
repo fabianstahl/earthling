@@ -26,7 +26,7 @@ float phase_hg(float mu, float g) {
 float fog_optical_depth(vec3 dir, float dist) {
     float b = 1.0 / max(u_fog_falloff, 1.0);
     float start = u_fog_density * exp(-b * (u_camera_height - u_fog_base));
-    float k = b * dir.z * dist;
+    float k = b * (u_atm_frame * dir).z * dist;
     // integral of exp(-k s) over s in [0, 1], stable for small k
     float shape = abs(k) > 1e-4 ? (1.0 - exp(-k)) / k : 1.0 - 0.5 * k;
     return start * dist * shape;
