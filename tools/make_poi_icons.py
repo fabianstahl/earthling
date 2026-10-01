@@ -227,6 +227,134 @@ def draw_cold() -> Image.Image:
     return finish(shadow(img))
 
 
+def _rotated(points, angle_deg: float, cx: float = 0.5, cy: float = 0.5):
+    """Rotate icon coordinates (0..1) around (cx, cy), clockwise on screen."""
+    a = math.radians(angle_deg)
+    ca, sa = math.cos(a), math.sin(a)
+    return [p(cx + (x - cx) * ca - (y - cy) * sa, cy + (x - cx) * sa + (y - cy) * ca)
+            for x, y in points]  # fmt: skip
+
+
+def draw_airport() -> Image.Image:
+    """Airport: an airliner seen from above, heading up and to the right."""
+    img, d = badge((45, 95, 175))
+    ink = (30, 45, 80, 255)
+    plane = [(0.5, 0.2), (0.535, 0.26), (0.535, 0.43), (0.78, 0.56), (0.78, 0.61), (0.535, 0.54),
+             (0.535, 0.7), (0.6, 0.76), (0.6, 0.8), (0.5, 0.77), (0.4, 0.8), (0.4, 0.76),
+             (0.465, 0.7), (0.465, 0.54), (0.22, 0.61), (0.22, 0.56), (0.465, 0.43),
+             (0.465, 0.26)]  # fmt: skip
+    d.polygon(_rotated(plane, 45.0), fill=ink)
+    return finish(shadow(img))
+
+
+def draw_ferry() -> Image.Image:
+    """Ferry / pier: a ship on the waves."""
+    img, d = badge((20, 140, 175))
+    ink = (25, 50, 75, 255)
+    d.polygon([p(0.22, 0.55), p(0.78, 0.55), p(0.7, 0.67), p(0.3, 0.67)], fill=ink)  # hull
+    d.rectangle((*p(0.34, 0.44), *p(0.66, 0.55)), fill=ink)  # deck house
+    d.rectangle((*p(0.42, 0.36), *p(0.58, 0.44)), fill=ink)  # bridge
+    d.rectangle((*p(0.6, 0.3), *p(0.65, 0.44)), fill=(220, 60, 50, 255))  # funnel
+    for x in (0.38, 0.47, 0.56):  # windows
+        d.rectangle((*p(x, 0.47), *p(x + 0.05, 0.51)), fill=(255, 255, 255, 255))
+    wave = [p(0.24 + 0.52 * u, 0.73 + 0.022 * math.sin(u * 6.0 * math.pi)) for u in
+            (i / 40.0 for i in range(41))]  # fmt: skip
+    d.line(wave, fill=(20, 140, 175, 255), width=6 * SS, joint="curve")
+    return finish(shadow(img))
+
+
+def draw_bus() -> Image.Image:
+    """Bus station: a coach from the front."""
+    img, d = badge((205, 55, 60))
+    ink = (40, 40, 48, 255)
+    d.rounded_rectangle((*p(0.31, 0.25), *p(0.69, 0.7)), radius=16 * SS, fill=ink)
+    d.rounded_rectangle((*p(0.35, 0.31), *p(0.65, 0.5)), radius=6 * SS,
+                        fill=(225, 235, 245, 255))  # windscreen  # fmt: skip
+    for x in (0.39, 0.61):  # headlights
+        d.ellipse((*p(x - 0.035, 0.57), *p(x + 0.035, 0.64)), fill=(250, 220, 90, 255))
+    for x in (0.37, 0.63):  # wheels
+        d.rounded_rectangle((*p(x - 0.045, 0.68), *p(x + 0.045, 0.77)), radius=4 * SS, fill=ink)
+    d.rectangle((*p(0.27, 0.33), *p(0.31, 0.42)), fill=ink)  # mirrors
+    d.rectangle((*p(0.69, 0.33), *p(0.73, 0.42)), fill=ink)
+    return finish(shadow(img))
+
+
+def draw_hotel() -> Image.Image:
+    """Hotel / hostel: a bed with a pillow."""
+    img, d = badge((125, 70, 175))
+    ink = (50, 35, 80, 255)
+    d.rectangle((*p(0.24, 0.32), *p(0.29, 0.72)), fill=ink)  # headboard
+    d.rectangle((*p(0.24, 0.55), *p(0.77, 0.63)), fill=ink)  # frame
+    d.rectangle((*p(0.72, 0.55), *p(0.77, 0.72)), fill=ink)  # foot
+    d.rounded_rectangle((*p(0.31, 0.43), *p(0.43, 0.54)), radius=6 * SS, fill=ink)  # pillow
+    d.rounded_rectangle((*p(0.45, 0.42), *p(0.77, 0.54)), radius=8 * SS,
+                        fill=(125, 70, 175, 255))  # blanket  # fmt: skip
+    return finish(shadow(img))
+
+
+def draw_taxi() -> Image.Image:
+    """Taxi: a car from the side with a roof sign."""
+    img, d = badge((245, 190, 25))
+    ink = (35, 35, 40, 255)
+    d.polygon([p(0.36, 0.44), p(0.62, 0.44), p(0.7, 0.53), p(0.78, 0.55), p(0.78, 0.65),
+               p(0.22, 0.65), p(0.22, 0.55), p(0.29, 0.53)], fill=ink)  # fmt: skip
+    d.polygon([p(0.38, 0.47), p(0.48, 0.47), p(0.48, 0.53), p(0.33, 0.53)],
+              fill=(225, 235, 245, 255))  # fmt: skip
+    d.polygon([p(0.51, 0.47), p(0.6, 0.47), p(0.66, 0.53), p(0.51, 0.53)],
+              fill=(225, 235, 245, 255))  # fmt: skip
+    d.rounded_rectangle((*p(0.43, 0.36), *p(0.56, 0.43)), radius=3 * SS, fill=ink)  # sign
+    d.rectangle((*p(0.455, 0.38), *p(0.535, 0.41)), fill=(245, 190, 25, 255))
+    for x in (0.34, 0.66):
+        d.ellipse((*p(x - 0.065, 0.6), *p(x + 0.065, 0.73)), fill=ink)
+        d.ellipse((*p(x - 0.03, 0.635), *p(x + 0.03, 0.695)), fill=(190, 190, 195, 255))
+    return finish(shadow(img))
+
+
+def _star(cx: float, cy: float, r_out: float, r_in: float):
+    pts = []
+    for k in range(10):
+        a = -math.pi / 2 + k * math.pi / 5
+        r = r_out if k % 2 == 0 else r_in
+        pts.append(p(cx + r * math.cos(a), cy + r * math.sin(a)))
+    return pts
+
+
+def draw_attraction() -> Image.Image:
+    """Sight / attraction: a star."""
+    img, d = badge((225, 60, 120))
+    d.polygon(_star(0.5, 0.52, 0.27, 0.115), fill=(225, 60, 120, 255))
+    return finish(shadow(img))
+
+
+def draw_finish() -> Image.Image:
+    """Finish line: a chequered flag."""
+    img, d = badge((40, 40, 46))
+    d.line([p(0.34, 0.26), p(0.34, 0.76)], fill=(60, 60, 60, 255), width=7 * SS)
+    x0, y0, cw, ch = 0.355, 0.28, 0.07, 0.065
+    for row in range(4):
+        for col in range(5):
+            dark = (row + col) % 2 == 0
+            wave = 0.012 * math.sin((col / 4.0) * math.pi)
+            box = (*p(x0 + col * cw, y0 + row * ch - wave), *p(x0 + (col + 1) * cw,
+                   y0 + (row + 1) * ch - wave))  # fmt: skip
+            d.rectangle(box, fill=(30, 30, 35, 255) if dark else (255, 255, 255, 255))
+    d.rectangle((*p(x0, y0 - 0.012), *p(x0 + 5 * cw, y0 + 4 * ch)), outline=(30, 30, 35, 255),
+                width=2 * SS)  # fmt: skip
+    return finish(shadow(img))
+
+
+def draw_peak() -> Image.Image:
+    """Summit: a mountain with a flag on top."""
+    img, d = badge((70, 125, 75))
+    d.polygon([p(0.2, 0.72), p(0.48, 0.32), p(0.58, 0.45), p(0.64, 0.4), p(0.8, 0.72)],
+              fill=(80, 105, 85, 255))  # fmt: skip
+    d.polygon([p(0.48, 0.32), p(0.55, 0.42), p(0.5, 0.4), p(0.45, 0.44), p(0.41, 0.42)],
+              fill=(170, 200, 165, 255))  # fmt: skip
+    d.line([p(0.48, 0.33), p(0.48, 0.18)], fill=(60, 60, 60, 255), width=5 * SS)
+    d.polygon([p(0.485, 0.18), p(0.6, 0.215), p(0.485, 0.25)], fill=(225, 50, 45, 255))
+    return finish(shadow(img))
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     draw_pin().save(OUT / "pin.png")
@@ -239,6 +367,14 @@ def main() -> None:
     draw_couscous().save(OUT / "couscous.png")
     draw_summit_decision().save(OUT / "summit.png")
     draw_cold().save(OUT / "cold.png")
+    draw_airport().save(OUT / "airport.png")
+    draw_ferry().save(OUT / "ferry.png")
+    draw_bus().save(OUT / "bus.png")
+    draw_hotel().save(OUT / "hotel.png")
+    draw_taxi().save(OUT / "taxi.png")
+    draw_attraction().save(OUT / "attraction.png")
+    draw_finish().save(OUT / "finish.png")
+    draw_peak().save(OUT / "peak.png")
     storm = [draw_storm_frame(i / 30) for i in range(30)]
     storm[0].save(OUT / "storm.png", save_all=True, append_images=storm[1:], duration=60,
                   loop=0, disposal=0, blend=0, format="PNG")  # fmt: skip

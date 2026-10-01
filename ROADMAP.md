@@ -481,6 +481,20 @@ Built-in icons for power/charging, bad weather and a supermarket; icons without 
 multi-line captions (e.g. stage markers with name, length and ascent).
 → Symbols tell the story without text.
 
+### Phase 18 – Journeys (trips with flights, buses and ferries)
+
+**18.1 Continental views**
+An optional `[world]` section adds a coarse pyramid of the whole globe (imagery z0–z4, DEM
+z0–z3, a few MB), so views from space never show holes outside the tracks' areas. A scene can
+carry its own frame origin (`"origin": [lat, lon]`): far from the project origin the ENU "up"
+tilts away from the local vertical (5° at 600 km), which tilts fog and cloud layers. The far
+plane grows with the camera height up to the horizon seen from space.
+→ One project spans a whole country (and the flight there); every scene is level where it plays.
+
+**18.2 Travel icons**
+Built-in icons for airports, ferries, buses, hotels, taxis, sights, a finish flag and a summit.
+→ A journey's stops are told with symbols.
+
 ---
 
 ## 5. Risks & notes
