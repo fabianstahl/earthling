@@ -21,8 +21,9 @@ uniform float u_pixel_angle = 0.001;
 float hash11(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 
 void main() {
-    vec4 far = u_inv_view_proj * vec4(v_ndc, 1.0, 1.0);
-    vec3 dir = normalize(far.xyz / far.w);
+    // a point on the near plane: the far plane is numerically unstable for huge far / near
+    vec4 ray = u_inv_view_proj * vec4(v_ndc, -1.0, 1.0);
+    vec3 dir = normalize(ray.xyz / ray.w);
     float depth = texture(u_depth, v_uv).r;
     float scene = 1e9;
     if (depth < 0.999999) {

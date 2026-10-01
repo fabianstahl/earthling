@@ -49,8 +49,9 @@ vec3 stars(vec3 dir) {
 }
 
 void main() {
-    vec4 far = u_inv_view_proj * vec4(v_ndc, 1.0, 1.0);
-    vec3 dir = u_atm_frame * normalize(far.xyz / far.w);
+    // a point on the near plane: the far plane is numerically unstable for huge far / near
+    vec4 ray = u_inv_view_proj * vec4(v_ndc, -1.0, 1.0);
+    vec3 dir = u_atm_frame * normalize(ray.xyz / ray.w);
     float r = PLANET_RADIUS + max(u_camera_height, 1.0);
     vec3 origin = vec3(0.0, 0.0, r);
     vec3 sun = u_atm_frame * normalize(u_sun_dir);
