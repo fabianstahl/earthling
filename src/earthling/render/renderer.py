@@ -492,10 +492,16 @@ class Renderer:
             return None
         from datetime import UTC, datetime, timedelta
 
-        head = path.distance_for(s["progress.head"], s["progress.mode"])
-        seconds = path.time_at(head)
-        if seconds is None:
-            return None
+        if s["progress.mode"] == "time":
+            # the head's own time: keeps running between tracks (a wait, a bus ride), and
+            # where one track ends and the next starts at the same place it is unambiguous
+            t = path.time[np.isfinite(path.time)]
+            seconds = float(t[0] + min(max(s["progress.head"], 0.0), 1.0) * (t[-1] - t[0]))
+        else:
+            head = path.distance_for(s["progress.head"], s["progress.mode"])
+            seconds = path.time_at(head)
+            if seconds is None:
+                return None
         return datetime.fromtimestamp(seconds, tz=UTC) + timedelta(hours=s["sun.track_offset"])
 
     def read_depth(self, px: int, py: int) -> float | None:

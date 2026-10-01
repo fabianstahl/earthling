@@ -107,3 +107,39 @@ labels = false
     # heights from the GPX file: 9 km up in the middle
     assert np.nanmax(path.tracks[0].ele) == pytest.approx(9000.0, abs=1.0)
     assert "trackgroup.flight.dots" in {d.id for d in session.track_group_properties()}
+
+
+def test_sun_time_follows_the_head_time_between_tracks(gl_ctx, tmp_path):
+    from earthling.core.scene import Scene
+    from earthling.render.renderer import Renderer
+    from earthling.render.tracks import TrackGeometryOptions
+
+    (tmp_path / "flight").mkdir()
+    (tmp_path / "flight" / "f.gpx").write_text(FLIGHT_GPX, encoding="utf-8")
+    (tmp_path / "earthling.toml").write_text(f"""
+[project]
+cache_dir = "{(tmp_path / "cache").as_posix()}"
+[[tracks]]
+name = "own"
+gpx = "{(DEMO / "gpx").as_posix()}"
+[[tracks]]
+name = "flight"
+gpx = "flight"
+elevation = "gpx"
+labels = false
+""", encoding="utf-8")  # fmt: skip
+    session = Session(Project.load(tmp_path))
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(session.frame, session.all_tracks)
+    renderer.tracks.ensure_built(TrackGeometryOptions(smoothing=1))
+    scene = Scene()
+    scene.set_dynamic("track_groups", session.track_group_properties())
+    renderer.store = scene.store
+    path = renderer.tracks.path
+    t = path.time[np.isfinite(path.time)]
+    scene.store.set("sun.follow_track", True)
+    scene.store.set("progress.mode", "time")
+    flight_end = path.tracks[0].time[-1]
+    scene.store.set("progress.head", float((flight_end - t[0]) / (t[-1] - t[0])))
+    # at the end of the flight: its own time, not the start of the next track there
+    assert renderer.track_time().timestamp() == pytest.approx(flight_end, abs=1.0)
