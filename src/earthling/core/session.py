@@ -97,6 +97,12 @@ class Session:
             raise ConfigError(f"sources.dem: {exc.args[0]}") from exc
         if not self.dem_sources:
             raise ConfigError("sources.dem must name at least one source")
+        self.colour_reference: TileProvider | None = None
+        if self.config.sources.colour_reference:
+            try:
+                self.colour_reference = get_provider(self.config.sources.colour_reference)
+            except KeyError as exc:
+                raise ConfigError(f"sources.colour_reference: {exc.args[0]}") from exc
         self.cache = TileCache(project.cache_dir)
 
     def _load_groups(self) -> list[TrackGroup]:
@@ -319,6 +325,9 @@ class Session:
             if max_zoom is not None:
                 tiles = {z: t for z, t in tiles.items() if z <= max_zoom}
             out.append((provider, tiles))
+        if kind == "imagery" and self.colour_reference is not None:
+            top = min(self.config.sources.colour_reference_max_zoom, self.colour_reference.max_zoom)
+            out.append((self.colour_reference, {z: t for z, t in levels.items() if z <= top}))
         return out
 
     def attribution(self) -> str:
@@ -375,6 +384,15 @@ class Session:
             self.plan,
             on_demand=on_demand,
             borders=self.borders,
+            colour_reference=(
+                (
+                    self.colour_reference,
+                    self.config.sources.colour_reference_max_zoom,
+                    self.config.sources.colour_reference_strength,
+                )
+                if self.colour_reference is not None
+                else None
+            ),  # fmt: skip
         )
 
     def terrain_nodes(self):

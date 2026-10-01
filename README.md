@@ -104,6 +104,10 @@ uv run earthling check-source <project> ign_bdortho --out contact-sheet/   # tes
 | Elevation | Copernicus DEM GLO-30, AWS Terrain Tiles | IGN RGE ALTI (France), swisstopo swissALTI3D (Switzerland) |
 | Maps and labels | OpenTopoMap, OpenStreetMap (Overpass), Natural Earth borders | |
 
+Imagery services often mix mosaics per zoom range, which shows as colour rectangles from high
+up. `colour_reference = "eox_s2cloudless_2024"` in `[sources]` matches the imagery's large-scale
+colours to the consistent Sentinel-2 cloudless mosaic and keeps its detail.
+
 Please respect the terms of use of each provider. The attribution shows up in the stats
 overlay. To add a region, see [docs/adding-a-region.md](docs/adding-a-region.md).
 

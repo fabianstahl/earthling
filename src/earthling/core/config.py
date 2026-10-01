@@ -112,6 +112,11 @@ class SourcesSection(_Model):
     imagery: tuple[str, ...] = ("esri_world_imagery",)
     dem: tuple[str, ...] = ("copernicus_glo30",)
     topo: tuple[str, ...] = ("opentopomap",)
+    # match the imagery's large-scale colours to one consistent mosaic (e.g.
+    # "eox_s2cloudless_2024"): no colour jumps between zoom levels (data/harmonize.py)
+    colour_reference: str | None = None
+    colour_reference_max_zoom: int = Field(default=12, ge=0, le=15)
+    colour_reference_strength: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class TrackGroupDef(_Model):

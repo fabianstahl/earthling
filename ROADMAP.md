@@ -510,6 +510,21 @@ Per group `elevation = "gpx"` keeps the file's heights (a flight arc in the air)
 "Dotted" style draws round dots that neither crawl nor pop while zooming.
 → Flights and bus rides appear as dotted lines between the hikes, at the right time.
 
+**18.5 Resolution-independent sizes**
+Track widths, casing, outline, dashes and dots, the hiker marker, border and contour lines are
+given for 1080p and scale with the image height (like labels, POIs and the HUD already did);
+the glow leaves out its finest levels at higher resolutions, so it keeps its size relative to
+the picture.
+→ A 4K export looks like the 1080p preview, only sharper.
+
+**18.6 Colour harmonisation**
+`[sources] colour_reference = "eox_s2cloudless_2024"`: the imagery keeps its detail but takes
+its large-scale colours from one consistent mosaic (`imagery * blur(reference) / blur(imagery)`
+on a block grid that terrain levels 7-12 share; block means come from the imagery each node
+shows). Esri's per-zoom mosaics (colour rectangles, sun glint around islands, clouds over the
+sea) no longer show.
+→ Flights over a whole country without patchwork.
+
 ---
 
 ## 5. Risks & notes

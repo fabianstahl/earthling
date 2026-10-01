@@ -76,8 +76,11 @@ class TerrainData:
         max_heightmaps: int = 512,
         on_demand: bool = False,
         borders=None,
+        colour_reference: tuple[TileProvider, int, float] | None = None,
     ) -> None:
-        """``borders``: optional BorderData providing the "borders" texture source."""
+        """``borders``: optional BorderData providing the "borders" texture source.
+        ``colour_reference``: (provider, max zoom, strength) the imagery colours are matched to
+        (see data/harmonize.py)."""
         if isinstance(sources, TileProvider):
             sources = {"imagery": sources}
         self.cache = cache
@@ -95,13 +98,22 @@ class TerrainData:
         self._heightmaps: OrderedDict[TileKey, np.ndarray | None] = OrderedDict()
         self._max = max_heightmaps
         self._lock = threading.Lock()
-        self.downloaders = (
-            {p.id: TileDownloader(p, cache) for stack in self.stacks.values() for p in stack}
-            if on_demand
-            else {}
-        )
+        reference = colour_reference[0] if colour_reference is not None else None
+        providers = [p for stack in self.stacks.values() for p in stack]
+        if reference is not None:
+            providers.append(reference)
+        self.downloaders = {p.id: TileDownloader(p, cache) for p in providers} if on_demand else {}
         self.on_demand = on_demand
         self.borders = borders
+        self.colour_reference = None
+        if colour_reference is not None and "imagery" in self.stacks:
+            from earthling.data.harmonize import ColourReference
+
+            provider, max_zoom, strength = colour_reference
+            self.colour_reference = ColourReference(
+                cache, self.stacks["imagery"][0], provider, max_zoom, strength,
+                ensure_reference=self._ensurer(provider),
+            )  # fmt: skip
 
     @property
     def imagery(self) -> TileProvider:
@@ -224,6 +236,14 @@ class TerrainData:
         return True
 
     def texture_for(self, key: TileKey, source: str = "imagery") -> np.ndarray | None:
+        image = self._texture_for(key, source)
+        reference = self.colour_reference
+        if image is not None and source == "imagery" and reference is not None:
+            provider = self.stacks["imagery"][0]
+            image = reference.apply(image, *key, lambda k: self.texture_zoom_for(k, provider))
+        return image
+
+    def _texture_for(self, key: TileKey, source: str = "imagery") -> np.ndarray | None:
         if source == "borders":
             if self.borders is None:
                 return None
