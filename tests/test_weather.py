@@ -194,3 +194,19 @@ def test_cloud_shadows_are_continuous_at_sunrise(gl_ctx):
     below = render(gl_ctx, **base, sun__elevation_offset=0.45 - elevation)
     above = render(gl_ctx, **base, sun__elevation_offset=0.75 - elevation)
     assert np.abs(above - below).mean() < 10.0  # was ~38 with the cut-off
+
+
+def test_rain_haze_only_below_the_clouds():
+    """Seen from above the rain deck, the haze must not veil the whole picture (step 18.7)."""
+    from earthling.core.scene import Scene
+    from earthling.render.weather import WeatherSystem
+
+    store = Scene().store
+    store.set("rain.enabled", True)
+    store.set("rain.intensity", 0.8)
+    store.set("rain.cloud_base", 1300.0)
+    from types import SimpleNamespace
+
+    weather = SimpleNamespace(raining=lambda s: True)
+    uniforms = WeatherSystem.rain_uniforms(weather, store)
+    assert uniforms["u_rain_haze"] > 0.0 and uniforms["u_rain_haze_top"] == 1300.0

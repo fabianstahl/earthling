@@ -16,6 +16,7 @@ uniform sampler3D u_ap_transmittance;
 uniform vec2 u_ap_screen = vec2(1.0);  // render target size (froxels span the screen)
 uniform float u_ap_max_dist = 300e3;
 uniform float u_rain_haze = 0.0;      // rain: extinction per metre (reduced visibility)
+uniform float u_rain_haze_top = 1e9;  // ... below the rain clouds only (m above sea level)
 
 float phase_hg(float mu, float g) {
     float gg = g * g;
@@ -52,7 +53,15 @@ vec3 apply_atmosphere(vec3 color, vec3 dir, float dist) {
         color = color * t + light * (1.0 - t);
     }
     if (u_rain_haze > 0.0) {
-        float t = exp(-min(dist * u_rain_haze, 60.0));
+        // only the part of the ray below the cloud base: seen from above the rain clouds, the
+        // ground is not hidden behind a veil
+        float below = dist;
+        if (u_camera_height > u_rain_haze_top) {
+            float down = -(u_atm_frame * dir).z;
+            below = down > 1e-4 ? max(0.0, dist - (u_camera_height - u_rain_haze_top) / down)
+                                : 0.0;
+        }
+        float t = exp(-min(below * u_rain_haze, 60.0));
         color = color * t + u_fog_ambient * 1.1 * (1.0 - t);
     }
     return color;

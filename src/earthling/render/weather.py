@@ -134,6 +134,7 @@ class WeatherSystem:
         return {
             "u_wetness": float(store["rain.wetness"] * min(1.0, store["rain.intensity"] * 1.5)),
             "u_rain_haze": float(3.0 / visibility * store["rain.intensity"]),
+            "u_rain_haze_top": float(store["rain.cloud_base"]),
         }
 
     def dim_lighting(self, store, lighting) -> None:

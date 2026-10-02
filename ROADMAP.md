@@ -525,6 +525,12 @@ shows). Esri's per-zoom mosaics (colour rectangles, sun glint around islands, cl
 sea) no longer show.
 → Flights over a whole country without patchwork.
 
+**18.7 Rain seen from above**
+The rain haze (reduced visibility) only applies to the part of a view ray below the rain
+clouds: from above, the rain deck shows as dark clouds with the ground between them instead of a
+grey veil over the whole picture.
+→ Flights out of the rain look right.
+
 ---
 
 ## 5. Risks & notes
