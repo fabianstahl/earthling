@@ -528,8 +528,10 @@ sea) no longer show.
 **18.7 Rain seen from above**
 The rain haze (reduced visibility) only applies to the part of a view ray below the rain
 clouds: from above, the rain deck shows as dark clouds with the ground between them instead of a
-grey veil over the whole picture.
-→ Flights out of the rain look right.
+grey veil over the whole picture. The height fog integral is evaluated with bounded exponents
+(seen from hundreds of kilometres up it multiplied exp(-1000) by exp(+1000), giving frames full
+of fog colour).
+→ Flights out of the rain and over fog look right.
 
 ---
 

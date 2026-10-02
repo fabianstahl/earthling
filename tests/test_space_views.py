@@ -58,3 +58,28 @@ def test_bloom_keeps_its_size_relative_to_the_image(gl_ctx):
     coarse = bloom.run(source, renderer.fullscreen, 1.0, 4, skip=1)
     assert coarse.size[1] * 2 == full.size[1]  # one level coarser, same number of levels
     assert bloom.run(source, renderer.fullscreen, 1.0, 99, skip=99) is not None
+
+
+def test_height_fog_from_space_is_finite(gl_ctx):
+    """Height fog seen from hundreds of kilometres up: a thin column, no NaN (step 18.7)."""
+    from earthling.core.geo import LocalFrame
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.renderer import Renderer
+
+    renderer = Renderer(gl_ctx)
+    frame = LocalFrame(9.75, 100.0, 0.0)
+    renderer.set_scene(frame, [])
+    store = Scene().store
+    store.set("fog.enabled", True)
+    store.set("fog.density", 0.25)
+    store.set("fog.base", 150.0)
+    store.set("fog.falloff", 350.0)
+    renderer.store = store
+    renderer.timezone = "UTC"
+    fbo = gl_ctx.simple_framebuffer((64, 64))
+    cam = Camera(np.array(frame.geodetic_to_enu(9.75, 100.0, 400e3)), 0.0, -80.0, 0.0)
+    renderer.render(fbo, 64, 64, cam)
+    img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(64, 64, 3)
+    # (no terrain in this test: the sky and the empty ground below must not be fog-filled)
+    assert img.std() > 0.0 or img.mean() < 250

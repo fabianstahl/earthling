@@ -26,11 +26,14 @@ float phase_hg(float mu, float g) {
 // Optical depth of the height fog along a ray from the camera (dir normalised, ENU).
 float fog_optical_depth(vec3 dir, float dist) {
     float b = 1.0 / max(u_fog_falloff, 1.0);
-    float start = u_fog_density * exp(-b * (u_camera_height - u_fog_base));
     float k = b * (u_atm_frame * dir).z * dist;
-    // integral of exp(-k s) over s in [0, 1], stable for small k
-    float shape = abs(k) > 1e-4 ? (1.0 - exp(-k)) / k : 1.0 - 0.5 * k;
-    return start * dist * shape;
+    // density exponents at both ends of the ray, each bounded: the old form start * shape
+    // multiplied exp(-1000) (a camera far above the fog) with exp(+1000) and gave NaN, a frame
+    // full of fog colour (views from space)
+    float a0 = -b * (u_camera_height - u_fog_base);
+    float a1 = a0 - k;
+    if (abs(k) < 1e-4) return u_fog_density * dist * exp(min(a0, 60.0)) * (1.0 - 0.5 * k);
+    return u_fog_density * dist * (exp(min(a0, 60.0)) - exp(min(a1, 60.0))) / k;
 }
 
 // Applies aerial perspective and height fog to radiance seen at distance `dist` along `dir`.
