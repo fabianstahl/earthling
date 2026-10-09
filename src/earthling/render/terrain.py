@@ -32,6 +32,7 @@ from earthling.data.dem import GRID_INTERVALS, HEIGHTMAP_SAMPLES
 from earthling.data.terrain_data import TerrainData
 from earthling.render import lod
 from earthling.render.camera import Camera
+from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
 log = logging.getLogger(__name__)
@@ -541,8 +542,9 @@ class TerrainLayer:
 
     def update(self, camera: Camera, view_proj, viewport_height: int) -> lod.Selection | None:
         """Select nodes, upload finished ones within the budget and request missing ones."""
-        # line widths of the overlays are given for 1080p and scale with the image height
-        self.pixel_scale = viewport_height / 1080.0
+        # line widths of the overlays are given for 1080p and scale with the image size
+        self.pixel_scale = pixel_scale(getattr(self, "viewport_width", viewport_height),
+                                       viewport_height)  # fmt: skip
         if self.nodes is None or self.data is None or self.frame is None:
             return None
         self._frame_no += 1

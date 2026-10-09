@@ -558,6 +558,12 @@ head is (tzfpy), optionally with the UTC offset (`stats.show_utc_offset`), so a 
 Siberia or a flight to Asia shows the local time of the place it passes.
 → The clock jumps with every time zone the journey crosses.
 
+**19.4 Portrait and square videos**
+Export resolutions 1080 x 1920, 2160 x 3840 (9:16) and 1080 x 1080. All on-screen sizes
+(tracks, marker, labels, POIs, stats, borders, lightning, glow) scale with the shorter image
+side instead of the height, so a portrait video keeps the proportions of a landscape one.
+→ Clips for phones and social media from the same scene.
+
 ---
 
 ## 5. Risks & notes

@@ -38,6 +38,7 @@ from earthling.render.lightning import LightningLayer
 from earthling.render.marker import MarkerLayer
 from earthling.render.overlays import OutlineLayer
 from earthling.render.pois import PoiLayer
+from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.shadows import SHADOW_UNIT, ShadowMaps, compute_cascades
 from earthling.render.sky_luts import AtmosphereLuts
@@ -298,6 +299,7 @@ class Renderer:
             shift = glm.vec3(2.0 * jx / width, 2.0 * jy / height, 0.0)
             view_proj = glm.translate(glm.mat4(1.0), shift) * view_proj
         # the camera selection comes first so shadow casters never starve the view
+        self.terrain.viewport_width = width
         selection = self.terrain.update(camera, view_proj, height) if self.terrain.visible else None
         shadow_uniforms = self._render_shadows(camera, width, height)
         self._update_atmosphere(view_proj, width, height)
@@ -330,9 +332,9 @@ class Renderer:
                          self.store,
                          self.time if self.timeline_time is None else self.timeline_time,
                          self.animation)  # fmt: skip
+        self.hud.frame = self.frame
         self.hud.render(fbo, *output, self.store, self.tracks.path, self.tracks.head_m,
                         self.timezone)  # fmt: skip
-        self.hud.frame = self.frame
         self.reset_state()  # leave the context clean for Qt
 
     def _update_atmosphere(self, view_proj, width: int, height: int) -> None:
@@ -561,7 +563,7 @@ class Renderer:
     def bloom_pass(self, source: moderngl.Texture, width: int, height: int) -> moderngl.Texture:
         s = self.store
         self.bloom.ensure(width, height)
-        skip = max(0, round(math.log2(max(height, 1) / 1080.0)))  # 4K: one level coarser
+        skip = max(0, round(math.log2(pixel_scale(width, height))))  # 4K: one level coarser
         return self.bloom.run(source, self.fullscreen, s["glow.radius"], s["glow.levels"], skip)
 
     def _tonemap(self, fbo: moderngl.Framebuffer, width: int, height: int, bloom=None) -> None:

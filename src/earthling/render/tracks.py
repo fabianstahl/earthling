@@ -21,10 +21,10 @@ import numpy as np
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track, haversine_m
 from earthling.render.camera import Camera
+from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
 PRIMITIVE_RESTART = 0xFFFFFFFF
-REFERENCE_HEIGHT = 1080.0  # pixel sizes (width, casing, outline, dashes) are given for 1080p
 
 # Distinct, saturated colors for tracks / days (sRGB).
 PALETTE = [
@@ -365,7 +365,7 @@ class TrackLayer:
 
             bind_uniforms(program, store)
         # pixel sizes scale with the image height: a 4K export looks like the 1080p preview
-        self.pixel_scale = height / REFERENCE_HEIGHT
+        self.pixel_scale = pixel_scale(width, height)
         if store is not None:
             for name, pid in (("u_track_min_px", "tracks.min_px"),
                               ("u_track_outline", "tracks.outline"),

@@ -6,6 +6,7 @@ import moderngl
 import numpy as np
 
 from earthling.render.camera import Camera
+from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
 
@@ -46,7 +47,7 @@ class MarkerLayer:
 
             bind_uniforms(program, store)
             # given for 1080p, scales with the image height (like the tracks)
-            _set(program, "u_marker_size", float(store["marker.size"]) * height / 1080.0)
+            _set(program, "u_marker_size", float(store["marker.size"]) * pixel_scale(width, height))
         self.ctx.enable(moderngl.BLEND)
         if glow_pass:
             self.ctx.blend_func = moderngl.ONE, moderngl.ONE

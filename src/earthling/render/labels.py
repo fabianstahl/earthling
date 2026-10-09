@@ -20,13 +20,13 @@ from PIL import Image, ImageDraw, ImageFont
 
 from earthling.data.labels import LabelData, LabelFeature, enrich
 from earthling.render.camera import Camera
+from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
 FONT_PATH = Path(__file__).parent / "fonts" / "NotoSans-SemiBold.ttf"
 BASE_PX = 64  # glyph raster size in the atlas
 SPREAD = 16  # SDF range in atlas pixels (limits the outline width of small text)
 ATLAS_WIDTH = 1024
-REFERENCE_HEIGHT = 1080.0
 LIFT_M = 12.0  # anchors float a little above the ground
 MAX_LABELS = 1024  # candidates per frame for the occlusion test
 MAX_DECLUTTER = 400  # visible candidates considered for placement (by priority)
@@ -399,7 +399,7 @@ class LabelLayer:
     def _draw(self, fbo, idx, ndc, alpha0, width, height, store) -> None:
         if self.atlas is None:
             self.atlas = FontAtlas(self.ctx)
-        k = height / REFERENCE_HEIGHT
+        k = pixel_scale(width, height)
         size = store["labels.size"] * k
         leader = store["labels.leader"] * k
         max_count = store["labels.max_count"]
@@ -520,7 +520,7 @@ class LabelLayer:
         for name, value in (
             ("u_label_color", tuple(store["labels.color"])),
             ("u_label_outline_color", tuple(store["labels.outline_color"])),
-            ("u_label_outline", float(store["labels.outline"] * height / REFERENCE_HEIGHT)),
+            ("u_label_outline", float(store["labels.outline"] * pixel_scale(width, height))),
         ):
             if name in program:
                 program[name] = value

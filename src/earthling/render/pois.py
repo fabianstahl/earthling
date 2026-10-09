@@ -17,10 +17,10 @@ from PIL import Image
 
 from earthling.core.pois import Poi, visibility_state
 from earthling.render.labels import BASE_PX, SPREAD, FontAtlas
+from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
 ICON_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons"
-REFERENCE_HEIGHT = 1080.0
 MAX_ICON_PX = 256
 LIFT_M = 3.0  # anchor above the ground (avoids z-fighting with the terrain in the depth test)
 
@@ -168,7 +168,7 @@ class PoiLayer:
         self.last_drawn = []
         if not self.pois or store is None or frame is None or depth is None:
             return
-        k = height / REFERENCE_HEIGHT
+        k = pixel_scale(width, height)
         program = self.shaders.get("poi")
         atlas: FontAtlas = self.atlas_provider()
         for poi in self.pois:

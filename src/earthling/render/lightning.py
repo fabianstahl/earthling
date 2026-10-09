@@ -16,6 +16,8 @@ from dataclasses import dataclass
 import moderngl
 import numpy as np
 
+from earthling.render.scale import pixel_scale
+
 SLOT_S = 0.05
 DURATION_S = 0.7
 
@@ -284,7 +286,7 @@ class LightningLayer:
         for name, value in (
             ("u_viewport", (float(width), float(height))),
             ("u_log_depth_coef", camera.log_depth_coef),
-            ("u_width_px", 2.2 * height / 1080.0),
+            ("u_width_px", 2.2 * pixel_scale(width, height)),
             ("u_color", tuple(float(c) for c in color)),
         ):
             if name in program:

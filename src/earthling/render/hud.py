@@ -18,9 +18,9 @@ import numpy as np
 
 from earthling.core.gpx import cumulative_ascent_descent
 from earthling.render.labels import BASE_PX, SPREAD, FontAtlas
+from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
-REFERENCE_HEIGHT = 1080.0
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
           "September", "October", "November", "December"]  # fmt: skip
 # on-screen words per language (stats.language)
@@ -272,11 +272,11 @@ class HudLayer:
                 break
         vertices = batch.array()
         if len(vertices):
-            self._submit(fbo, vertices, width, height, store, height / REFERENCE_HEIGHT)
+            self._submit(fbo, vertices, width, height, store, pixel_scale(width, height))
 
     def _build(self, width: int, height: int, store, path, head_m: float, timezone: str):
         batch = _Batch()
-        k = height / REFERENCE_HEIGHT
+        k = pixel_scale(width, height)
         attribution_h = 0.0
         if store["stats.attribution"] and self.attribution:
             attribution_h = self._draw_attribution(batch, width, height, k, store)

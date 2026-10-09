@@ -26,7 +26,13 @@ from PyQt6.QtWidgets import (
 from earthling.export.frames import parse_resolution
 from earthling.export.video import VideoWriter, VideoWriterError, available_presets
 
-RESOLUTIONS = ["1280x720", "1920x1080", "2560x1440", "3840x2160"]
+
+def _resolutions() -> list[tuple[str, str]]:
+    """(value, label) of the export resolutions (landscape, portrait, square)."""
+    from earthling.render.parameters import EXPORT
+
+    definition = next(d for d in EXPORT if d.id == "export.resolution")
+    return list(definition.options)
 
 
 class ExportDialog(QDialog):
@@ -46,8 +52,8 @@ class ExportDialog(QDialog):
         self.preset.currentIndexChanged.connect(self._update_extension)
         form.addRow("Format", self.preset)
         self.resolution = QComboBox()
-        for res in RESOLUTIONS:
-            self.resolution.addItem(res.replace("x", " × "), res)
+        for res, label in _resolutions():
+            self.resolution.addItem(label, res)
         index = self.resolution.findData(window.scene.store["export.resolution"])
         self.resolution.setCurrentIndex(max(0, index))
         form.addRow("Resolution", self.resolution)
