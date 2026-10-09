@@ -18,6 +18,7 @@ dependencies = [
     "rasterio>=1.5.1",
     "shapely>=2.1.2",
     "tzdata>=2026.4",
+    "tzfpy>=2.1.0",
 ]
 
 [project.scripts]

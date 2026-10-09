@@ -552,6 +552,12 @@ all layers (and the slant of the rain) speed up and calm down in gusts.
 direction over 250 m before and after the head), like a pilot or a cyclist.
 → First-person flights that lean into the valley curves.
 
+**19.3 Local time on journeys**
+`stats.timezone = "position"`: the clock in the stats overlay shows the time zone where the
+head is (tzfpy), optionally with the UTC offset (`stats.show_utc_offset`), so a train across
+Siberia or a flight to Asia shows the local time of the place it passes.
+→ The clock jumps with every time zone the journey crosses.
+
 ---
 
 ## 5. Risks & notes

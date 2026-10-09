@@ -224,6 +224,7 @@ class HudLayer:
         self._buffer: moderngl.Buffer | None = None
         self._vaos: dict[int, moderngl.VertexArray] = {}
         self.last_stats: StatsAt | None = None  # values shown in the last frame (tests)
+        self.frame = None  # LocalFrame of the scene (time zone at the head position)
 
     def stats_for(self, path, timezone: str) -> HikeStats | None:
         if path is None or len(path.dist) == 0:
@@ -283,12 +284,28 @@ class HudLayer:
         if store["stats.visible"] and opacity > 0.0:
             stats = self.stats_for(path, timezone)
             if stats is not None:
-                values = stats.at(head_m if math.isfinite(head_m) else float(stats.dist[-1]))
+                head = head_m if math.isfinite(head_m) else float(stats.dist[-1])
+                values = stats.at(head)
+                if values is not None and values.time is not None:
+                    values.time = self._local_time(values.time, store, path, head)
                 self.last_stats = values
                 if values is not None:
                     self._draw_panel(batch, stats, values, head_m, width, height, k, store,
                                      attribution_h)  # fmt: skip
         return batch
+
+    def _local_time(self, t: datetime, store, path, head: float) -> datetime:
+        """The head's time in the project time zone, or (``stats.timezone`` = "position") in
+        the time zone where the head is (journeys across time zones)."""
+        if store["stats.timezone"] != "position" or self.frame is None:
+            return t
+        position = path.position_at(head)
+        if position is None:
+            return t
+        from earthling.core.timezones import timezone_at
+
+        lat, lon, _ = self.frame.enu_to_geodetic(np.asarray(position, dtype=np.float64))
+        return t.astimezone(timezone_at(float(lon), float(lat)))
 
     def _draw_attribution(self, batch, width, height, k, store) -> float:
         size = 11.0 * k
@@ -313,6 +330,10 @@ class HudLayer:
             subtitle = format_date(v.time, store["stats.date_format"], lang)
             if store["stats.show_time"]:
                 subtitle += "  " + word(lang, "time").format(t=v.time)
+                if store["stats.show_utc_offset"]:
+                    from earthling.core.timezones import utc_offset_text
+
+                    subtitle += f" ({utc_offset_text(v.time)})"
         title_size, sub_size = 28.0 * s, 19.0 * s
         columns = []
         if store["stats.show_distance"]:

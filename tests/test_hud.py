@@ -158,3 +158,30 @@ def test_day_count_title(gl_ctx):
     store.set("stats.day_style", "count")
     count = draw()
     assert hud.last_stats.day == 2 and np.abs(day - count).sum() > 1000  # other title text
+
+
+def test_local_time_where_the_head_is(gl_ctx):
+    """Journeys across time zones: the clock shows the time zone of the head's position."""
+    from earthling.core.geo import LocalFrame
+    from earthling.core.timezones import timezone_at, utc_offset_text
+
+    assert timezone_at(116.4, 39.9).key == "Asia/Shanghai"
+    assert timezone_at(37.6, 55.75).key == "Europe/Moscow"
+    assert utc_offset_text(datetime(2026, 1, 1, tzinfo=timezone_at(86.7, 27.7))) == "UTC+5:45"
+    frame = LocalFrame(52.0, 100.0, 0.0)
+    beijing = np.asarray(frame.geodetic_to_enu(39.9, 116.4, 0.0), dtype=np.float64)
+    path = fake_path()
+    path.position_at = lambda d: beijing
+    store = Scene().store
+    store.set("stats.visible", True)
+    store.set("stats.show_time", True)
+    atlas = FontAtlas(gl_ctx)
+    hud = HudLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    hud.frame = frame
+    fbo = gl_ctx.simple_framebuffer((960, 540))
+    hud.render(fbo, 960, 540, store, path, 20_000.0, "Europe/Moscow")
+    assert hud.last_stats.time.utcoffset().total_seconds() == 3 * 3600  # project zone
+    store.set("stats.timezone", "position")
+    store.set("stats.show_utc_offset", True)
+    hud.render(fbo, 960, 540, store, path, 20_000.0, "Europe/Moscow")
+    assert hud.last_stats.time.utcoffset().total_seconds() == 8 * 3600  # where the head is

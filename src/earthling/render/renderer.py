@@ -332,6 +332,7 @@ class Renderer:
                          self.animation)  # fmt: skip
         self.hud.render(fbo, *output, self.store, self.tracks.path, self.tracks.head_m,
                         self.timezone)  # fmt: skip
+        self.hud.frame = self.frame
         self.reset_state()  # leave the context clean for Qt
 
     def _update_atmosphere(self, view_proj, width: int, height: int) -> None:
