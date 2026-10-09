@@ -611,6 +611,19 @@ and the stats (of that track alone) follow it, and `stats.show_gap` shows how fa
 the second track is behind.
 → A ghost race through Berlin: 2025 against 2024, with the gap in the overlay.
 
+**19.10 Water surface**
+A water mask per LOD node from the OpenFreeMap vector tiles (OpenMapTiles `water` layer: the
+OSM coastline, lakes and river areas, up to zoom 14, a few metres accurate; a small MVT
+decoder, tiles downloaded on demand), rasterised with supersampling plus a blurred "open
+water" channel. Where the DEM is the only source the sea level is the fallback. On the water
+the imagery stays the colour of the water body and gets a Fresnel reflection of the sky
+(sky-view LUT), the sun's glint after Cox & Munk (slope variance from the wind) and moving
+waves close up: a sum of deep-water waves around the wind direction, of which only those the
+pixel resolves are drawn; the slopes of the others turn into roughness, so nothing shimmers
+and the glint widens with the distance. Waves and glint calm down along the shore. Properties
+`water.*` (reflection, waves, wind, direction).
+→ Fjords glittering in the midnight sun, the sun's glint on the Gulf of Thailand from space.
+
 ---
 
 ## 5. Risks & notes

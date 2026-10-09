@@ -77,6 +77,7 @@ class TerrainData:
         on_demand: bool = False,
         borders=None,
         colour_reference: tuple[TileProvider, int, float] | None = None,
+        water=None,
     ) -> None:
         """``borders``: optional BorderData providing the "borders" texture source.
         ``colour_reference``: (provider, max zoom, strength) the imagery colours are matched to
@@ -105,6 +106,7 @@ class TerrainData:
         self.downloaders = {p.id: TileDownloader(p, cache) for p in providers} if on_demand else {}
         self.on_demand = on_demand
         self.borders = borders
+        self.water = water  # WaterData providing the "water" texture source
         self.colour_reference = None
         if colour_reference is not None and "imagery" in self.stacks:
             from earthling.data.harmonize import ColourReference
@@ -230,6 +232,8 @@ class TerrainData:
 
     def source_ready(self, source: str) -> bool:
         """False while a texture source is still initialising (then nodes skip it for now)."""
+        if source == "water":
+            return True
         if source == "borders":
             if self.borders is None:
                 return True
@@ -246,6 +250,11 @@ class TerrainData:
         return image
 
     def _texture_for(self, key: TileKey, source: str = "imagery") -> np.ndarray | None:
+        if source == "water":
+            if self.water is None:
+                return None
+            self.water.allow_download = self.on_demand
+            return self.water.mask(*key)
         if source == "borders":
             if self.borders is None:
                 return None

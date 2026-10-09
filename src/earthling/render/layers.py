@@ -262,7 +262,7 @@ CONTOURS = section(
 
 def required_tile_sources(
     layer_a: str, layer_b: str, mix: float, borders_overlay: bool = False,
-    night_lights: bool = False,
+    night_lights: bool = False, water: bool = False,
 ) -> frozenset[str]:  # fmt: skip
     """Tile sources the terrain nodes must provide for the current slot selection."""
     by_id = {layer.id: layer for layer in LAYERS}
@@ -271,6 +271,8 @@ def required_tile_sources(
         needed.add("borders")
     if night_lights:
         needed.add("night")
+    if water:
+        needed.add("water")
     for layer_id, active in ((layer_a, mix < 1.0), (layer_b, mix > 0.0)):
         source = by_id[layer_id].tile_source if layer_id in by_id else None
         if active and source:

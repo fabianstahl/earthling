@@ -154,6 +154,20 @@ NIGHT = section(
     color("night.color", "Light colour", (1.0, 0.72, 0.42), uniform="u_night_color"),
 )  # fmt: skip
 
+WATER = section(
+    "Water",
+    boolean("water.enabled", "Water surface", False, uniform="u_water_enabled",
+            tooltip="Sea and lakes (OpenStreetMap water areas) reflect the sky and glint in the "
+                    "sun, with waves close up"),
+    flt("water.reflection", "Reflection", 1.0, 0.0, 2.0, uniform="u_water_reflection"),
+    flt("water.waves", "Waves", 1.0, 0.0, 3.0, uniform="u_water_waves",
+        tooltip="Height of the waves close up"),
+    flt("water.wind", "Wind", 5.0, 0.0, 25.0, step=0.5, unit="m/s", uniform="u_water_wind",
+        tooltip="Rougher water spreads the sun's glint"),
+    flt("water.wind_dir", "Waves towards", 60.0, 0.0, 360.0, step=5.0, decimals=0, unit="°",
+        uniform="u_water_wind_dir"),
+)  # fmt: skip
+
 SHADOWS = section(
     "Shadows",
     boolean("shadows.enabled", "Terrain shadows", True),
@@ -382,6 +396,7 @@ def build_registry() -> PropertyRegistry:
         SUN,
         LIGHT,
         NIGHT,
+        WATER,
         SHADOWS,
         SKY,
         FOG,

@@ -385,6 +385,12 @@ class Session:
 
         return BorderData(self.cache)
 
+    @cached_property
+    def water(self):
+        from earthling.data.water import WaterData
+
+        return WaterData(self.cache)
+
     def terrain_data(self, on_demand: bool = True):
         from earthling.data.terrain_data import TerrainData
 
@@ -397,6 +403,7 @@ class Session:
             self.plan,
             on_demand=on_demand,
             borders=self.borders,
+            water=self.water,
             colour_reference=(
                 (
                     self.colour_reference,

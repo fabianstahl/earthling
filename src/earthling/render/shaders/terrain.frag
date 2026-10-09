@@ -146,6 +146,8 @@ vec3 detail_normal(vec3 n, float strength) {
     return (abs(det) > 1e-12 && len2 > 1e-24) ? r * inversesqrt(len2) : n;
 }
 
+#include "water.glsl"
+
 float snow_hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
@@ -209,10 +211,12 @@ void main() {
         sun_radiance = mix(u_sun_radiance, sun_here, u_local_light);
     }
     float diffuse = max(dot(n, sun), 0.0);
-    if (diffuse > 0.0) diffuse *= mix(1.0, sun_shadow(v_world, n, sun), u_shadow_strength);
-    if (diffuse > 0.0 && u_layer_count > 0) {
-        diffuse *= cloud_shadow(v_world, u_camera_enu, u_camera_height, sun);
+    float sun_vis = 1.0;  // terrain and cloud shadows (also for the glint on the water)
+    if (diffuse > 0.0 || u_water_enabled) {
+        sun_vis = mix(1.0, sun_shadow(v_world, n, sun), u_shadow_strength);
+        if (u_layer_count > 0) sun_vis *= cloud_shadow(v_world, u_camera_enu, u_camera_height, sun);
     }
+    diffuse *= sun_vis;
 
     LayerInput li;
     li.tile_uv = v_tile_uv;
@@ -278,6 +282,17 @@ void main() {
                    + step(0.996, max(v_tile_uv.x, v_tile_uv.y));
         color = mix(color, srgb_to_linear(zoom_color(u_zoom)) * lit, 0.55);
         color = mix(color, vec3(0.0), clamp(edge, 0.0, 1.0));
+    }
+    // the water surface (on the imagery): sky reflection, sun glint, waves
+    float water_layer = (u_layer_a == 0 ? 1.0 - u_layer_mix : 0.0) + (u_layer_b == 0 ? u_layer_mix : 0.0);
+    if (u_water_enabled && water_layer > 0.0 && v_skirt < 0.5) {
+        // the OpenStreetMap water mask, or (without it) the sea level of the DEM
+        vec2 wm = u_has_water ? texture(u_water, v_tile_uv).rg
+                              : vec2(1.0 - smoothstep(0.5, 3.0, v_height));
+        if (wm.r > 0.002) {
+            vec3 shaded = water_shade(color, v_world, up_here, wm.g, sun_radiance * sun_vis);
+            color = mix(color, shaded, wm.r * water_layer);
+        }
     }
     if (u_night_lights > 0.0 && u_has_night) {
         // city lights where it is night here (they come on in the dusk)

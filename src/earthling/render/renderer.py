@@ -212,7 +212,7 @@ class Renderer:
         self.terrain.store = s
         self.terrain.required_sources = required_tile_sources(
             s["layers.a"], s["layers.b"], s["layers.mix"], s["borders.overlay"],
-            s["night.lights"] > 0.0,
+            s["night.lights"] > 0.0, s["water.enabled"],
         )
         self.outlines.visible = s["view.show_outlines"]
         self.tracks.visible = s["tracks.visible"]
@@ -314,7 +314,8 @@ class Renderer:
         self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         if selection is not None:
             extra = {"u_camera_forward": tuple(float(v) for v in camera.forward), **shadow_uniforms,
-                     **self._weather_uniforms(camera)}  # fmt: skip
+                     **self._weather_uniforms(camera),
+                     "u_water_time": float(self.animation_time)}  # fmt: skip
             self.terrain.draw(
                 camera, view_proj, selection.draw, extra_uniforms=extra, morph=selection.morph
             )
