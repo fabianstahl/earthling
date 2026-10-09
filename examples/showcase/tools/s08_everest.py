@@ -13,14 +13,13 @@ from __future__ import annotations
 import numpy as np
 from sc_common import (
     Interp,
+    daylight_keys,
     blend_shots,
     follow_shots,
     key,
     key_shots,
     load_hike,
-    local,
     new_scene,
-    track_time_at,
     orbit_eye,
     poi,
     save,
@@ -99,17 +98,13 @@ def main() -> None:
             path.progress_for_distance(head_of(t), "time"), Interp.LINEAR)  # fmt: skip
     # the sun from the recorded time at the head, switching straight from one day's end to the
     # next morning (the head jumps over the nights: "follow the GPX time" showed a night flash)
-    s.set("sun.follow_track", False)
-    sun_times = np.arange(0.0, DURATION + 1e-9, 1.0 / 15.0)
-    whens = []
-    for t in sun_times:
-        d = head_of(t) if t >= TREK[0] else d0 + (d1 - d0) * smoother(
-            min(max((t - FLIGHT[0]) / (FLIGHT[1] - FLIGHT[0]), 0.0), 1.0))
-        whens.append(local(track_time_at(path, d)))
-    for i, (t, when) in enumerate(zip(sun_times, whens, strict=True)):
-        nxt = whens[i + 1] if i + 1 < len(whens) else when
-        interp = Interp.STEP if abs((nxt - when).total_seconds()) > 3 * 3600 else Interp.LINEAR
-        key(scene, "sun.datetime", round(float(t), 4), when, interp)
+    def sun_head(t: float) -> float:
+        if t >= TREK[0]:
+            return head_of(t)
+        u = smoother(min(max((t - FLIGHT[0]) / (FLIGHT[1] - FLIGHT[0]), 0.0), 1.0))
+        return d0 + 1.0 + (d1 - d0 - 2.0) * u
+
+    daylight_keys(scene, hike, np.arange(0.0, DURATION + 1e-9, 1.0 / 15.0), sun_head)
     times = np.arange(0.0, DURATION + 1e-9, 1.0 / 30.0)
     chase = follow_shots(hike, times, lambda t: head_of(max(t, TREK[0])), distance=6000.0,
                          pitch=-22.0, side=40.0, window=2500.0, sigma_s=1.5,
