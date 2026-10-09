@@ -129,6 +129,7 @@ class Session:
         """Keyframeable style properties of every track group ("trackgroup.<name>.*")."""
         from earthling.render.parameters import boolean, color, enum, flt, section
         from earthling.render.tracks import track_color
+        from earthling.render.vehicles import MARKER_OPTIONS
 
         defs = []
         for g in self.groups:
@@ -154,6 +155,11 @@ class Session:
                      tooltip="Show one track in the highlight colour and dim the others"),
                 color(p + "highlight_color", "Highlight colour", (0.25, 0.95, 0.35)),
                 flt(p + "dim", "Others while highlighting", 0.35, 0.0, 1.0),
+                enum(p + "marker", "Head marker", "dot", MARKER_OPTIONS,
+                     tooltip="The glowing dot, or a vehicle (turned to the direction of travel) "
+                             "while the head is on this group's tracks"),
+                flt(p + "marker_size", "Vehicle size", 46.0, 8.0, 200.0, step=1.0, decimals=0,
+                    unit="px"),
             )  # fmt: skip
             # one colour per track (used with "One colour per track")
             defs += section(

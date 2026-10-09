@@ -74,7 +74,7 @@ def smooth(values: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(padded, kernel, mode="valid")
 
 
-GRADIENT_WINDOW_M = 25.0  # gradient over +- this distance
+GRADIENT_WINDOW_M = 60.0  # gradient over +- this distance (DEM noise at hairpins)
 SPEED_WINDOW_S = 15.0  # speed over +- this time
 # per-vertex values the tracks can be coloured by (tracks.color_by), in this order
 VALUE_KINDS = ("elevation", "gradient", "speed", "heart_rate")
@@ -303,6 +303,13 @@ class ProgressPath:
             seconds = float(np.interp(distance, self.dist[self._valid], t))
             return (seconds - t[0]) / max(t[-1] - t[0], 1e-9)
         return min(max(distance / self.total_m, 0.0), 1.0)
+
+    def track_at(self, distance: float):
+        """The (built) track the global distance lies on."""
+        for g in self.tracks:
+            if distance <= g.offset_m + g.length_m:
+                return g
+        return self.tracks[-1] if self.tracks else None
 
     def track_range(self, index: int) -> tuple[float, float]:
         """(start, end) distance of walked track ``index`` on the global axis."""

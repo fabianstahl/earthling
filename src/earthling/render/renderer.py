@@ -156,6 +156,7 @@ class Renderer:
         self.timezone = "UTC"
         self.lighting: Lighting | None = None
         self.camera_height = 1500.0
+        self.vehicles: list = []  # vehicle markers at the heads (render/vehicles.py)
         self.fullscreen = FullscreenPasses(ctx, self.shaders)
         self.atmosphere = AtmosphereLuts(ctx, self.shaders, self.fullscreen)
         self.weather = WeatherSystem(ctx, self.shaders, self.fullscreen)
@@ -333,6 +334,9 @@ class Renderer:
                          self.store,
                          self.time if self.timeline_time is None else self.timeline_time,
                          self.animation)  # fmt: skip
+        if self.tracks.visible and self.vehicles:
+            self.pois.render_vehicles(fbo, camera, view_proj, self.vehicles, *output,
+                                      self.target.depth, (width, height))  # fmt: skip
         self.hud.frame = self.frame
         self.hud.render(fbo, *output, self.store, self.tracks.path, self.tracks.head_m,
                         self.timezone)  # fmt: skip
@@ -491,6 +495,28 @@ class Renderer:
         self.tracks.tail_m = tail
         self.marker.color = s["marker.color"]
         self.marker.position = path.position_at(head) if s["marker.visible"] else None
+        self.vehicles = []
+        vehicle = self._vehicle_at(path, head) if s["marker.visible"] else None
+        if vehicle is not None:  # a vehicle icon replaces the dot
+            self.vehicles = [vehicle]
+            self.marker.position = None
+
+    def _vehicle_at(self, path, head: float):
+        """The vehicle marker at distance ``head`` (None: the head's group shows the dot)."""
+        from earthling.render.vehicles import VehicleMarker
+
+        s = self.store
+        g = path.track_at(head)
+        if g is None:
+            return None
+        pid = f"trackgroup.{g.track.group}.marker"
+        if pid not in s.registry or s[pid] == "dot":
+            return None
+        here = path.position_at(head)
+        ahead = path.position_at(min(head + 25.0, g.offset_m + g.length_m))
+        if here is None or ahead is None or np.linalg.norm(ahead - here) < 1.0:
+            ahead = here + (here - path.position_at(max(head - 25.0, g.offset_m)))
+        return VehicleMarker(s[pid], here, ahead, s[f"trackgroup.{g.track.group}.marker_size"])
 
     def track_time(self):
         """With ``sun.follow_track``: the (aware) GPX time at the head of the drawn track."""

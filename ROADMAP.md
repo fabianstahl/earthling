@@ -566,7 +566,7 @@ side instead of the height, so a portrait video keeps the proportions of a lands
 
 **19.5 Speed, gradient and heart rate**
 The GPX reader keeps the heart rate (Garmin / Strava `TrackPointExtension`). Every track point
-gets its elevation, gradient (over +- 25 m), speed (over +- 15 s) and heart rate as vertex
+gets its elevation, gradient (over +- 60 m), speed (over +- 15 s) and heart rate as vertex
 values: `tracks.color_by` colours the walked tracks by one of them with a colour ramp
 (range and ramp keyframeable), and the elevation profile of the stats overlay takes the same
 colours. The stats overlay can show the speed (km/h, pace in min/km or knots), the gradient
@@ -593,6 +593,14 @@ camera everywhere. `night.lights` adds the city lights of NASA's Black Marble (V
 new "night" tile source, zoom 8, downloaded on demand) where it is night, switching on in the
 dusk.
 → The day-night line sweeping over Siberia, the cities lighting up behind it.
+
+**19.8 Vehicle markers**
+Per track group a head marker: the glowing dot or a vehicle icon (ship, plane, train, car,
+canoe seen from above and turned to the direction of travel on screen; bike, runner, hiker
+from the side, mirrored when the track runs to the left), with its own size. A journey's head
+turns into a ship on the ferry and into a plane on the flight. Built-in icons in
+`assets/icons/vehicles` (drawn by `tools/make_poi_icons.py`).
+→ The Hurtigruten ship sailing up the coast, the cyclist on the Stelvio hairpins.
 
 ---
 

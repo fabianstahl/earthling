@@ -193,6 +193,36 @@ class PoiLayer:
                        depth, depth_size, k)  # fmt: skip
             self.last_drawn.append(poi.id)
 
+    def render_vehicles(self, fbo, camera, view_proj, markers, width, height, depth,
+                        depth_size) -> None:  # fmt: skip
+        """Vehicle markers (render/vehicles.py) at the heads of the drawn tracks."""
+        from earthling.render.vehicles import icon_rotation, screen_direction
+
+        if not markers or depth is None:
+            return
+        k = pixel_scale(width, height)
+        program = self.shaders.get("poi")
+        atlas: FontAtlas = self.atlas_provider()
+        for m in markers:
+            icon = self._icon(Poi("vehicle", "vehicle", 0.0, 0.0, icon=str(m.icon_path)))
+            if icon is None:
+                continue
+            direction = screen_direction(view_proj, camera.position, m.position, m.ahead,
+                                         width, height)  # fmt: skip
+            angle, mirrored = icon_rotation(direction, m.mode)
+            hw = hh = m.size_px * k / 2.0
+            corners = np.array([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, -hh], [hw, hh], [-hw, hh]])
+            u0, u1 = (1.0, 0.0) if mirrored else (0.0, 1.0)
+            uvs = np.array([[u0, 0], [u1, 0], [u1, 1], [u0, 0], [u1, 1], [u0, 1]], float)
+            c, s = math.cos(angle), math.sin(angle)
+            quad = np.zeros((6, 10))
+            quad[:, :3] = np.asarray(m.position, dtype=np.float64) - camera.position
+            quad[:, 3:5] = corners @ np.array([[c, s], [-s, c]])
+            quad[:, 5:7] = uvs
+            quad[:, 7], quad[:, 8], quad[:, 9] = 1.0, 0.0, 1.0
+            self._draw(program, fbo, icon, atlas, quad.astype(np.float32), camera, view_proj,
+                       width, height, depth, depth_size, k)  # fmt: skip
+
     def _geometry(self, poi, icon, rel, store, since, pop, opacity, k, atlas) -> np.ndarray:
         p = f"poi.{poi.id}."
         size = poi.size_px * k * store[p + "scale"] * pop

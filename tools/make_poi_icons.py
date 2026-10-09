@@ -355,6 +355,136 @@ def draw_peak() -> Image.Image:
     return finish(shadow(img))
 
 
+# --- vehicle markers (the head of a track; see render/vehicles.py) ---------------------------
+# Top views point up (north = the direction of travel; they are rotated with the track), side
+# views face right (mirrored when the track runs to the left). Light shapes with a dark rim
+# and a soft shadow stay readable on any imagery.
+VEHICLE_FILL = (250, 250, 248, 255)
+VEHICLE_RIM = (25, 30, 40, 255)
+
+
+def vehicle(shapes, rim: float = 7.0) -> Image.Image:
+    """``shapes``: (kind, points or box, fill) with kind "polygon", "ellipse" or "line"."""
+    img, d = canvas()
+    for kind, geom, fill in shapes:  # the rim: every shape drawn larger in the rim colour
+        if kind == "polygon":
+            pts = [p(x, y) for x, y in geom]
+            d.polygon(pts, fill=VEHICLE_RIM)
+            d.line([*pts, pts[0], pts[1]], fill=VEHICLE_RIM, width=int(2 * rim * SS),
+                   joint="curve")  # fmt: skip
+        elif kind == "ellipse":
+            x0, y0, x1, y1 = geom
+            r = rim * SS / 2 / S
+            d.ellipse((*p(x0 - r, y0 - r), *p(x1 + r, y1 + r)), fill=VEHICLE_RIM)
+        else:
+            d.line([p(x, y) for x, y in geom], fill=VEHICLE_RIM, width=int((fill + rim) * SS),
+                   joint="curve")  # fmt: skip
+    for kind, geom, fill in shapes:
+        if kind == "polygon":
+            d.polygon([p(x, y) for x, y in geom], fill=fill)
+        elif kind == "ellipse":
+            d.ellipse((*p(geom[0], geom[1]), *p(geom[2], geom[3])), fill=fill)
+        else:
+            d.line([p(x, y) for x, y in geom], fill=VEHICLE_FILL, width=int(fill * SS),
+                   joint="curve")  # fmt: skip
+    return finish(shadow(img, 6))
+
+
+def draw_vehicle_ship() -> Image.Image:
+    """A ship from above, bow up."""
+    hull = [(0.5, 0.08), (0.6, 0.22), (0.63, 0.4), (0.63, 0.86), (0.6, 0.92), (0.4, 0.92),
+            (0.37, 0.86), (0.37, 0.4), (0.4, 0.22)]  # fmt: skip
+    house = [(0.43, 0.52), (0.57, 0.52), (0.57, 0.78), (0.43, 0.78)]
+    return vehicle([("polygon", hull, VEHICLE_FILL), ("polygon", house, (210, 70, 55, 255))])
+
+
+def draw_vehicle_plane() -> Image.Image:
+    """An airliner from above, nose up."""
+    plane = [(0.5, 0.06), (0.54, 0.14), (0.54, 0.38), (0.9, 0.56), (0.9, 0.62), (0.54, 0.53),
+             (0.54, 0.78), (0.64, 0.86), (0.64, 0.9), (0.5, 0.87), (0.36, 0.9), (0.36, 0.86),
+             (0.46, 0.78), (0.46, 0.53), (0.1, 0.62), (0.1, 0.56), (0.46, 0.38),
+             (0.46, 0.14)]  # fmt: skip
+    return vehicle([("polygon", plane, VEHICLE_FILL)])
+
+
+def draw_vehicle_train() -> Image.Image:
+    """A locomotive and a coach from above, front up."""
+    loco = [(0.4, 0.12), (0.6, 0.12), (0.62, 0.18), (0.62, 0.5), (0.38, 0.5), (0.38, 0.18)]
+    coach = [(0.38, 0.54), (0.62, 0.54), (0.62, 0.92), (0.38, 0.92)]
+    return vehicle([("polygon", loco, (220, 60, 50, 255)), ("polygon", coach, VEHICLE_FILL)])
+
+
+def draw_vehicle_car() -> Image.Image:
+    """A car from above, front up."""
+    body = [(0.4, 0.16), (0.6, 0.16), (0.64, 0.24), (0.64, 0.82), (0.6, 0.88), (0.4, 0.88),
+            (0.36, 0.82), (0.36, 0.24)]  # fmt: skip
+    roof = [(0.41, 0.4), (0.59, 0.4), (0.59, 0.7), (0.41, 0.7)]
+    screen = [(0.41, 0.33), (0.59, 0.33), (0.58, 0.4), (0.42, 0.4)]
+    return vehicle([("polygon", body, (60, 130, 220, 255)), ("polygon", roof, VEHICLE_FILL),
+                    ("polygon", screen, (40, 50, 70, 255))])  # fmt: skip
+
+
+def draw_vehicle_canoe() -> Image.Image:
+    """A canoe with two paddlers from above, bow up."""
+    hull = [(0.5, 0.05), (0.56, 0.2), (0.58, 0.5), (0.56, 0.8), (0.5, 0.95), (0.44, 0.8),
+            (0.42, 0.5), (0.44, 0.2)]  # fmt: skip
+    return vehicle([("polygon", hull, (225, 120, 40, 255)),
+                    ("ellipse", (0.455, 0.3, 0.545, 0.39), VEHICLE_FILL),
+                    ("ellipse", (0.455, 0.62, 0.545, 0.71), VEHICLE_FILL),
+                    ("line", [(0.3, 0.27), (0.7, 0.42)], 5.0),
+                    ("line", [(0.7, 0.6), (0.3, 0.75)], 5.0)])  # fmt: skip
+
+
+def draw_vehicle_bike() -> Image.Image:
+    """A cyclist from the side, riding to the right."""
+    img, d = canvas()
+    w = 9 * SS
+    for cx in (0.27, 0.73):  # wheels
+        d.ellipse((*p(cx - 0.17, 0.53), *p(cx + 0.17, 0.87)), outline=VEHICLE_RIM, width=w + 8 * SS)
+        d.ellipse((*p(cx - 0.17, 0.53), *p(cx + 0.17, 0.87)), outline=VEHICLE_FILL, width=w)
+    frame = [p(0.27, 0.7), p(0.45, 0.7), p(0.62, 0.48), p(0.73, 0.7)]
+    rider = [p(0.45, 0.7), p(0.42, 0.4), p(0.62, 0.3), p(0.66, 0.46)]
+    for line, width in ((frame, w), (rider, 14 * SS)):
+        d.line(line, fill=VEHICLE_RIM, width=width + 8 * SS, joint="curve")
+        d.line(line, fill=VEHICLE_FILL, width=width, joint="curve")
+    d.ellipse((*p(0.6, 0.12), *p(0.74, 0.26)), fill=VEHICLE_RIM)
+    d.ellipse((*p(0.615, 0.135), *p(0.725, 0.245)), fill=(225, 60, 50, 255))  # helmet
+    return finish(shadow(img, 6))
+
+
+def _figure(stride: float) -> Image.Image:
+    """A person from the side, moving to the right (``stride``: how far the legs swing)."""
+    img, d = canvas()
+    w = 15 * SS
+    body = [p(0.5, 0.3), p(0.47, 0.56)]
+    legs = [[p(0.47, 0.56), p(0.47 + stride, 0.73), p(0.5 + stride, 0.92)],
+            [p(0.47, 0.56), p(0.44 - stride * 0.6, 0.74), p(0.36 - stride, 0.88)]]  # fmt: skip
+    arms = [[p(0.5, 0.34), p(0.6, 0.45), p(0.68, 0.4)], [p(0.5, 0.34), p(0.4, 0.46)]]
+    for line in (body, *legs, *arms):
+        d.line(line, fill=VEHICLE_RIM, width=w + 8 * SS, joint="curve")
+    for line in (body, *legs, *arms):
+        d.line(line, fill=VEHICLE_FILL, width=w, joint="curve")
+    d.ellipse((*p(0.43, 0.08), *p(0.59, 0.24)), fill=VEHICLE_RIM)
+    d.ellipse((*p(0.445, 0.095), *p(0.575, 0.225)), fill=(225, 60, 50, 255))  # head
+    return finish(shadow(img, 6))
+
+
+def draw_vehicle_runner() -> Image.Image:
+    return _figure(0.16)
+
+
+def draw_vehicle_hiker() -> Image.Image:
+    img = _figure(0.08)
+    return img
+
+
+def save_vehicles() -> None:
+    folder = OUT / "vehicles"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in ("ship", "plane", "train", "car", "canoe", "bike", "runner", "hiker"):
+        globals()[f"draw_vehicle_{name}"]().save(folder / f"{name}.png")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     draw_pin().save(OUT / "pin.png")
@@ -382,8 +512,9 @@ def main() -> None:
     # animated PNG (APNG); disposal "none" + blend "source" stores complete frames
     frames[0].save(OUT / "coffee.png", save_all=True, append_images=frames[1:], duration=70,
                    loop=0, disposal=0, blend=0, format="PNG")  # fmt: skip
-    for path in sorted(OUT.iterdir()):
-        print(f"{path.name}: {path.stat().st_size / 1024:.0f} KB")
+    save_vehicles()
+    for path in sorted(OUT.rglob("*.png")):
+        print(f"{path.relative_to(OUT)}: {path.stat().st_size / 1024:.0f} KB")
 
 
 if __name__ == "__main__":
