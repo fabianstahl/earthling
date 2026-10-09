@@ -101,8 +101,8 @@ def main() -> None:
         lon, lat = hike.lonlat(path.position_at(min(head_of(t), total - 1.0)))
         elev = solar_position(dt.datetime.fromtimestamp(float(stamp), dt.UTC), lat, lon).elevation
         boost = float(np.clip((3.0 - elev) / 9.0, 0.0, 1.0))
-        key(scene, "post.exposure", round(float(t), 4), 2.2 * boost, Interp.LINEAR)
-        key(scene, "light.night_ambient", round(float(t), 4), 1.0 + 5.0 * boost, Interp.LINEAR)
+        key(scene, "post.exposure", round(float(t), 4), 3.6 * boost, Interp.LINEAR)
+        key(scene, "light.night_ambient", round(float(t), 4), 1.0 + 9.0 * boost, Interp.LINEAR)
     close = follow_shots(hike, times, head_of, distance=2200.0, pitch=-6.0, side=80.0,
                          window=3000.0, sigma_s=0.8, heading_sigma_s=2.0, clearance=40.0)  # fmt: skip
     wide = follow_shots(hike, times, head_of, distance=95_000.0, pitch=-48.0, side=30.0,
