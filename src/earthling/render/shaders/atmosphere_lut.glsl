@@ -116,8 +116,8 @@ void skyview_params(vec2 uv, float r, out float view_zenith_cos, out float light
 // --- integration -----------------------------------------------------------------------------
 // In-scattered radiance (single scattering with the real phase functions plus the multiple
 // scattering term) along [0, t_max] from `pos`, and the transmittance of that segment.
-vec3 integrate_scattering(vec3 pos, vec3 dir, float t_max, vec3 sun_dir, int steps,
-                          out vec3 transmittance) {
+vec3 integrate_scattering_dense(vec3 pos, vec3 dir, float t_max, vec3 sun_dir, int steps,
+                                bool dense_end, out vec3 transmittance) {
     transmittance = vec3(1.0);
     vec2 atm = ray_sphere(pos, dir, R_TOP);
     if (atm.x > atm.y || atm.y < 0.0) return vec3(0.0);
@@ -135,7 +135,10 @@ vec3 integrate_scattering(vec3 pos, vec3 dir, float t_max, vec3 sun_dir, int ste
     float t_prev = t0;
     for (int i = 0; i < steps; ++i) {
         float s = (float(i) + 1.0) / float(steps);
-        float t = t0 + (t1 - t0) * s * s;  // dense near the start
+        // dense near the start (rays from the ground), or near the end (rays from far up down
+        // to the terrain: the air that matters is at the end of the ray)
+        float f = dense_end ? 1.0 - (1.0 - s) * (1.0 - s) : s * s;
+        float t = t0 + (t1 - t0) * f;
         float dt = t - t_prev;
         float t_mid = 0.5 * (t + t_prev);
         t_prev = t;
@@ -155,4 +158,9 @@ vec3 integrate_scattering(vec3 pos, vec3 dir, float t_max, vec3 sun_dir, int ste
     }
     transmittance = throughput;
     return radiance;
+}
+
+vec3 integrate_scattering(vec3 pos, vec3 dir, float t_max, vec3 sun_dir, int steps,
+                          out vec3 transmittance) {
+    return integrate_scattering_dense(pos, dir, t_max, sun_dir, steps, false, transmittance);
 }

@@ -15,6 +15,7 @@ uniform sampler3D u_ap_inscatter;     // aerial perspective volume: (screen uv, 
 uniform sampler3D u_ap_transmittance;
 uniform vec2 u_ap_screen = vec2(1.0);  // render target size (froxels span the screen)
 uniform float u_ap_max_dist = 300e3;
+uniform float u_ap_direct = 0.0;  // 0 the volume .. 1 integrated per pixel (cameras far up)
 uniform float u_rain_haze = 0.0;      // rain: extinction per metre (reduced visibility)
 uniform float u_rain_haze_top = 1e9;  // ... below the rain clouds only (m above sea level)
 
@@ -47,6 +48,16 @@ vec3 apply_atmosphere(vec3 color, vec3 dir, float dist) {
         float fade = clamp(w * 64.0, 0.0, 1.0);  // nothing at the camera (first slice at w=1/64)
         vec3 inscatter = texture(u_ap_inscatter, ap).rgb * fade * u_sun_illuminance;
         vec3 trans = mix(vec3(1.0), texture(u_ap_transmittance, ap).rgb, fade);
+        if (u_ap_direct > 0.0) {
+            // seen from far up all the haze lies in the last few kilometres above the ground,
+            // within one slice of the volume: integrated along this ray instead (the volume
+            // showed rings of its slices around the camera)
+            vec3 t_direct;
+            vec3 i_direct = integrate_scattering_dense(origin, u_atm_frame * dir, dist,
+                                                       u_atm_frame * sun, 32, true, t_direct);
+            inscatter = mix(inscatter, i_direct * u_sun_illuminance, u_ap_direct);
+            trans = mix(trans, t_direct, u_ap_direct);
+        }
         color = color * mix(vec3(1.0), trans, u_aerial_strength) + inscatter * u_aerial_strength;
     }
     if (u_fog_enabled && u_fog_density > 0.0) {

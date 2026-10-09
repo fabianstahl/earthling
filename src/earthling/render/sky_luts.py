@@ -105,8 +105,8 @@ class AtmosphereLuts:
         program["u_inv_view_proj"].write(inv_view_proj)
         self.ap_inscatter.bind_to_image(0, read=False, write=True)
         self.ap_transmittance.bind_to_image(1, read=False, write=True)
-        groups = (AP_SIZE + 3) // 4
-        program.run(groups, groups, groups)
+        groups = (AP_SIZE + 7) // 8  # (one invocation per froxel column, see atm_aerial)
+        program.run(groups, groups, 1)
         self.ctx.memory_barrier()
         self.bind()
 

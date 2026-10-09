@@ -45,8 +45,9 @@ vec3 water_waves(vec2 xy, float footprint) {
         float s = 0.032 * u_water_waves * (0.5 + h2);                 // slope amplitude
         float omega = sqrt(G * k);
         float phase = k * dot(dir, xy) - omega * u_water_time + h1 * 6.2831853;
-        // waves under ~8 pixels per wavelength would shimmer: their slopes become roughness
-        float keep = 1.0 - smoothstep(0.08, 0.2, footprint / wavelength);
+        // waves under ~20 pixels per wavelength alias (shimmer, and rings around the camera
+        // where one component after the other fades): their slopes become roughness
+        float keep = 1.0 - smoothstep(0.02, 0.05, footprint / wavelength);
         slope += dir * s * cos(phase) * keep;
         lost += 0.5 * s * s * (1.0 - keep);
     }
@@ -84,6 +85,6 @@ vec3 water_shade(vec3 base, vec3 world, vec3 up, float open_water, vec3 sun_radi
         glint = f_h * p / (4.0 * max(dot(up, view), 0.05));
         glint *= 0.5 + 0.5 * open_water;
     }
-    vec3 surface = base * (1.0 - fresnel) + sky * fresnel + sun_radiance * min(glint, 40.0);
+    vec3 surface = base * (1.0 - fresnel) + sky * fresnel + sun_radiance * min(glint, 8.0);
     return mix(base, surface, u_water_reflection);
 }

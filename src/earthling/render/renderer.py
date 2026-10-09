@@ -365,9 +365,12 @@ class Renderer:
             glm.inverse(view_proj),
             self.lighting.atm_frame,
         )
+        h = self.lighting.camera_height
         self._atmosphere_uniforms = {
             **self.atmosphere.uniforms(),
             "u_ap_screen": (float(width), float(height)),
+            # cameras far up: the aerial perspective per pixel (see fog.glsl)
+            "u_ap_direct": min(max((h - 12e3) / 13e3, 0.0), 1.0),
         }
         self.terrain.lighting_uniforms = {
             **self.terrain.lighting_uniforms,

@@ -1,7 +1,11 @@
 // Aerial perspective volume (32^3 froxels over the view frustum): in-scattered radiance and
 // transmittance from the camera to distance d = u_ap_max_dist * w^2 along each froxel ray,
 // w = (slice + 0.5) / 32. Rendered every frame.
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+// One invocation per froxel column integrates the slices one after the other: every slice
+// adds the segment from the previous one. (Integrating every slice on its own from the camera
+// spread the integration error differently per slice, which showed as rings in the haze
+// around the camera seen from high up.)
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 #include "atmosphere_lut.glsl"
 layout(rgba16f, binding = 0) uniform writeonly image3D u_ap_inscatter_out;
 layout(rgba16f, binding = 1) uniform writeonly image3D u_ap_transmittance_out;
@@ -11,20 +15,31 @@ uniform float u_camera_height;
 uniform vec3 u_sun_dir;
 uniform float u_ap_max_dist;
 
+const int SUB_STEPS = 4;  // per slice
+
 void main() {
-    ivec3 id = ivec3(gl_GlobalInvocationID);
     ivec3 size = imageSize(u_ap_inscatter_out);
-    if (any(greaterThanEqual(id, size))) return;
-    vec2 ndc = (vec2(id.xy) + 0.5) / vec2(size.xy) * 2.0 - 1.0;
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(xy, size.xy))) return;
+    vec2 ndc = (vec2(xy) + 0.5) / vec2(size.xy) * 2.0 - 1.0;
     // a point on the near plane: the far plane is numerically unstable for huge far / near
     vec4 ray = u_inv_view_proj * vec4(ndc, -1.0, 1.0);
     vec3 dir = u_atm_frame * normalize(ray.xyz / ray.w);
-    float w = (float(id.z) + 0.5) / float(size.z);
-    float dist = u_ap_max_dist * w * w;
+    vec3 sun = u_atm_frame * normalize(u_sun_dir);
     vec3 pos = vec3(0.0, 0.0, R_BOTTOM + max(u_camera_height, 1.0));
-    vec3 transmittance;
-    vec3 inscatter = integrate_scattering(pos, dir, dist, u_atm_frame * normalize(u_sun_dir), 12,
-                                             transmittance);
-    imageStore(u_ap_inscatter_out, id, vec4(inscatter, 1.0));
-    imageStore(u_ap_transmittance_out, id, vec4(transmittance, 1.0));
+    vec3 inscatter = vec3(0.0);
+    vec3 transmittance = vec3(1.0);
+    float prev = 0.0;
+    for (int z = 0; z < size.z; ++z) {
+        float w = (float(z) + 0.5) / float(size.z);
+        float dist = u_ap_max_dist * w * w;
+        vec3 seg_t;
+        vec3 seg_in = integrate_scattering(pos + dir * prev, dir, dist - prev, sun, SUB_STEPS,
+                                           seg_t);
+        inscatter += transmittance * seg_in;
+        transmittance *= seg_t;
+        prev = dist;
+        imageStore(u_ap_inscatter_out, ivec3(xy, z), vec4(inscatter, 1.0));
+        imageStore(u_ap_transmittance_out, ivec3(xy, z), vec4(transmittance, 1.0));
+    }
 }

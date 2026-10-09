@@ -653,6 +653,12 @@ anti-aliasing sample uses its own dither pattern.
 Rain streaks seen steeply from above converged into concentric arcs around the nadir (the
 lanes of all layers meet there, spiralling with the wind): they fade out towards steep views,
 where the haze still shows the rain.
+Seen from far up, the aerial perspective volume (32 slices up to 300 km from the camera) drew
+rings around the camera: all the haze lies in the last kilometres above the ground, within one
+slice. From 12 km camera height up it is integrated per pixel along the ray instead (32 steps,
+dense near the ground; the volume itself now integrates its slices cumulatively), which also
+gives views from space their blue veil. On the water the waves fade out earlier (20 pixels per
+wavelength) and the sun's glint is capped lower.
 → "Mount Everest", "Lhotse", "Ama Dablam" instead of boxes; this year's line stays orange;
 a smooth monsoon sky over the Grand Canyon.
 
