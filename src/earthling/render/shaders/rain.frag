@@ -129,6 +129,9 @@ void main() {
         float fade = 0.55 / (1.0 + 0.35 * float(layer));
         sum += across * streak * fade;
     }
+    // looking steeply down (or up) the lanes of all layers converge into concentric arcs
+    // around the nadir: the streaks fade out there (the haze still shows the rain)
+    sum *= smoothstep(0.1, 0.8, horiz);
     result += u_rain_light * sum * 0.5 * (0.35 + 0.65 * u_rain_intensity) * (snow ? 1.8 : 1.0);
     f_color = vec4(result, 0.0);
 }

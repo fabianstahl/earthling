@@ -650,6 +650,9 @@ Clouds seen at a grazing angle (a deck towards the horizon) showed fine stripes 
 shapes: the raymarch's last steps on those long segments were over a kilometre long. They now
 get up to 2.5 times the steps, the light samples towards the sun are dithered, and every
 anti-aliasing sample uses its own dither pattern.
+Rain streaks seen steeply from above converged into concentric arcs around the nadir (the
+lanes of all layers meet there, spiralling with the wind): they fade out towards steep views,
+where the haze still shows the rain.
 → "Mount Everest", "Lhotse", "Ama Dablam" instead of boxes; this year's line stays orange;
 a smooth monsoon sky over the Grand Canyon.
 
