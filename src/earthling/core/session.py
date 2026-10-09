@@ -160,6 +160,10 @@ class Session:
                              "while the head is on this group's tracks"),
                 flt(p + "marker_size", "Vehicle size", 46.0, 8.0, 200.0, step=1.0, decimals=0,
                     unit="px"),
+                flt(p + "time_offset", "Time shift", 0.0, -1e6, 1e6, step=0.01, decimals=4,
+                    unit="h", animatable=False,
+                    tooltip="Progress by clock: shift the group's times (e.g. start last year's "
+                            "run together with this year's)"),
             )  # fmt: skip
             # one colour per track (used with "One colour per track")
             defs += section(

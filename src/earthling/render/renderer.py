@@ -338,7 +338,14 @@ class Renderer:
             self.pois.render_vehicles(fbo, camera, view_proj, self.vehicles, *output,
                                       self.target.depth, (width, height))  # fmt: skip
         self.hud.frame = self.frame
-        self.hud.render(fbo, *output, self.store, self.tracks.path, self.tracks.head_m,
+        hud_path, hud_head = self.tracks.path, self.tracks.head_m
+        self.hud.gap_s = None
+        if self.store is not None and self.store["progress.mode"] == "clock" and hud_path:
+            lead = hud_path.lead()  # the stats of the lead track alone
+            if lead is not None:
+                self.hud.gap_s = hud_path.gap_at(hud_path.clock_at(self.store["progress.head"]))
+                hud_path, hud_head = hud_path.only(lead), hud_head - lead.offset_m
+        self.hud.render(fbo, *output, self.store, hud_path, hud_head,
                         self.timezone)  # fmt: skip
         self.reset_state()  # leave the context clean for Qt
 
@@ -484,11 +491,17 @@ class Renderer:
         """Visible range of the hike and the marker position from the progress properties."""
         s = self.store
         path = self.tracks.path
+        self.vehicles = []
         if s is None or path is None or path.total_m <= 0:
             self.tracks.head_m, self.tracks.tail_m = float("inf"), 0.0
             self.marker.position = None
             return
         mode = s["progress.mode"]
+        self.tracks.track_heads = None
+        self.marker.extra = []
+        if mode == "clock":
+            self._update_clock(s, path)
+            return
         head = path.distance_for(s["progress.head"], mode)
         tail = min(path.distance_for(s["progress.tail"], mode), head)
         self.tracks.head_m = head if s["progress.head"] < 1.0 else float("inf")
@@ -500,6 +513,38 @@ class Renderer:
         if vehicle is not None:  # a vehicle icon replaces the dot
             self.vehicles = [vehicle]
             self.marker.position = None
+
+    def _update_clock(self, s, path) -> None:
+        """Clock mode: every walked track drawn up to the same (shifted) time, one marker each
+        (in the colour of its line), the lead group's head for the stats and the camera."""
+        from earthling.render.tracks import track_color
+
+        # the groups in project order: the first one leads
+        groups = [d.id.split(".")[1] for d in s.registry
+                  if d.id.startswith("trackgroup.") and d.id.endswith(".time_offset")]  # fmt: skip
+        path.time_offsets = {g: s[f"trackgroup.{g}.time_offset"] * 3600.0 for g in groups}
+        path.lead_group = groups[0] if groups else None
+        clock = path.clock_at(s["progress.head"])
+        heads, markers, vehicles = {}, [], []
+        for g in path.tracks:
+            d = path.head_on(g, clock)
+            heads[id(g)] = -1.0 if d is None else g.offset_m + d
+            if d is None or not s["marker.visible"]:
+                continue
+            vehicle = self._vehicle_at(path, g.offset_m + d)
+            if vehicle is not None:
+                vehicles.append(vehicle)
+                continue
+            style = self.tracks._group_style(s, g, s["tracks.color_mode"] == "single")
+            color = style[0] if style is not None else track_color(g.index)
+            tint = tuple(0.35 + 0.65 * c for c in color)  # a light version of the line colour
+            markers.append((path.position_at(g.offset_m + d), tint))
+        self.tracks.track_heads = heads
+        self.tracks.head_m = path.distance_for(s["progress.head"], "clock")
+        self.tracks.tail_m = 0.0
+        self.marker.position = None
+        self.marker.extra = markers
+        self.vehicles = vehicles
 
     def _vehicle_at(self, path, head: float):
         """The vehicle marker at distance ``head`` (None: the head's group shows the dot)."""
@@ -526,7 +571,11 @@ class Renderer:
             return None
         from datetime import UTC, datetime, timedelta
 
-        if s["progress.mode"] == "time":
+        if s["progress.mode"] == "clock":  # the lead track's own (unshifted) time
+            lead = path.lead()
+            offset = path.time_offsets.get(lead.track.group, 0.0) if lead is not None else 0.0
+            seconds = path.clock_at(s["progress.head"]) - offset
+        elif s["progress.mode"] == "time":
             # the head's own time: keeps running between tracks (a wait, a bus ride), and
             # where one track ends and the next starts at the same place it is unambiguous
             t = path.time[np.isfinite(path.time)]

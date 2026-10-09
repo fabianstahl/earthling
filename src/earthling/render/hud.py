@@ -27,10 +27,10 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
 WORDS = {
     "en": {"day": "Day {n}", "days": "{n} days", "distance": "distance", "ascent": "ascent",
            "elevation": "elevation", "time": "{t:%H:%M}", "months": MONTHS, "speed": "speed",
-           "pace": "pace", "gradient": "gradient", "heart_rate": "heart rate"},
+           "pace": "pace", "gradient": "gradient", "heart_rate": "heart rate", "gap": "gap"},
     "de": {"day": "Tag {n}", "days": "{n} Tage", "distance": "Strecke", "ascent": "Aufstieg",
            "elevation": "Höhe", "time": "{t:%H:%M} Uhr", "speed": "Tempo", "pace": "Pace",
-           "gradient": "Steigung", "heart_rate": "Puls",
+           "gradient": "Steigung", "heart_rate": "Puls", "gap": "Abstand",
            "months": ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
                       "September", "Oktober", "November", "Dezember"]},
 }  # fmt: skip
@@ -180,6 +180,15 @@ def format_number(value: float, decimals: int = 0, lang: str = "en") -> str:
     return s.replace(",", " ")  # thin space as thousands separator
 
 
+def format_gap(seconds: float) -> str:
+    """"+1:23" (the other one is behind), "-0:45", "+1:02:10"."""
+    sign = "+" if seconds >= 0 else "−"
+    s = int(round(abs(seconds)))
+    h, rest = divmod(s, 3600)
+    m, sec = divmod(rest, 60)
+    return f"{sign}{h}:{m:02d}:{sec:02d}" if h else f"{sign}{m}:{sec:02d}"
+
+
 def format_speed(kmh: float, unit: str, lang: str = "en") -> tuple[str, str]:
     """(value text, caption) of a speed: km/h, pace (min/km) or knots."""
     if unit == "pace":
@@ -255,6 +264,7 @@ class HudLayer:
         self._vaos: dict[int, moderngl.VertexArray] = {}
         self.last_stats: StatsAt | None = None  # values shown in the last frame (tests)
         self.frame = None  # LocalFrame of the scene (time zone at the head position)
+        self.gap_s: float | None = None  # clock mode: the second track's gap (seconds)
 
     def stats_for(self, path, timezone: str) -> HikeStats | None:
         if path is None or len(path.dist) == 0:
@@ -381,6 +391,8 @@ class HudLayer:
             columns.append((f"{format_number(v.gradient, 1, lang)} %", word(lang, "gradient")))
         if store["stats.show_heart_rate"] and v.heart_rate is not None:
             columns.append((f"{v.heart_rate:.0f} bpm", word(lang, "heart_rate")))
+        if store["stats.show_gap"] and self.gap_s is not None:
+            columns.append((format_gap(self.gap_s), word(lang, "gap")))
         value_size, caption_size = 26.0 * s, 13.0 * s
         widths = [max(self._width(t, value_size), self._width(c, caption_size))
                   for t, c in columns]  # fmt: skip

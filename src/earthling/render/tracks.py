@@ -264,13 +264,83 @@ class ProgressPath:
         self.ground = np.concatenate(grounds) if grounds else np.zeros(0)  # walked metres
         self.track_index = np.concatenate(owners) if owners else np.zeros(0, dtype=int)
         self.hr = np.concatenate(hrs) if hrs else np.zeros(0)  # heart rate per point
+        # clock mode (several heads at once): a time shift per group (seconds) and the group
+        # whose head leads the camera, the sun and the stats (set by the renderer)
+        self.time_offsets: dict[str, float] = {}
+        self.lead_group: str | None = None
         valid = np.isfinite(self.time)
         # time mode needs monotonic timestamps; otherwise fall back to distance
         self.has_time = bool(valid.sum() >= 2) and bool(np.all(np.diff(self.time[valid]) >= 0))
         self._valid = valid
 
+    # --- clock mode: every track drawn up to the same (shifted) clock time ----------------------
+    def _times(self, g) -> np.ndarray | None:
+        t = g.time
+        if t is None or not np.isfinite(t).any():
+            return None
+        return t + self.time_offsets.get(g.track.group, 0.0)
+
+    def clock_range(self) -> tuple[float, float]:
+        """First and last (shifted) time of all tracks (epoch seconds)."""
+        lo, hi = np.inf, -np.inf
+        for g in self.tracks:
+            t = self._times(g)
+            if t is not None:
+                lo, hi = min(lo, np.nanmin(t)), max(hi, np.nanmax(t))
+        return (float(lo), float(hi)) if np.isfinite(lo) else (0.0, 1.0)
+
+    def clock_at(self, progress: float) -> float:
+        lo, hi = self.clock_range()
+        return lo + min(max(progress, 0.0), 1.0) * (hi - lo)
+
+    def head_on(self, g, clock: float) -> float | None:
+        """Distance along track ``g`` at the (shifted) clock time, None before its start."""
+        t = self._times(g)
+        if t is None:
+            return None
+        ok = np.isfinite(t)
+        if clock < t[ok][0]:
+            return None
+        return float(np.interp(clock, t[ok], g.dist[ok]))
+
+    def only(self, g) -> ProgressPath:
+        """A path of track ``g`` alone (cached): the stats of one runner in clock mode."""
+        cache = self.__dict__.setdefault("_single", {})
+        if id(g) not in cache:
+            cache[id(g)] = ProgressPath([replace(g, offset_m=0.0)])
+        return cache[id(g)]
+
+    def gap_at(self, clock: float) -> float | None:
+        """Clock mode: seconds the second track needs to reach the lead track's head (negative:
+        the lead is behind), None without a second track."""
+        lead = self.lead()
+        other = next((g for g in self.tracks if g is not lead), None)
+        if lead is None or other is None:
+            return None
+        d_lead, d_other = self.head_on(lead, clock), self.head_on(other, clock)
+        if d_lead is None or d_other is None:
+            return None
+        if d_other <= d_lead:  # the other one still has to get here
+            t = self._times(other)
+            ok = np.isfinite(t)
+            return float(np.interp(d_lead, other.dist[ok], t[ok]) - clock)
+        t = self._times(lead)
+        ok = np.isfinite(t)
+        return -float(np.interp(d_other, lead.dist[ok], t[ok]) - clock)
+
+    def lead(self):
+        """The track that leads in clock mode: the first of the lead group (or of all)."""
+        for g in self.tracks:
+            if g.track.group == self.lead_group:
+                return g
+        return self.tracks[0] if self.tracks else None
+
     def distance_for(self, progress: float, mode: str = "distance") -> float:
         progress = min(max(progress, 0.0), 1.0)
+        if mode == "clock" and self.tracks:
+            g = self.lead()
+            d = self.head_on(g, self.clock_at(progress))
+            return g.offset_m + (d if d is not None else 0.0)
         if mode == "time" and self.has_time:
             t = self.time[self._valid]
             d = self.dist[self._valid]
@@ -298,6 +368,14 @@ class ProgressPath:
         """Inverse of :meth:`distance_for` (the progress value that puts the head there)."""
         if self.total_m <= 0:
             return 0.0
+        if mode == "clock" and self.tracks:
+            g = self.lead()
+            t = self._times(g)
+            if t is not None:
+                ok = np.isfinite(t)
+                seconds = float(np.interp(distance - g.offset_m, g.dist[ok], t[ok]))
+                lo, hi = self.clock_range()
+                return (seconds - lo) / max(hi - lo, 1e-9)
         if mode == "time" and self.has_time:
             t = self.time[self._valid]
             seconds = float(np.interp(distance, self.dist[self._valid], t))
@@ -339,6 +417,7 @@ class TrackLayer:
         self.pixel_scale = 1.0  # image height / 1080 of the current pass
         self.head_m = float("inf")  # global distance of the visible end (progress)
         self.tail_m = 0.0  # global distance of the visible start
+        self.track_heads: dict[int, float] | None = None  # clock mode: head per track (id)
 
     def set_tracks(self, tracks: list[Track], frame: LocalFrame) -> None:
         self.tracks = tracks
@@ -527,7 +606,10 @@ class TrackLayer:
                 _set(program, "u_color_max", float(store["tracks.color_max"]))
                 ramps = [v for v, _ in store.registry["tracks.color_ramp"].options]
                 _set(program, "u_color_ramp", ramps.index(store["tracks.color_ramp"]))
-            _set(program, "u_head_m", min(self.head_m, 1e12) if walked else 1e12)
+            head = self.head_m
+            if walked and self.track_heads is not None:  # clock mode: every track its own
+                head = self.track_heads.get(id(g), -1.0)
+            _set(program, "u_head_m", min(head, 1e12) if walked else 1e12)
             _set(program, "u_tail_m", self.tail_m if walked else 0.0)
             vao.render(moderngl.TRIANGLE_STRIP)
 

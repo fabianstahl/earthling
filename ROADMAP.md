@@ -602,6 +602,15 @@ turns into a ship on the ferry and into a plane on the flight. Built-in icons in
 `assets/icons/vehicles` (drawn by `tools/make_poi_icons.py`).
 → The Hurtigruten ship sailing up the coast, the cyclist on the Stelvio hairpins.
 
+**19.9 Several heads at once**
+`progress.mode = "clock"`: every walked track is drawn up to the same clock time, each with
+its own marker (in a light version of its line colour, or its group's vehicle). A time shift
+per group (`trackgroup.<name>.time_offset`) lines up tracks of different days, e.g. last
+year's run with this year's. The first group of the project leads: the follow camera, the sun
+and the stats (of that track alone) follow it, and `stats.show_gap` shows how far (in time)
+the second track is behind.
+→ A ghost race through Berlin: 2025 against 2024, with the gap in the overlay.
+
 ---
 
 ## 5. Risks & notes
