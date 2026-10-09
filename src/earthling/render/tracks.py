@@ -132,6 +132,7 @@ class TrackSegmentGeometry:
     ground: np.ndarray | None = None  # (n,) metres actually walked (3D, true heights)
     hr: np.ndarray | None = None  # (n,) heart rate (bpm), NaN where unknown
     water: np.ndarray | None = None  # (n,) 1 on water, 0 on land (groups split by water)
+    gpx_ele: np.ndarray | None = None  # (n,) the file's (smoothed) elevations, NaN if none
 
 
 def build_track_positions(
@@ -184,8 +185,12 @@ def build_track_positions(
         if water_at is not None and getattr(track, "split_water", False):
             water = (np.asarray(water_at(lon, lat), dtype=np.float64) > 0.5).astype(np.float64)
             water = (smooth(water, 3) > 0.5).astype(np.float64)  # no single-point flicker
+        gpx_ele = np.full(len(ele), np.nan)
+        if np.isfinite(ele).all():
+            gpx_ele = smooth(ele, options.smoothing)
         result.append(
-            TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground, hr, water)
+            TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground, hr, water,
+                                 gpx_ele)  # fmt: skip
         )
     return result
 
@@ -246,6 +251,7 @@ class _GpuTrack:
     ground: np.ndarray | None = None  # walked distance within the track
     hr: np.ndarray | None = None  # heart rate (bpm, NaN where unknown)
     t0: float = 0.0  # epoch seconds the vertex times are relative to
+    values: np.ndarray | None = None  # (n, 4) elevation, gradient, speed, heart rate
 
 
 class ProgressPath:
@@ -272,6 +278,9 @@ class ProgressPath:
         self.ground = np.concatenate(grounds) if grounds else np.zeros(0)  # walked metres
         self.track_index = np.concatenate(owners) if owners else np.zeros(0, dtype=int)
         self.hr = np.concatenate(hrs) if hrs else np.zeros(0)  # heart rate per point
+        # elevation, gradient, speed, heart rate per point (as the tracks are coloured)
+        values = [g.values for g in tracks if g.values is not None]
+        self.values = np.vstack(values) if len(values) == len(tracks) and values else None
         # clock mode (several heads at once): a time shift per group (seconds) and the group
         # whose head leads the camera, the sun and the stats (set by the renderer)
         self.time_offsets: dict[str, float] = {}
@@ -476,8 +485,12 @@ class TrackLayer:
                 continue
             origin = segments[0].enu[0].copy()
             all_time = np.concatenate([s.time for s in segments])
-            values = motion_values(np.concatenate([s.ground for s in segments]),
-                                   np.concatenate([s.ele for s in segments]), all_time,
+            # gradients from the recorded elevations where the file has them (a draped DEM is
+            # noisy where a road is cut into a slope, e.g. at hairpins)
+            gpx_ele = np.concatenate([s.gpx_ele for s in segments])
+            if not np.isfinite(gpx_ele).all():
+                gpx_ele = np.concatenate([s.ele for s in segments])
+            values = motion_values(np.concatenate([s.ground for s in segments]), gpx_ele, all_time,
                                    np.concatenate([s.hr for s in segments]))  # fmt: skip
             t_ok = all_time[np.isfinite(all_time)]
             t0 = float(t_ok[0]) if len(t_ok) else 0.0
@@ -498,6 +511,7 @@ class TrackLayer:
                 ground=np.concatenate([s.ground for s in segments]),
                 hr=np.concatenate([s.hr for s in segments]),
                 t0=t0,
+                values=values,
             )
             self._gpu.append(gpu)
         # progress runs along the walked tracks only, in time order: several walked groups

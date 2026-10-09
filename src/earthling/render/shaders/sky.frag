@@ -12,6 +12,12 @@ uniform float u_pixel_angle;      // radians per pixel (star size)
 uniform sampler2D u_skyview_lut;
 uniform vec3 u_flash_sky = vec3(0.0);   // lightning: glow of the sky / clouds
 uniform vec3 u_flash_dir = vec3(0.0, 0.0, 1.0);
+// polar caps: the terrain tiles (Web Mercator) end at 85.05 degrees; beyond, the planet seen
+// from far up is drawn here as lit ice
+uniform mat3 u_enu_to_ecef = mat3(1.0);  // the camera's local ENU -> Earth-centred axes
+uniform vec3 u_sun_base = vec3(1.4);
+uniform vec3 u_sky_day = vec3(0.2);
+uniform vec3 u_sky_night = vec3(0.01);
 
 float hash13(vec3 p) {
     p = fract(p * 0.1031);
@@ -70,6 +76,19 @@ void main() {
     if (cos_d > disc_edge && !below_horizon) {
         float r = sqrt(max(0.0, 1.0 - (1.0 - cos_d) / (1.0 - disc_edge)));
         radiance += trans * u_sun_illuminance * 60.0 * u_sun_disc * (0.4 + 0.6 * r);
+    }
+    if (below_horizon) {
+        vec2 hit = ray_sphere(origin, dir, PLANET_RADIUS);
+        vec3 n = normalize(origin + dir * hit.x);  // the ground point (camera-local axes)
+        float lat = asin(clamp((u_enu_to_ecef * n).z, -1.0, 1.0));
+        if (abs(lat) > radians(84.8)) {
+            float sin_sun = dot(n, sun);
+            float day = smoothstep(-0.139, 0.139, sin_sun);
+            vec3 light = u_sun_base * transmittance_to_top(PLANET_RADIUS, sin_sun)
+                         * max(sin_sun, 0.0) + u_sky_day * day + u_sky_night * (1.0 - day);
+            float edge = smoothstep(radians(84.8), radians(84.95), abs(lat));  // under the tiles
+            radiance = mix(radiance, radiance * 0.4 + vec3(0.9, 0.92, 0.95) * light, edge);
+        }
     }
     // stars, dimmed by the atmosphere near the horizon
     if (u_night > 0.0 && !below_horizon) {

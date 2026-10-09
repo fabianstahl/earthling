@@ -13,9 +13,11 @@ out float v_skirt;
 out float v_height;
 out vec3 v_world;  // camera-relative position
 out float v_log_z;
+out vec3 v_up;     // ellipsoid normal (ENU)
 
 void main() {
     v_tile_uv = in_uv;
+    v_up = in_up;
     v_skirt = in_skirt;
     v_hm_uv = heightmap_uv(in_uv);
     float h = morphed_height(v_hm_uv, in_uv) - in_skirt * u_skirt_depth;

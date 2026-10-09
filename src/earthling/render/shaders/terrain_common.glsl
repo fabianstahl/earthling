@@ -5,6 +5,17 @@ uniform sampler2D u_heightmap;  // r = height (m), g = valid (1/0)
 uniform float u_exaggeration;
 uniform float u_sample_spacing;  // metres between heightmap samples
 uniform mat3 u_tangent;          // columns: east, north, up (ENU) at node centre
+uniform vec3 u_polar_axis = vec3(0.0, 0.0, 1.0);  // the Earth's axis (to the north pole) in ENU
+
+// The tangent frame (columns east, north, up) at a point with ellipsoid normal `up`. The node
+// centre's frame (u_tangent) is only right near the centre: coarse nodes seen from space span
+// tens of degrees, and their shading would jump at the node borders.
+mat3 tangent_at(vec3 up) {
+    vec3 east = cross(u_polar_axis, up);
+    if (dot(east, east) < 1e-8) return u_tangent;  // at the poles
+    east = normalize(east);
+    return mat3(east, cross(up, east), up);
+}
 uniform float u_hm_scale;        // heightmap samples across this node
 uniform vec2 u_hm_offset;        // heightmap sample index of the node's NW corner
 
@@ -47,7 +58,7 @@ float valid_at(vec2 hm_uv) {
 }
 
 // World-space (ENU) normal from central differences of the heightmap.
-vec3 terrain_normal(vec2 hm_uv) {
+vec3 terrain_normal(vec2 hm_uv, mat3 tangent) {
     float t = 1.0 / HEIGHTMAP_SAMPLES;
     float he = height_at(hm_uv + vec2(t, 0.0));
     float hw = height_at(hm_uv - vec2(t, 0.0));
@@ -55,11 +66,11 @@ vec3 terrain_normal(vec2 hm_uv) {
     float hs = height_at(hm_uv + vec2(0.0, t));
     vec3 n = normalize(vec3((hw - he) / (2.0 * u_sample_spacing),
                             (hs - hn) / (2.0 * u_sample_spacing), 1.0));
-    return normalize(u_tangent * n);
+    return normalize(tangent * n);
 }
 
 // The same for the parent heightmap (geomorphing the shading along with the heights).
-vec3 parent_terrain_normal(vec2 parent_hm_uv) {
+vec3 parent_terrain_normal(vec2 parent_hm_uv, mat3 tangent) {
     float t = 1.0 / HEIGHTMAP_SAMPLES;
     float he = parent_height_at(parent_hm_uv + vec2(t, 0.0));
     float hw = parent_height_at(parent_hm_uv - vec2(t, 0.0));
@@ -67,11 +78,11 @@ vec3 parent_terrain_normal(vec2 parent_hm_uv) {
     float hs = parent_height_at(parent_hm_uv + vec2(0.0, t));
     vec3 n = normalize(vec3((hw - he) / (2.0 * u_parent_sample_spacing),
                             (hs - hn) / (2.0 * u_parent_sample_spacing), 1.0));
-    return normalize(u_tangent * n);
+    return normalize(tangent * n);
 }
 
-vec3 morphed_normal(vec2 hm_uv, vec2 tile_uv) {
-    vec3 n = terrain_normal(hm_uv);
+vec3 morphed_normal(vec2 hm_uv, vec2 tile_uv, mat3 tangent) {
+    vec3 n = terrain_normal(hm_uv, tangent);
     if (u_morph >= 1.0) return n;
-    return normalize(mix(parent_terrain_normal(parent_heightmap_uv(tile_uv)), n, u_morph));
+    return normalize(mix(parent_terrain_normal(parent_heightmap_uv(tile_uv), tangent), n, u_morph));
 }

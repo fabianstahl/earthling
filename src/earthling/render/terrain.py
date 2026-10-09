@@ -697,6 +697,9 @@ class TerrainLayer:
                 # GLSL mat3 is column-major: columns = east, north, up
                 if "u_tangent" in program:
                     program["u_tangent"].write(geo.tangent.astype("f4").tobytes())
+                if "u_polar_axis" in program and self.frame is not None:
+                    axis = self.frame.rotation @ np.array([0.0, 0.0, 1.0])  # ECEF z in ENU
+                    program["u_polar_axis"] = tuple(float(v) for v in axis)
                 _set(program, "u_zoom", key[0])
                 for name, unit in TEXTURE_UNITS.items():
                     tex = node.textures.get(name)

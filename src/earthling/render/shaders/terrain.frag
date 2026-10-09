@@ -28,6 +28,7 @@ in float v_skirt;  // 1 on the skirts hiding cracks between nodes
 in float v_height;
 in vec3 v_world;
 in float v_log_z;
+in vec3 v_up;
 out vec4 f_color;
 
 uniform sampler2D u_imagery;
@@ -181,7 +182,8 @@ void main() {
     return;  // depth only
 #else
     write_log_depth(v_log_z);
-    vec3 n = morphed_normal(v_hm_uv, v_tile_uv);
+    mat3 tangent = tangent_at(normalize(v_up));
+    vec3 n = morphed_normal(v_hm_uv, v_tile_uv, tangent);
     if (u_detail_normals > 0.0 && u_has_imagery && v_skirt < 0.5) {
         float reach = u_detail_distance_km * 1000.0;
         float fade = 1.0 - smoothstep(0.35 * reach, reach, length(v_world));
@@ -222,7 +224,7 @@ void main() {
     li.tile_uv = v_tile_uv;
     li.height = v_height;
     li.normal = n;
-    li.normal_local = transpose(u_tangent) * n;
+    li.normal_local = transpose(tangent) * n;
     li.slope = degrees(acos(clamp(li.normal_local.z, -1.0, 1.0)));
     li.aspect = mod(degrees(atan(li.normal_local.x, li.normal_local.y)) + 360.0, 360.0);
     li.imagery = u_has_imagery ? texture(u_imagery, v_tile_uv).rgb

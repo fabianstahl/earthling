@@ -89,7 +89,11 @@ class HikeStats:
         from earthling.render.tracks import motion_values
 
         # elevation, gradient, speed and heart rate per point
-        self.values = motion_values(self.ground, self.ele, path.time, getattr(path, "hr", None))
+        values = getattr(path, "values", None)
+        if values is not None and len(values) == n:
+            self.values = values  # the same values the tracks are coloured by
+        else:
+            self.values = motion_values(self.ground, self.ele, path.time, getattr(path, "hr", None))
         times = path.time
         self.has_time = bool(np.isfinite(times).sum() >= 2)
         if self.has_time:

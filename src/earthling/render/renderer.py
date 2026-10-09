@@ -157,6 +157,7 @@ class Renderer:
         self.lighting: Lighting | None = None
         self.camera_height = 1500.0
         self.vehicles: list = []  # vehicle markers at the heads (render/vehicles.py)
+        self._camera_latlon = (0.0, 0.0)
         self.fullscreen = FullscreenPasses(ctx, self.shaders)
         self.atmosphere = AtmosphereLuts(ctx, self.shaders, self.fullscreen)
         self.weather = WeatherSystem(ctx, self.shaders, self.fullscreen)
@@ -219,6 +220,7 @@ class Renderer:
         if self.frame is not None:
             lat, lon, height = (float(v) for v in self.frame.enu_to_geodetic(camera.position))
             self.camera_height = height
+            self._camera_latlon = (lat, lon)
             camera.far = far_for_height(height)
             # sun light and atmosphere where the camera is: far from the frame origin (views
             # from space, long flights) its "up" and the local sun elevation differ
@@ -613,6 +615,10 @@ class Renderer:
             if name in program:
                 program[name] = value
         program["u_pixel_angle"] = float(np.radians(camera.fov_y)) / max(1, height)
+        if "u_enu_to_ecef" in program:  # (rows E, N, U in ECEF: written as columns)
+            lat, lon = self._camera_latlon
+            rows = LocalFrame(lat, lon, 0.0).rotation
+            program["u_enu_to_ecef"].write(rows.astype("f4").tobytes())
         m = enu_to_celestial(self.lighting.when, self.frame.lat, self.frame.lon)
         program["u_to_celestial"].write(m.T.astype("f4").tobytes())  # column-major
         self.optical_depth.use(OPTICAL_DEPTH_UNIT)

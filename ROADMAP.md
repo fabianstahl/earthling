@@ -630,6 +630,17 @@ point knows whether it is on water, and the parts on water take the group's wate
 (`trackgroup.<name>.water_color`, dashes or dots), the rest the normal one.
 → A canoe trip: blue lines across the lakes, dotted portages between them.
 
+**19.12 The whole globe, smoother gradients**
+Found on the Patagonia dive: the terrain normals were turned into the world with the tangent
+frame of the node centre, which coarse nodes (a quarter of the Earth at zoom 1) get wrong
+towards their borders - the shading jumped along meridians seen from space. Every fragment now
+builds its frame from its own ellipsoid normal and the Earth's axis (the heightmap grid runs
+east-west everywhere). The polar caps beyond the Web Mercator tiles (85.05 degrees) were a
+dark blue disc; the sky pass now draws them as lit ice. The per-point values (19.5) take the
+gradient from the file's smoothed elevations where it has them (a road draped on a 30 m DEM
+goes up and down at every hairpin), and the stats profile uses the same values as the line.
+→ A clean globe from 14 000 km, Antarctica included.
+
 ---
 
 ## 5. Risks & notes
