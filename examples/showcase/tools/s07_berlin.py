@@ -73,13 +73,13 @@ def main() -> None:
     s.set("weather.enabled", True)
     s.set("weather.layer1.enabled", False)
     p = "weather.layer2."
-    for pid, value in (("enabled", True), ("base", 2600.0), ("thickness", 700.0),
+    for pid, value in (("enabled", True), ("base", 4200.0), ("thickness", 700.0),
                        ("coverage", 0.85), ("density", 0.5), ("scale", 4000.0),
                        ("wind_speed", 6.0), ("wind_dir", 80.0), ("brightness", 1.0)):  # fmt: skip
         s.set(p + pid, value)
     s.set("weather.cloud_shadows", 0.3)
     s.set("rain.enabled", True)
-    s.set("rain.cloud_base", 2600.0)
+    s.set("rain.cloud_base", 4200.0)
     s.set("rain.coverage", 0.0)  # (the drizzle falls from the stratus layer)
     s.set("rain.visibility_km", 9.0)
     s.set("rain.wind", 2.0)
