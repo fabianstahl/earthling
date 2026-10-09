@@ -646,7 +646,12 @@ Labels: names in a script the label font cannot draw (Devanagari, Chinese, Thai 
 as boxes around Everest; they now fall back to `name:en` / `int_name` (or are left out). By
 clock (19.9), the lead group's line is drawn on top of the others on a shared course (the
 ghost run lay over this year's line and turned its colour pale).
-→ "Mount Everest", "Lhotse", "Ama Dablam" instead of boxes; this year's line stays orange.
+Clouds seen at a grazing angle (a deck towards the horizon) showed fine stripes along their
+shapes: the raymarch's last steps on those long segments were over a kilometre long. They now
+get up to 2.5 times the steps, the light samples towards the sun are dithered, and every
+anti-aliasing sample uses its own dither pattern.
+→ "Mount Everest", "Lhotse", "Ama Dablam" instead of boxes; this year's line stays orange;
+a smooth monsoon sky over the Grand Canyon.
 
 ---
 

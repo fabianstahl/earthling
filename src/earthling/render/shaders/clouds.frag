@@ -107,7 +107,12 @@ void main() {
     vec3 sun = normalize(u_sun_dir);
     float mu = dot(dir, sun);
     float phase = mix(hg(mu, 0.65), hg(mu, -0.25), 0.3) * 4.0 * PI;
-    float dither = fract(ign(gl_FragCoord.xy) + u_jitter * 0.618034);
+    // (a new dither pattern per anti-aliasing sample, not the same one shifted: the pattern's
+    // structure otherwise survives the averaging as fine stripes along the cloud shapes)
+    float dither = fract(ign(gl_FragCoord.xy + u_jitter * vec2(47.0, 17.0)) + u_jitter * 0.618034);
+    // a pixel seen on a layer at a grazing angle covers far more along the layer than across
+    // the ray: the noise level takes the stretched footprint (no wavy bands at the horizon)
+    float grazing = 1.0 / max(abs((u_atm_frame * dir).z), 0.083);
     vec3 radiance = vec3(0.0);
     float transmittance = 1.0;
     float weighted_t = 0.0, weight = 0.0;
@@ -117,7 +122,10 @@ void main() {
         seg.y = min(seg.y, scene);
         if (seg.y <= seg.x) continue;
         float len = seg.y - seg.x;
-        int steps = clamp(int(float(u_steps) * clamp(len / 6000.0, 0.25, 1.0)), 8, u_steps);
+        // (long, grazing segments towards the horizon get up to 2.5 x the steps: with the
+        // usual count their last steps were over a kilometre long and the clouds banded)
+        int steps = clamp(int(float(u_steps) * clamp(len / 6000.0, 0.25, 2.5)), 8,
+                          u_steps * 5 / 2);
         // Steps grow geometrically from the entry point: dense clouds are opaque within a few
         // hundred metres, so even steps along long (grazing) segments would be all-or-nothing
         // samples that flicker with the smallest camera move.
@@ -137,16 +145,18 @@ void main() {
             vec3 rel = dir * t;
             float hf;
             // noise level from the sample footprint (pixel size / step) vs. the voxel size
-            float footprint = max(t * u_pixel_angle, dt * 0.5);
+            float footprint = max(t * u_pixel_angle * grazing, dt * 0.5);
             float lod = log2(footprint / (u_layer_noise[i].x / 128.0));
             float detail = 1.0 - smoothstep(8000.0, 20000.0, t);
             float d = total_density_lod(rel, lod, detail, hf);
             d *= 1.0 - smoothstep(0.7 * u_max_distance, u_max_distance, t);
             if (d <= 1e-6) continue;
             // light towards the sun: a few samples with growing steps
+            // (the light samples are dithered too: at a low sun their fixed distances drew
+            // contour-like stripes across the clouds)
             float tau = 0.0;
             float ds = 60.0;
-            float along = 0.0;
+            float along = -ds * (1.0 - fract(dither * 1.618 + float(k) * 0.381));
             for (int j = 0; j < 5; ++j) {
                 along += ds;
                 float hj;
