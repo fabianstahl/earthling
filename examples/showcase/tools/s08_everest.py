@@ -20,6 +20,7 @@ from sc_common import (
     load_hike,
     local,
     new_scene,
+    track_time_at,
     orbit_eye,
     poi,
     save,
@@ -104,7 +105,7 @@ def main() -> None:
     for t in sun_times:
         d = head_of(t) if t >= TREK[0] else d0 + (d1 - d0) * smoother(
             min(max((t - FLIGHT[0]) / (FLIGHT[1] - FLIGHT[0]), 0.0), 1.0))
-        whens.append(local(path.time_at(d)))
+        whens.append(local(track_time_at(path, d)))
     for i, (t, when) in enumerate(zip(sun_times, whens, strict=True)):
         nxt = whens[i + 1] if i + 1 < len(whens) else when
         interp = Interp.STEP if abs((nxt - when).total_seconds()) > 3 * 3600 else Interp.LINEAR

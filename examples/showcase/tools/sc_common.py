@@ -846,11 +846,24 @@ def daylight_keys(scene: Scene, hike: Hike, times, head_of, sigma_s: float = 0.8
     the date of the head: from one day's evening to the next morning the sun moves back over
     the sky instead of passing through the night (no dark flash between the days)."""
     times = np.asarray(times, dtype=np.float64)
-    whens = [local(hike.path.time_at(head_of(float(t)))) for t in times]
+    whens = [local(track_time_at(hike.path, head_of(float(t)))) for t in times]
     hours = np.array([w.hour + w.minute / 60.0 + w.second / 3600.0 for w in whens])
     step = float(times[1] - times[0]) if len(times) > 1 else 1.0
     hours = gaussian(hours, sigma_s / step)
     scene.store.set("sun.follow_track", False)
-    for t, w, h in zip(times, whens, hours, strict=True):
-        clock = dt.datetime(w.year, w.month, w.day) + dt.timedelta(hours=float(h))
-        key(scene, "sun.datetime", round(float(t), 4), clock, Interp.LINEAR)
+    clocks = [dt.datetime(w.year, w.month, w.day) + dt.timedelta(hours=float(h))
+              for w, h in zip(whens, hours, strict=True)]  # fmt: skip
+    for i, (t, clock) in enumerate(zip(times, clocks, strict=True)):
+        # (a key before a change of the date steps: interpolating would run through the night)
+        nxt = clocks[min(i + 1, len(clocks) - 1)]
+        interp = Interp.STEP if nxt.date() != clock.date() else Interp.LINEAR
+        key(scene, "sun.datetime", round(float(t), 4), clock, interp)
+
+
+def track_time_at(path, distance: float) -> float:
+    """Recorded time at a path distance, from the track the distance lies on (path.time_at
+    interpolates across the gap between two tracks: a time in the night between two days)."""
+    g = path.track_at(distance)
+    ok = np.isfinite(g.time)
+    local_d = min(max(distance - g.offset_m, 0.0), g.length_m)
+    return float(np.interp(local_d, g.dist[ok], g.time[ok]))
