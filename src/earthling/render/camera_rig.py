@@ -94,6 +94,9 @@ class CameraRig:
         ahead = path.position_at(head + self.value("follow.look_ahead", time))
         target = ahead if ahead is not None else here
         h, p, r = look_orientation(eye, target)
+        bank = self.value("follow.bank", time)
+        if bank:
+            r = bank_roll(path, head, bank)
         return (float(eye[0]), float(eye[1]), float(eye[2]), h, p, r)
 
     # --- final pose -------------------------------------------------------------------
@@ -113,6 +116,27 @@ class CameraRig:
             return current
         f = smoothstep((time - switch_time) / transition)
         return blend_poses(self.pose_for_mode(previous_mode, time), current, f)
+
+
+BANK_WINDOW_M = 250.0  # the turn is measured over this distance before and after the head
+MAX_BANK_DEG = 60.0
+
+
+def bank_roll(path, head: float, factor: float, window: float = BANK_WINDOW_M) -> float:
+    """Roll (degrees) leaning into the turn of the path at distance ``head``: ``factor`` times
+    the change of direction over the window, like a pilot or a cyclist (a right turn lowers
+    the right side)."""
+    back = path.position_at(max(0.0, head - window))
+    here = path.position_at(head)
+    ahead = path.position_at(min(path.total_m, head + window))
+    if back is None or here is None or ahead is None:
+        return 0.0
+    d_in, d_out = here - back, ahead - here
+    if np.hypot(*d_in[:2]) < 1.0 or np.hypot(*d_out[:2]) < 1.0:
+        return 0.0
+    turn = math.degrees(math.atan2(d_out[0], d_out[1]) - math.atan2(d_in[0], d_in[1]))
+    turn = (turn + 180.0) % 360.0 - 180.0  # positive: a right turn
+    return float(np.clip(-factor * turn, -MAX_BANK_DEG, MAX_BANK_DEG))
 
 
 MIN_CLEARANCE_M = 5.0

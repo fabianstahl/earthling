@@ -86,3 +86,42 @@ def test_mode_switch_blends_over_the_transition():
     target_dir = np.array([2000.0, 0, 0]) - after[:3]
     f = forward_vector(after[3], after[4])
     assert np.dot(f, target_dir / np.linalg.norm(target_dir)) == pytest.approx(1.0, abs=1e-6)
+
+
+class RightTurnPath:
+    """North for 1 km, then a quarter circle (r = 500 m) turning right, then east."""
+
+    total_m = 1000.0 + 785.4 + 1000.0
+
+    def distance_for(self, progress, mode="distance"):
+        return progress * self.total_m
+
+    def position_at(self, d):
+        d = min(max(d, 0.0), self.total_m)
+        if d <= 1000.0:
+            return np.array([0.0, d, 500.0])
+        if d <= 1785.4:
+            a = (d - 1000.0) / 500.0
+            return np.array([500.0 - 500.0 * np.cos(a), 1000.0 + 500.0 * np.sin(a), 500.0])
+        return np.array([500.0 + d - 1785.4, 1500.0, 500.0])
+
+
+def test_banking_leans_into_turns():
+    from earthling.core.camera_path import orientation_matrix
+    from earthling.render.camera_rig import bank_roll
+
+    path = RightTurnPath()
+    assert bank_roll(path, 300.0, 1.0) == pytest.approx(0.0, abs=1e-6)  # straight
+    roll = bank_roll(path, 1390.0, 0.5)
+    assert -60.0 <= roll < -10.0  # a right turn: negative roll
+    right = orientation_matrix(0.0, 0.0, roll)[:, 0]
+    assert right[2] < 0.0  # ... lowers the right side of the picture
+    scene = Scene()
+    rig = CameraRig(scene.animation, scene.store)
+    rig.path = path
+    scene.store.set("camera.mode", "follow")
+    scene.store.set("follow.lag", 0.0)
+    scene.store.set("progress.head", 1390.0 / path.total_m)
+    assert rig.pose(0.0)[5] == pytest.approx(0.0)  # off by default
+    scene.store.set("follow.bank", 0.5)
+    assert rig.pose(0.0)[5] == pytest.approx(roll)

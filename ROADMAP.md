@@ -547,6 +547,11 @@ clouds move, never where they are. `weather.gusts` / `weather.gust_period` let t
 all layers (and the slant of the rain) speed up and calm down in gusts.
 → A storm that builds up, with clouds racing in gusts, without jumps.
 
+**19.2 Banking camera**
+`follow.bank`: in follow mode the camera rolls into the turns of the track (the change of
+direction over 250 m before and after the head), like a pilot or a cyclist.
+→ First-person flights that lean into the valley curves.
+
 ---
 
 ## 5. Risks & notes

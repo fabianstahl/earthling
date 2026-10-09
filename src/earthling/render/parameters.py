@@ -95,6 +95,9 @@ CAMERA = section(
         tooltip="0 = straight behind the hiker, 90 = from the side"),
     flt("follow.lag", "Follow lag", 1.0, 0.0, 10.0, step=0.1, decimals=1, unit="s"),
     flt("follow.look_ahead", "Look ahead", 300.0, 0.0, 5000.0, step=10.0, decimals=0, unit="m"),
+    flt("follow.bank", "Banking", 0.0, 0.0, 3.0, step=0.05,
+        tooltip="Lean into the turns (degrees of roll per degree of turn over 250 m), "
+                "like a pilot or a cyclist"),
 )  # fmt: skip
 
 TERRAIN = section(
