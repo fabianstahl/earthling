@@ -659,6 +659,10 @@ slice. From 12 km camera height up it is integrated per pixel along the ray inst
 dense near the ground; the volume itself now integrates its slices cumulatively), which also
 gives views from space their blue veil. On the water the waves fade out earlier (20 pixels per
 wavelength) and the sun's glint is capped lower.
+Seen from space, the whole day side changed colour in one frame when the sun rose at the
+camera: the sky light's tint came from the sunlight's transmittance at the camera, which
+underflows below the horizon (white) and turns red at sunrise; it now uses the sun on the
+horizon there, and the bounce light from the ground takes the sun's visibility at each point.
 → "Mount Everest", "Lhotse", "Ama Dablam" instead of boxes; this year's line stays orange;
 a smooth monsoon sky over the Grand Canyon.
 

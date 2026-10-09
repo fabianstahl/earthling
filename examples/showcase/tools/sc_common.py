@@ -838,3 +838,19 @@ def first_reach(hike: Hike, day, point, radius_m: float = 60.0) -> float:
 def heading_of(eye, target) -> float:
     d = np.asarray(target, dtype=np.float64) - np.asarray(eye, dtype=np.float64)
     return math.degrees(math.atan2(d[0], d[1]))
+
+
+def daylight_keys(scene: Scene, hike: Hike, times, head_of, sigma_s: float = 0.8) -> None:
+    """sun.datetime keys from the recorded time at the head (``head_of(t)``: path distance),
+    for heads that jump over nights and stops. The clock time is smoothed over ``sigma_s`` on
+    the date of the head: from one day's evening to the next morning the sun moves back over
+    the sky instead of passing through the night (no dark flash between the days)."""
+    times = np.asarray(times, dtype=np.float64)
+    whens = [local(hike.path.time_at(head_of(float(t)))) for t in times]
+    hours = np.array([w.hour + w.minute / 60.0 + w.second / 3600.0 for w in whens])
+    step = float(times[1] - times[0]) if len(times) > 1 else 1.0
+    hours = gaussian(hours, sigma_s / step)
+    scene.store.set("sun.follow_track", False)
+    for t, w, h in zip(times, whens, hours, strict=True):
+        clock = dt.datetime(w.year, w.month, w.day) + dt.timedelta(hours=float(h))
+        key(scene, "sun.datetime", round(float(t), 4), clock, Interp.LINEAR)

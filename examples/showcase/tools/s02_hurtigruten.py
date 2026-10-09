@@ -17,6 +17,7 @@ from sc_common import (
     key,
     key_shots,
     load_hike,
+    local,
     new_scene,
     poi,
     save,
@@ -83,6 +84,13 @@ def main() -> None:
     for t in times[::2]:
         key(scene, "progress.head", round(float(t), 4),
             path.progress_for_distance(min(head_of(t), total - 1.0)), Interp.LINEAR)  # fmt: skip
+    # the sun from the recorded time at the head, smoothed: the head runs past the port stops
+    # (3.5 h in Trondheim) in a few frames, and the light jumped with it
+    s.set("sun.follow_track", False)
+    stamps = np.array([path.time_at(min(head_of(t), total - 1.0)) for t in times])
+    stamps = gaussian(stamps, 0.8 * 30)
+    for t, stamp in zip(times[::2], stamps[::2], strict=True):
+        key(scene, "sun.datetime", round(float(t), 4), local(float(stamp)), Interp.LINEAR)
     close = follow_shots(hike, times, head_of, distance=2200.0, pitch=-6.0, side=80.0,
                          window=3000.0, sigma_s=0.8, heading_sigma_s=2.0, clearance=40.0)  # fmt: skip
     wide = follow_shots(hike, times, head_of, distance=95_000.0, pitch=-48.0, side=30.0,
@@ -110,9 +118,10 @@ def main() -> None:
                        ("scale", 3000.0), ("wind_speed", 8.0), ("wind_dir", 60.0)):  # fmt: skip
         s.set(p + pid, value)
     # (only around Bergen: seen from high up the low cloud would cover the coast in speckles)
+    # (gone before the camera climbs through the deck: crossing it flickered)
     key(scene, p + "density", 0.0, 0.7)
-    key(scene, p + "density", 4.5, 0.7)
-    key(scene, p + "density", 6.0, 0.0)
+    key(scene, p + "density", 2.0, 0.7)
+    key(scene, p + "density", 3.2, 0.0)
     key(scene, p + "coverage", 0.0, 0.7)
     key(scene, p + "coverage", 5.0, 0.6)
     key(scene, p + "coverage", 9.0, 0.15)

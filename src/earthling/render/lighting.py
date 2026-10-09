@@ -67,7 +67,7 @@ class Lighting:
     sun_base: tuple[float, float, float] = (1.0, 1.0, 1.0)
     sky_day: tuple[float, float, float] = (0.0, 0.0, 0.0)
     sky_night: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    ground_day: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    ground_day: tuple[float, float, float] = (0.0, 0.0, 0.0)  # with the sun fully up
     ground_night: tuple[float, float, float] = (0.0, 0.0, 0.0)
     day: float = 1.0
 
@@ -100,13 +100,19 @@ def compute_lighting(
     # light turns warmer and weaker when the sun light has to cross more atmosphere
     day = smoothstep(-8.0, 8.0, sun.elevation)
     night = 1.0 - smoothstep(-16.0, -4.0, sun.elevation)
-    tint = 0.35 + 0.65 * transmittance / max(float(transmittance.max()), 1e-6)
+    # (the tint of a sun below the horizon is that of the sun on it: the transmittance there
+    # underflows to equal tiny values, which turned the tint white and made it jump to red at
+    # sunrise - seen from space the whole day side changed colour in one frame)
+    tint_t = transmittance
+    if sun.elevation < 0.5:
+        tint_t = sun_transmittance(0.5, camera_height, store["sky.rayleigh"], store["sky.haze"])
+    tint = 0.35 + 0.65 * tint_t / max(float(tint_t.max()), 1e-6)
     night_sky = np.array([0.012, 0.016, 0.03])
     sky_day = np.array(srgb_to_linear(store["light.sky_color"])) * store["light.ambient"] * tint
     sky_night = night_sky * store["light.night_ambient"]
     sky = sky_day * day + sky_night * (1.0 - day)
-    ground_day = np.array(srgb_to_linear(store["light.ground_color"])) * store["light.ambient"]
-    ground_day = ground_day * (0.3 + 0.7 * float(visibility))
+    ground_full = np.array(srgb_to_linear(store["light.ground_color"])) * store["light.ambient"]
+    ground_day = ground_full * (0.3 + 0.7 * float(visibility))
     ground_night = night_sky * 0.3
     ground = ground_day * day + ground_night * (1.0 - day)
     fog_color = np.array(srgb_to_linear(store["fog.color"]))
@@ -131,7 +137,7 @@ def compute_lighting(
         sun_base=vec(base),
         sky_day=vec(sky_day),
         sky_night=vec(sky_night),
-        ground_day=vec(ground_day),
+        ground_day=vec(ground_full),  # (the sun's visibility: per point, see terrain.frag)
         ground_night=vec(ground_night),
         day=float(day),
     )

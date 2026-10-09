@@ -12,6 +12,7 @@ from __future__ import annotations
 import numpy as np
 from sc_common import (
     Interp,
+    daylight_keys,
     follow_shots,
     gaussian,
     key,
@@ -79,6 +80,8 @@ def main() -> None:
     for t in times[::2]:
         key(scene, "progress.head", round(float(t), 4),
             path.progress_for_distance(min(head_of(t), path.total_m - 0.5)), Interp.LINEAR)  # fmt: skip
+
+    daylight_keys(scene, hike, times[::2], lambda t: min(head_of(t), path.total_m - 0.5))
 
     # --- the camera: high over the drives, down to the hikes ----------------------------
     on_hike = np.array([1.0 if path.track_at(head_of(t)).track.group == "hike" else 0.0

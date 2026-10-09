@@ -199,12 +199,14 @@ void main() {
     if (u_local_light > 0.0) {
         float day_here = smoothstep(-0.139, 0.139, sin_sun);  // +-8 degrees, like lighting.py
         vec3 sky_cam = u_sky_day * u_cam_day + u_sky_night * (1.0 - u_cam_day);
-        vec3 ground_cam = u_ground_day * u_cam_day + u_ground_night * (1.0 - u_cam_day);
+        // (the bounce light needs the sun itself: its visibility at each point, not the camera's)
+        float vis_here = smoothstep(-0.017, 0.035, sin_sun);
         // (as a ratio: the weather's dimming and lightning flashes stay in)
         vec3 sky_here = u_sky_ambient * (u_sky_day * day_here + u_sky_night * (1.0 - day_here))
                         / max(sky_cam, vec3(1e-6));
-        vec3 ground_here = u_ground_ambient
-            * (u_ground_day * day_here + u_ground_night * (1.0 - day_here)) / max(ground_cam, vec3(1e-6));
+        vec3 dim = u_sky_ambient / max(sky_cam, vec3(1e-6));  // weather dimming, flashes
+        vec3 ground_here = dim * (u_ground_day * (0.3 + 0.7 * vis_here) * day_here
+                                  + u_ground_night * (1.0 - day_here));
         float r_here = PLANET_RADIUS + max(v_height, 0.0);
         vec3 sun_here = u_sun_base * transmittance_to_top(r_here, sin_sun)
                         * smoothstep(-0.017, 0.035, sin_sun);  // the disc sets over ~1 degree

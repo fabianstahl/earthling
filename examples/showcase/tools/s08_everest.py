@@ -18,6 +18,7 @@ from sc_common import (
     key,
     key_shots,
     load_hike,
+    local,
     new_scene,
     orbit_eye,
     poi,
@@ -95,6 +96,19 @@ def main() -> None:
     for t in np.arange(TREK[0], TREK[1] + 1e-9, 1.0 / 15.0):
         key(scene, "progress.head", round(float(t), 4),
             path.progress_for_distance(head_of(t), "time"), Interp.LINEAR)  # fmt: skip
+    # the sun from the recorded time at the head, switching straight from one day's end to the
+    # next morning (the head jumps over the nights: "follow the GPX time" showed a night flash)
+    s.set("sun.follow_track", False)
+    sun_times = np.arange(0.0, DURATION + 1e-9, 1.0 / 15.0)
+    whens = []
+    for t in sun_times:
+        d = head_of(t) if t >= TREK[0] else d0 + (d1 - d0) * smoother(
+            min(max((t - FLIGHT[0]) / (FLIGHT[1] - FLIGHT[0]), 0.0), 1.0))
+        whens.append(local(path.time_at(d)))
+    for i, (t, when) in enumerate(zip(sun_times, whens, strict=True)):
+        nxt = whens[i + 1] if i + 1 < len(whens) else when
+        interp = Interp.STEP if abs((nxt - when).total_seconds()) > 3 * 3600 else Interp.LINEAR
+        key(scene, "sun.datetime", round(float(t), 4), when, interp)
     times = np.arange(0.0, DURATION + 1e-9, 1.0 / 30.0)
     chase = follow_shots(hike, times, lambda t: head_of(max(t, TREK[0])), distance=6000.0,
                          pitch=-22.0, side=40.0, window=2500.0, sigma_s=1.5,
