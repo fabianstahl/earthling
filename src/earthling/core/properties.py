@@ -25,6 +25,7 @@ class PType(StrEnum):
     VEC3 = "vec3"
     DATETIME = "datetime"  # naive local datetime
     CAMERA = "camera"  # (x, y, z, heading, pitch, roll): ENU metres and degrees
+    TEXT = "text"  # a line of text (keys switch it, like enums)
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,8 @@ class PropertyDef:
             if len(items) != 6:
                 raise ValueError(f"{self.id}: expected 6 components")
             return items
+        if t is PType.TEXT:
+            return "" if value is None else str(value)
         if t is PType.DATETIME:
             if isinstance(value, datetime):
                 return value.replace(tzinfo=None, microsecond=0)

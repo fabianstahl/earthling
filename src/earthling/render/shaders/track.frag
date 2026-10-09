@@ -1,11 +1,14 @@
 #include "logdepth.glsl"
 #include "atmosphere_lut.glsl"
 #include "fog.glsl"
+#include "colormaps.glsl"
 in float v_side;
 in float v_dist;
 in float v_width_px;
 in vec3 v_world;
 in float v_log_z;
+in vec4 v_values;
+in float v_time;
 out vec4 f_color;
 
 uniform vec3 u_color = vec3(1.0, 0.2, 0.05);  // linear
@@ -27,6 +30,10 @@ uniform float u_track_casing = 0.0;  // soft border (pixels each side, see track
 uniform vec3 u_casing_color = vec3(0.03, 0.03, 0.05);  // sRGB
 uniform float u_casing_opacity = 0.75;
 uniform int u_part = 1;              // 0 the casings (drawn first, below all lines), 1 the lines
+uniform int u_color_by = 0;          // 0 the track colour, 1..4 elevation, gradient, speed, HR
+uniform float u_color_min = 0.0;     // value range of the colour ramp
+uniform float u_color_max = 1.0;
+uniform int u_color_ramp = 2;
 
 // Dashes of about u_dash_px on screen at any zoom: the period snaps to powers of two metres
 // and crossfades between neighbouring octaves, so dashes neither crawl nor pop.
@@ -88,6 +95,12 @@ void main() {
         return;
     }
 #endif
+    vec3 base_color = u_color;
+    if (u_color_by > 0) {  // colour ramp by a value of the track (e.g. the gradient)
+        float v = v_values[clamp(u_color_by - 1, 0, 3)];
+        float t = (v - u_color_min) / max(u_color_max - u_color_min, 1e-6);
+        base_color = pow(colormap(u_color_ramp, t), vec3(2.2));
+    }
     float alpha = 1.0 - smoothstep(half_w - 0.5, half_w + 0.5, px);
     alpha *= along;
     if (u_dots != 0 && u_dash_px > 0.0) alpha = dots.x * along;
@@ -101,12 +114,12 @@ void main() {
     float boost = 1.0 + u_head_boost * near_head;
     // premultiplied, composited "over" in draw order (see TrackLayer.render)
     float a_glow = alpha * u_track_opacity;
-    f_color = vec4(u_color * u_track_glow * boost * (0.5 + 0.5 * nz) * a_glow, a_glow);
+    f_color = vec4(base_color * u_track_glow * boost * (0.5 + 0.5 * nz) * a_glow, a_glow);
     return;
 #endif
     float shade = 0.55 + 0.45 * nz;
-    vec3 lit = u_color * (u_sky_ambient + u_sun_radiance * 0.8) * shade;
-    vec3 self_lit = u_color * mix(0.6, 1.2, nz);
+    vec3 lit = base_color * (u_sky_ambient + u_sun_radiance * 0.8) * shade;
+    vec3 self_lit = base_color * mix(0.6, 1.2, nz);
     vec3 color = mix(lit, self_lit, u_track_emissive) * (1.0 + u_head_boost * near_head);
     // dark outline for readability on bright ground
     float outline = smoothstep(half_w - u_track_outline - 0.5, half_w - u_track_outline + 0.5,

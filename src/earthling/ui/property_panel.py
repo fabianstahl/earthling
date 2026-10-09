@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -237,6 +238,20 @@ class DateTimeEditor(PropertyEditor):
         self.edit.setDateTime(QDateTime(value))
 
 
+class TextEditor(PropertyEditor):
+    def __init__(self, d: PropertyDef, parent=None) -> None:
+        super().__init__(d, parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.edit = QLineEdit()
+        layout.addWidget(self.edit)
+        self.edit.editingFinished.connect(lambda: self._emit(self.edit.text()))
+
+    def _show(self, value: Any) -> None:
+        if self.edit.text() != value:
+            self.edit.setText(str(value))
+
+
 EDITORS = {
     PType.FLOAT: FloatEditor,
     PType.INT: IntEditor,
@@ -245,6 +260,7 @@ EDITORS = {
     PType.COLOR: ColorEditor,
     PType.VEC3: Vec3Editor,
     PType.DATETIME: DateTimeEditor,
+    PType.TEXT: TextEditor,
 }
 
 

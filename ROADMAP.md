@@ -564,6 +564,16 @@ Export resolutions 1080 x 1920, 2160 x 3840 (9:16) and 1080 x 1080. All on-scree
 side instead of the height, so a portrait video keeps the proportions of a landscape one.
 → Clips for phones and social media from the same scene.
 
+**19.5 Speed, gradient and heart rate**
+The GPX reader keeps the heart rate (Garmin / Strava `TrackPointExtension`). Every track point
+gets its elevation, gradient (over +- 25 m), speed (over +- 15 s) and heart rate as vertex
+values: `tracks.color_by` colours the walked tracks by one of them with a colour ramp
+(range and ramp keyframeable), and the elevation profile of the stats overlay takes the same
+colours. The stats overlay can show the speed (km/h, pace in min/km or knots), the gradient
+and the heart rate, and an extra line of text (`stats.text`, a new keyframeable text property
+type that switches at its keys, e.g. a hairpin counter or chapter titles).
+→ A bike climb with its steep ramps in red, the speed and the pulse at the head.
+
 ---
 
 ## 5. Risks & notes

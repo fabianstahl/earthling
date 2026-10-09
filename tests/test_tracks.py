@@ -61,7 +61,7 @@ def test_ribbon_layout():
     enu = np.array([[0.0, 0, 0], [10.0, 0, 0], [20.0, 0, 0]])
     geometry = TrackSegmentGeometry(enu, np.array([0.0, 10, 20]), np.full(3, np.nan))
     verts, idx = ribbon_vertices([geometry], enu[0])
-    assert verts.shape == (6, 11)
+    assert verts.shape == (6, 16)
     assert list(verts[:, 9]) == [-1, 1, -1, 1, -1, 1]
     assert idx[-1] == PRIMITIVE_RESTART and len(idx) == 7
     # mirrored neighbours at the ends
@@ -337,3 +337,64 @@ def test_walked_tracks_are_drawn_on_top_of_planned_routes(gl_ctx):
     centre = img[90:110, 99:101].reshape(-1, 3).mean(axis=0)
     expected = np.array(track_color(0)) * 255
     assert np.argmax(centre) == np.argmax(expected) == 0  # the walked (orange-red) colour
+
+
+def test_motion_values():
+    from earthling.render.tracks import motion_values
+
+    ground = np.arange(0.0, 1001.0, 10.0)
+    ele = 1000.0 + ground * 0.08  # 8 % climb
+    time = 1.7e9 + ground / 2.5  # 2.5 m/s = 9 km/h
+    hr = np.full(len(ground), 150.0)
+    v = motion_values(ground, ele, time, hr)
+    assert v[50] == pytest.approx([1040.0, 8.0, 9.0, 150.0])
+    assert v[0, 1] == pytest.approx(8.0)  # at the ends too
+    no_time = motion_values(ground, ele, np.full(len(ground), np.nan))
+    assert np.isnan(no_time[:, 2]).all() and np.isnan(no_time[:, 3]).all()
+
+
+def test_tracks_coloured_by_gradient(gl_ctx):
+    """A climbing track takes the colour of the ramp at its gradient."""
+    from earthling.core.gpx import Segment, Track
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.renderer import Renderer
+
+    n = 200
+    lat = np.full(n, FRAME.lat)
+    lon = FRAME.lon + np.linspace(-0.02, 0.02, n)
+    ele = np.linspace(1000.0, 1300.0, n)  # 300 m over 3 km: 10 %
+    times = np.datetime64("2026-07-01T08:00") + (np.arange(n) * 10).astype("timedelta64[s]")
+    track = Track("climb", Path("climb.gpx"), [Segment(lat, lon, ele, times)])
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [track])
+    scene = Scene()
+    store = scene.store
+    renderer.store = store
+    store.set("tracks.elevation", "gpx")
+    store.set("tracks.width", 12.0)
+    store.set("glow.enabled", False)
+    store.set("tracks.casing", 0.0)
+    store.set("tracks.outline", 0.0)
+    store.set("tracks.emissive", 1.0)
+    store.set("haze.aerial", 0.0)
+    camera = Camera(np.array([0.0, 0.0, 6000.0]), 0.0, -89.9, 0.0)
+    fbo = gl_ctx.simple_framebuffer((320, 180))
+
+    def centre_colour():
+        renderer.render(fbo, 320, 180, camera)
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(180, 320, 3)
+        column = img[60:120, 140:180].astype(int)  # the line crosses the middle (sky around)
+        sky = column[0, 0]
+        far = np.abs(column - sky).sum(axis=2)
+        return column[far > 0.8 * far.max()].mean(axis=0)
+
+    store.set("tracks.color_mode", "single")
+    store.set("tracks.color", (0.1, 0.9, 0.1))
+    green = centre_colour()
+    assert green[1] > green[0] + 40 and green[1] > green[2] + 40
+    store.set("tracks.color_by", "gradient")
+    store.set("tracks.color_min", 0.0)
+    store.set("tracks.color_max", 10.0)  # 10 % = the red end of turbo
+    red = centre_colour()
+    assert red[0] > red[1] + 80 and red[0] > red[2] + 80

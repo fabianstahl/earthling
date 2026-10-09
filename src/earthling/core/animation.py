@@ -182,7 +182,7 @@ def _usable_handle(handle: tuple[float, float], towards: tuple[float, float]):
 
 
 def _is_stepped(ptype: PType) -> bool:
-    return ptype in (PType.BOOL, PType.ENUM)
+    return ptype in (PType.BOOL, PType.ENUM, PType.TEXT)
 
 
 def _blend(definition: PropertyDef, a: Any, b: Any, f: float) -> Any:

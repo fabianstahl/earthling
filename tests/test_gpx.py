@@ -56,3 +56,21 @@ def test_demo_project_loads():
     tracks, errors = load_gpx_folder(folder)
     assert not errors and len(tracks) == 2
     assert 10_000 < tracks[0].stats.distance_m < 40_000
+
+
+def test_heart_rate_from_extensions(tmp_path):
+    from earthling.core.gpx import _fast_parse
+
+    gpx = tmp_path / "hr.gpx"
+    gpx.write_text(
+        '<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1" '
+        'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><trkseg>'
+        '<trkpt lat="46.0" lon="7.0"><ele>1000</ele><time>2026-07-01T08:00:00Z</time>'
+        "<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>131</gpxtpx:hr>"
+        "</gpxtpx:TrackPointExtension></extensions></trkpt>"
+        '<trkpt lat="46.001" lon="7.0"><ele>1010</ele><time>2026-07-01T08:01:00Z</time></trkpt>'
+        "</trkseg></trk></gpx>",
+        encoding="utf-8",
+    )
+    seg = _fast_parse(gpx)[0].segments[0]
+    assert seg.hr[0] == 131.0 and np.isnan(seg.hr[1])

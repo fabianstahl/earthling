@@ -4,6 +4,8 @@ in vec3 in_prev;
 in vec3 in_next;
 in float in_side; // -1 left, +1 right
 in float in_dist; // metres along the track
+in vec4 in_values; // elevation (m), gradient (%), speed (km/h), heart rate (bpm)
+in float in_time;  // seconds since the track's first point (-1e9: unknown)
 
 uniform mat4 u_view_proj;
 uniform vec3 u_offset;      // track origin - camera position
@@ -21,6 +23,8 @@ out float v_dist;
 out float v_width_px;
 out vec3 v_world;
 out float v_log_z;
+out vec4 v_values;
+out float v_time;
 
 vec2 to_screen(vec4 clip) {
     return clip.xy / max(clip.w, 1e-4) * 0.5 * u_viewport;
@@ -52,6 +56,8 @@ void main() {
     gl_Position = clip;
     v_side = in_side;
     v_dist = in_dist;
+    v_values = in_values;
+    v_time = in_time;
     v_width_px = width_px;
     v_world = p;
     v_log_z = 1.0 + clip.w * (1.0 - u_track_depth_bias);

@@ -81,6 +81,7 @@ class Segment:
     lon: np.ndarray
     ele: np.ndarray  # NaN where missing
     time: np.ndarray  # datetime64[ms], NaT where missing
+    hr: np.ndarray | None = None  # heart rate (bpm, NaN where missing), None without any
 
     def __len__(self) -> int:
         return int(self.lat.size)
@@ -181,6 +182,13 @@ def _segment_from_points(points: list[gpxpy.gpx.GPXTrackPoint]) -> Segment:
     return Segment(lat, lon, ele, np.array(times, dtype="datetime64[ms]"))
 
 
+def _number(text: str | None) -> float:
+    try:
+        return float(text) if text else np.nan
+    except ValueError:
+        return np.nan
+
+
 def _parse_times(texts: list[str | None]) -> np.ndarray:
     """ISO 8601 timestamps (UTC 'Z' or offsets) -> datetime64[ms] (UTC), NaT where missing."""
     if texts and all(t and t.endswith("Z") for t in texts):
@@ -212,7 +220,7 @@ def _fast_parse(path: Path) -> list[Track]:
 
     tracks: list[Track] = []
     name: str | None = None
-    points: list[tuple[float, float, str | None, str | None]] = []
+    points: list[tuple[float, float, str | None, str | None, str | None]] = []
     segments: list[Segment] = []
     route_index = track_index = 0
     depth_path: list[str] = []
@@ -226,7 +234,10 @@ def _fast_parse(path: Path) -> list[Track]:
             lat = np.array([p[0] for p in points])
             lon = np.array([p[1] for p in points])
             ele = np.array([float(p[2]) if p[2] else np.nan for p in points])
-            segments.append(Segment(lat, lon, ele, _parse_times([p[3] for p in points])))
+            hr = None
+            if any(p[4] for p in points):
+                hr = np.array([_number(p[4]) for p in points])
+            segments.append(Segment(lat, lon, ele, _parse_times([p[3] for p in points]), hr))
         points = []
 
     current: dict[str, str | None] = {}
@@ -235,7 +246,7 @@ def _fast_parse(path: Path) -> list[Track]:
         if event == "start":
             depth_path.append(tag)
             if tag in ("trkpt", "rtept"):
-                current = {"ele": None, "time": None}
+                current = {"ele": None, "time": None, "hr": None}
             elif tag in ("trk", "rte"):
                 name, segments = None, []
             continue
@@ -245,11 +256,13 @@ def _fast_parse(path: Path) -> list[Track]:
             current["ele"] = elem.text
         elif tag == "time" and parent in ("trkpt", "rtept"):
             current["time"] = elem.text
+        elif tag in ("hr", "heartrate") and ("trkpt" in depth_path or "rtept" in depth_path):
+            current["hr"] = elem.text  # Garmin / Strava TrackPointExtension
         elif tag == "name" and parent in ("trk", "rte"):
             name = (elem.text or "").strip() or None
         elif tag in ("trkpt", "rtept"):
             points.append((float(elem.get("lat")), float(elem.get("lon")), current["ele"],
-                           current["time"]))  # fmt: skip
+                           current["time"], current["hr"]))  # fmt: skip
             elem.clear()
         elif tag == "trkseg":
             flush_segment()
@@ -271,7 +284,7 @@ def _fast_parse(path: Path) -> list[Track]:
 
 
 PARSE_CACHE_DIR = Path.home() / ".cache" / "earthling" / "gpx"
-PARSE_CACHE_VERSION = 1
+PARSE_CACHE_VERSION = 2  # 2: heart rate
 
 
 def _cache_file(path: Path) -> Path:

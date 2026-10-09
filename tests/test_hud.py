@@ -185,3 +185,46 @@ def test_local_time_where_the_head_is(gl_ctx):
     store.set("stats.show_utc_offset", True)
     hud.render(fbo, 960, 540, store, path, 20_000.0, "Europe/Moscow")
     assert hud.last_stats.time.utcoffset().total_seconds() == 8 * 3600  # where the head is
+
+
+def test_speed_gradient_heart_rate_and_extra_line(gl_ctx):
+    from earthling.render.hud import format_speed
+
+    assert format_speed(24.25, "kmh") == ("24.2 km/h", "speed")
+    assert format_speed(12.0, "pace") == ("5:00 /km", "pace")
+    assert format_speed(0.2, "pace")[0].startswith("–")
+    assert format_speed(18.52, "knots")[0] == "10.0 kn"
+    assert format_speed(24.25, "kmh", "de")[0] == "24,2 km/h"
+    path = fake_path()  # 1 km per 30 min = 2 km/h; day 1 climbs 100 m per km = 10 %
+    path.hr = np.linspace(120.0, 160.0, 22)
+    stats = HikeStats(path, "UTC")
+    v = stats.at(10_000.0)
+    assert v.speed_kmh == pytest.approx(2.0, rel=0.05)
+    assert v.gradient == pytest.approx(10.0, rel=0.05)
+    assert v.heart_rate == pytest.approx(120.0 + 40.0 * 5 / 21, rel=0.01)
+    assert HikeStats(fake_path(), "UTC").at(10_000.0).heart_rate is None
+    store = Scene().store
+    store.set("stats.visible", True)
+    atlas = FontAtlas(gl_ctx)
+    hud = HudLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    fbo = gl_ctx.simple_framebuffer((960, 540))
+
+    def draw():
+        fbo.use()
+        fbo.clear(0.0, 0.0, 0.0, 1.0)
+        hud.render(fbo, 960, 540, store, path, 10_000.0, "UTC")
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(540, 960, 3)
+        cols = np.flatnonzero(img.sum(axis=(0, 2)) > 0)
+        rows = np.flatnonzero(img.sum(axis=(1, 2)) > 0)
+        return cols[-1] - cols[0], rows[-1] - rows[0]
+
+    w0, h0 = draw()
+    for pid in ("stats.show_speed", "stats.show_gradient", "stats.show_heart_rate"):
+        store.set(pid, True)
+    w1, h1 = draw()
+    assert w1 > w0 + 100  # three more columns
+    store.set("stats.text", "Hairpin 12 / 48")
+    w2, h2 = draw()
+    assert h2 > h1 + 10  # an extra line
+    store.set("tracks.color_by", "gradient")  # profile in the colour ramp
+    assert draw() == (w2, h2)

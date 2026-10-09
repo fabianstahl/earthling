@@ -26,9 +26,11 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
 # on-screen words per language (stats.language)
 WORDS = {
     "en": {"day": "Day {n}", "days": "{n} days", "distance": "distance", "ascent": "ascent",
-           "elevation": "elevation", "time": "{t:%H:%M}", "months": MONTHS},
+           "elevation": "elevation", "time": "{t:%H:%M}", "months": MONTHS, "speed": "speed",
+           "pace": "pace", "gradient": "gradient", "heart_rate": "heart rate"},
     "de": {"day": "Tag {n}", "days": "{n} Tage", "distance": "Strecke", "ascent": "Aufstieg",
-           "elevation": "Höhe", "time": "{t:%H:%M} Uhr",
+           "elevation": "Höhe", "time": "{t:%H:%M} Uhr", "speed": "Tempo", "pace": "Pace",
+           "gradient": "Steigung", "heart_rate": "Puls",
            "months": ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
                       "September", "Oktober", "November", "Dezember"]},
 }  # fmt: skip
@@ -50,6 +52,9 @@ class StatsAt:
     day_ascent_m: float
     descent_m: float
     day_descent_m: float
+    speed_kmh: float | None = None  # at the head (None without times)
+    gradient: float | None = None  # % (None without elevations)
+    heart_rate: float | None = None  # bpm (None without heart rate data)
 
 
 def _fill_nan(values: np.ndarray) -> np.ndarray:
@@ -81,6 +86,10 @@ class HikeStats:
             self.ascent[sel] = a + up
             self.descent[sel] = d + down
             up, down = self.ascent[sel[-1]], self.descent[sel[-1]]
+        from earthling.render.tracks import motion_values
+
+        # elevation, gradient, speed and heart rate per point
+        self.values = motion_values(self.ground, self.ele, path.time, getattr(path, "hr", None))
         times = path.time
         self.has_time = bool(np.isfinite(times).sum() >= 2)
         if self.has_time:
@@ -123,6 +132,12 @@ class HikeStats:
         def lerp(a: np.ndarray) -> float:
             return float(a[i] + (a[j] - a[i]) * f)
 
+        def value(k: int) -> float | None:
+            a, b = self.values[i, k], self.values[j, k]
+            if not (np.isfinite(a) and np.isfinite(b)):
+                return None
+            return float(a + (b - a) * f)
+
         s = int(self.day_start[i])
         time = None
         if self.has_time:
@@ -137,6 +152,9 @@ class HikeStats:
             day_ascent_m=lerp(self.ascent) - float(self.ascent[s]),
             descent_m=lerp(self.descent),
             day_descent_m=lerp(self.descent) - float(self.descent[s]),
+            speed_kmh=value(2),
+            gradient=value(1) if self.has_elevation else None,
+            heart_rate=value(3),
         )
 
     def profile(self, day: int | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -160,6 +178,18 @@ def format_number(value: float, decimals: int = 0, lang: str = "en") -> str:
     if lang == "de":  # 12.345,7
         return s.replace(",", "_").replace(".", ",").replace("_", ".")
     return s.replace(",", " ")  # thin space as thousands separator
+
+
+def format_speed(kmh: float, unit: str, lang: str = "en") -> tuple[str, str]:
+    """(value text, caption) of a speed: km/h, pace (min/km) or knots."""
+    if unit == "pace":
+        if kmh < 1.0:
+            return "–:–– /km", word(lang, "pace")
+        m, sec = divmod(int(round(3600.0 / kmh)), 60)
+        return f"{m}:{sec:02d} /km", word(lang, "pace")
+    if unit == "knots":
+        return f"{format_number(kmh / 1.852, 1, lang)} kn", word(lang, "speed")
+    return f"{format_number(kmh, 1, lang)} km/h", word(lang, "speed")
 
 
 # --- drawing ---------------------------------------------------------------------------------
@@ -335,6 +365,7 @@ class HudLayer:
 
                     subtitle += f" ({utc_offset_text(v.time)})"
         title_size, sub_size = 28.0 * s, 19.0 * s
+        text = store["stats.text"].strip()
         columns = []
         if store["stats.show_distance"]:
             d = v.day_distance_m if day_scope else v.distance_m
@@ -344,6 +375,12 @@ class HudLayer:
             columns.append((f"{format_number(a, 0, lang)} m", word(lang, "ascent")))
         if store["stats.show_elevation"] and v.elevation_m is not None:
             columns.append((f"{format_number(v.elevation_m, 0, lang)} m", word(lang, "elevation")))
+        if store["stats.show_speed"] and v.speed_kmh is not None:
+            columns.append(format_speed(v.speed_kmh, store["stats.speed_unit"], lang))
+        if store["stats.show_gradient"] and v.gradient is not None:
+            columns.append((f"{format_number(v.gradient, 1, lang)} %", word(lang, "gradient")))
+        if store["stats.show_heart_rate"] and v.heart_rate is not None:
+            columns.append((f"{v.heart_rate:.0f} bpm", word(lang, "heart_rate")))
         value_size, caption_size = 26.0 * s, 13.0 * s
         widths = [max(self._width(t, value_size), self._width(c, caption_size))
                   for t, c in columns]  # fmt: skip
@@ -355,9 +392,13 @@ class HudLayer:
         profile_w = store["stats.profile_width"] * s if show_profile else 0.0
         profile_h = store["stats.profile_height"] * s if show_profile else 0.0
         inner_w = max(title_w, values_w, profile_w, 1.0)
+        if text:
+            inner_w = max(inner_w, self._width(text, sub_size))
         rows = []
         if title or subtitle:
             rows.append(("title", title_size * 1.25))
+        if text:
+            rows.append(("text", sub_size * 1.3))
         if columns:
             rows.append(("values", value_size * 1.15 + caption_size * 1.4))
         if show_profile:
@@ -381,6 +422,8 @@ class HudLayer:
                 if subtitle:
                     self._text(batch, subtitle, x + w + (14.0 * s if title else 0.0), base,
                                sub_size, color, 0.8 * alpha)  # fmt: skip
+            elif kind == "text":
+                self._text(batch, text, x, y + sub_size, sub_size, accent, alpha)
             elif kind == "values":
                 cx = x
                 for (text, caption), w in zip(columns, widths, strict=True):
@@ -391,10 +434,11 @@ class HudLayer:
                     cx += w + gap
             else:
                 self._draw_profile(batch, stats, v, head_m, x, y + 3.0 * s, inner_w, profile_h,
-                                   accent, color, alpha, s, day_scope)  # fmt: skip
+                                   accent, color, alpha, s, day_scope, store)  # fmt: skip
             y += row_h + 10.0 * s
 
-    def _draw_profile(self, batch, stats, v, head_m, x, y, w, h, accent, color, alpha, s, day):
+    def _draw_profile(self, batch, stats, v, head_m, x, y, w, h, accent, color, alpha, s, day,
+                      store=None):  # fmt: skip
         ground, ele, prog = stats.profile(v.day if day else None)
         if len(ground) < 2 or ground[-1] <= ground[0]:
             return
@@ -414,7 +458,21 @@ class HudLayer:
         bot0, bot1 = np.c_[px[:-1], base], np.c_[px[1:], base]
         quads = np.stack([top0, top1, bot1, top0, bot1, bot0], axis=1)
         done = gx[1:] <= walked
-        if done.any():
+        color_by = store["tracks.color_by"] if store is not None else "none"
+        if done.any() and color_by != "none":
+            # the walked part in the colour ramp of the tracks (e.g. steep sections red)
+            from earthling.render.colormaps import colormap
+            from earthling.render.tracks import VALUE_KINDS
+
+            column = stats.values[:, VALUE_KINDS.index(color_by)]
+            if day:
+                column = column[stats.day == v.day]
+            values = np.interp(gx[1:], ground, np.nan_to_num(column))
+            lo, hi = store["tracks.color_min"], store["tracks.color_max"]
+            rgb = colormap(store["tracks.color_ramp"], (values - lo) / max(hi - lo, 1e-6))
+            for q, c in zip(quads[done], rgb[done], strict=True):
+                batch.triangles(q, tuple(float(x) for x in c), 0.75 * alpha)
+        elif done.any():
             batch.triangles(quads[done].reshape(-1, 2), accent, 0.45 * alpha)
         if (~done).any():
             batch.triangles(quads[~done].reshape(-1, 2), color, 0.12 * alpha)

@@ -74,6 +74,46 @@ def smooth(values: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(padded, kernel, mode="valid")
 
 
+GRADIENT_WINDOW_M = 25.0  # gradient over +- this distance
+SPEED_WINDOW_S = 15.0  # speed over +- this time
+# per-vertex values the tracks can be coloured by (tracks.color_by), in this order
+VALUE_KINDS = ("elevation", "gradient", "speed", "heart_rate")
+
+
+def motion_values(ground: np.ndarray, ele: np.ndarray, time: np.ndarray,
+                  hr: np.ndarray | None = None) -> np.ndarray:  # fmt: skip
+    """(n, 4): elevation (m), gradient (%), speed (km/h) and heart rate (bpm) per point, NaN
+    where unknown. ``ground``: metres walked (non-decreasing), ``time``: epoch seconds."""
+    n = len(ground)
+    out = np.full((n, 4), np.nan)
+    if n == 0:
+        return out
+    ground = np.asarray(ground, dtype=np.float64)
+    ele = np.asarray(ele, dtype=np.float64)
+    ok = np.isfinite(ele)
+    if ok.sum() >= 2:
+        e = np.interp(ground, ground[ok], ele[ok])
+        lo = np.clip(ground - GRADIENT_WINDOW_M, ground[0], ground[-1])
+        hi = np.clip(ground + GRADIENT_WINDOW_M, ground[0], ground[-1])
+        span = np.maximum(hi - lo, 1e-6)
+        out[:, 0] = e
+        rise = np.interp(hi, ground, e) - np.interp(lo, ground, e)
+        out[:, 1] = np.where(hi - lo > 1.0, 100.0 * rise / span, 0.0)
+    t = np.asarray(time, dtype=np.float64)
+    ok = np.isfinite(t)
+    if ok.sum() >= 2 and np.all(np.diff(t[ok]) >= 0):
+        tt, gg = t[ok], ground[ok]
+        lo = np.clip(t - SPEED_WINDOW_S, tt[0], tt[-1])
+        hi = np.clip(t + SPEED_WINDOW_S, tt[0], tt[-1])
+        span = hi - lo
+        with np.errstate(invalid="ignore", divide="ignore"):
+            speed = 3.6 * (np.interp(hi, tt, gg) - np.interp(lo, tt, gg)) / span
+        out[:, 2] = np.where(ok & (span > 0.5), speed, np.nan)
+    if hr is not None:
+        out[:, 3] = np.asarray(hr, dtype=np.float64)
+    return out
+
+
 @dataclass
 class TrackGeometryOptions:
     elevation_source: str = "dem"  # "dem" or "gpx"
@@ -90,6 +130,7 @@ class TrackSegmentGeometry:
     time: np.ndarray  # (n,) seconds since the epoch, NaN where unknown
     ele: np.ndarray | None = None  # (n,) true elevation (no exaggeration / offset)
     ground: np.ndarray | None = None  # (n,) metres actually walked (3D, true heights)
+    hr: np.ndarray | None = None  # (n,) heart rate (bpm), NaN where unknown
 
 
 def build_track_positions(
@@ -106,6 +147,7 @@ def build_track_positions(
         idx = resample_indices(seg.lat, seg.lon, options.spacing_m)
         lat, lon, ele = seg.lat[idx], seg.lon[idx], seg.ele[idx]
         times = seg.time[idx]
+        hr = seg.hr[idx] if getattr(seg, "hr", None) is not None else np.full(len(idx), np.nan)
         seconds = np.where(
             np.isnat(times), np.nan, times.astype("datetime64[ms]").astype(np.float64) / 1000.0
         )
@@ -135,33 +177,47 @@ def build_track_positions(
             true_steps = steps
         ground = ground_offset + np.concatenate([[0.0], np.cumsum(true_steps)])
         ground_offset = float(ground[-1])
-        result.append(TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground))
+        result.append(
+            TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground, hr)
+        )
     return result
 
 
-def ribbon_vertices(segments: list[TrackSegmentGeometry], origin: np.ndarray):
-    """Vertex array (pos, prev, next, side, dist) and strip indices with primitive restart."""
+VERTEX_FLOATS = 16
+
+
+def ribbon_vertices(segments: list[TrackSegmentGeometry], origin: np.ndarray,
+                    values: np.ndarray | None = None, t0: float = 0.0):  # fmt: skip
+    """Vertex array (pos, prev, next, side, dist, values[4], time) and strip indices with
+    primitive restart. ``values``: per point (all segments, see motion_values), ``time``
+    is relative to ``t0`` (float32 keeps it exact to milliseconds over days)."""
     verts, indices = [], []
     base = 0
+    first = 0
     for geometry in segments:
         enu, dist = geometry.enu, geometry.dist
         n = len(enu)
         rel = enu - origin
         prev = np.vstack([2 * rel[0] - rel[1], rel[:-1]])  # mirror the ends
         nxt = np.vstack([rel[1:], 2 * rel[-1] - rel[-2]])
-        block = np.empty((n, 2, 11), dtype=np.float64)
+        block = np.empty((n, 2, VERTEX_FLOATS), dtype=np.float64)
+        vals = values[first : first + n] if values is not None else np.zeros((n, 4))
+        rel_t = geometry.time - t0 if geometry.time is not None else np.full(n, np.nan)
         for k, side in enumerate((-1.0, 1.0)):
             block[:, k, 0:3] = rel
             block[:, k, 3:6] = prev
             block[:, k, 6:9] = nxt
             block[:, k, 9] = side
             block[:, k, 10] = dist
-        verts.append(block.reshape(-1, 11))
+            block[:, k, 11:15] = np.nan_to_num(vals, nan=0.0)
+            block[:, k, 15] = np.nan_to_num(rel_t, nan=-1e9)
+        verts.append(block.reshape(-1, VERTEX_FLOATS))
+        first += n
         indices.append(np.arange(base, base + 2 * n, dtype=np.uint32))
         indices.append(np.array([PRIMITIVE_RESTART], dtype=np.uint32))
         base += 2 * n
     if not verts:
-        return np.zeros((0, 11), dtype="f4"), np.zeros(0, dtype=np.uint32)
+        return np.zeros((0, VERTEX_FLOATS), dtype="f4"), np.zeros(0, dtype=np.uint32)
     return np.vstack(verts).astype("f4"), np.concatenate(indices)
 
 
@@ -180,6 +236,8 @@ class _GpuTrack:
     time: np.ndarray | None = None
     ele: np.ndarray | None = None  # true elevations
     ground: np.ndarray | None = None  # walked distance within the track
+    hr: np.ndarray | None = None  # heart rate (bpm, NaN where unknown)
+    t0: float = 0.0  # epoch seconds the vertex times are relative to
 
 
 class ProgressPath:
@@ -188,7 +246,7 @@ class ProgressPath:
     def __init__(self, tracks: list[_GpuTrack]) -> None:
         self.tracks = tracks
         self.total_m = tracks[-1].offset_m + tracks[-1].length_m if tracks else 0.0
-        dists, times, eles, grounds, owners = [], [], [], [], []
+        dists, times, eles, grounds, owners, hrs = [], [], [], [], [], []
         ground_offset = 0.0
         for g in tracks:
             dists.append(g.dist + g.offset_m)
@@ -199,11 +257,13 @@ class ProgressPath:
             grounds.append(ground + ground_offset)
             ground_offset += float(ground[-1]) if n else 0.0
             owners.append(np.full(n, g.index))
+            hrs.append(g.hr if g.hr is not None else np.full(n, np.nan))
         self.dist = np.concatenate(dists) if dists else np.zeros(0)
         self.time = np.concatenate(times) if times else np.zeros(0)
         self.ele = np.concatenate(eles) if eles else np.zeros(0)  # true elevation per point
         self.ground = np.concatenate(grounds) if grounds else np.zeros(0)  # walked metres
         self.track_index = np.concatenate(owners) if owners else np.zeros(0, dtype=int)
+        self.hr = np.concatenate(hrs) if hrs else np.zeros(0)  # heart rate per point
         valid = np.isfinite(self.time)
         # time mode needs monotonic timestamps; otherwise fall back to distance
         self.has_time = bool(valid.sum() >= 2) and bool(np.all(np.diff(self.time[valid]) >= 0))
@@ -319,7 +379,13 @@ class TrackLayer:
             if not segments:
                 continue
             origin = segments[0].enu[0].copy()
-            verts, indices = ribbon_vertices(segments, origin)
+            all_time = np.concatenate([s.time for s in segments])
+            values = motion_values(np.concatenate([s.ground for s in segments]),
+                                   np.concatenate([s.ele for s in segments]), all_time,
+                                   np.concatenate([s.hr for s in segments]))  # fmt: skip
+            t_ok = all_time[np.isfinite(all_time)]
+            t0 = float(t_ok[0]) if len(t_ok) else 0.0
+            verts, indices = ribbon_vertices(segments, origin, values, t0)
             gpu = _GpuTrack(
                 track,
                 index,
@@ -334,6 +400,8 @@ class TrackLayer:
                 time=np.concatenate([s.time for s in segments]),
                 ele=np.concatenate([s.ele for s in segments]),
                 ground=np.concatenate([s.ground for s in segments]),
+                hr=np.concatenate([s.hr for s in segments]),
+                t0=t0,
             )
             self._gpu.append(gpu)
         # progress runs along the walked tracks only, in time order: several walked groups
@@ -416,12 +484,14 @@ class TrackLayer:
                     [
                         (
                             g.vbo,
-                            "3f 3f 3f 1f 1f",
+                            "3f 3f 3f 1f 1f 4f 1f",
                             "in_pos",
                             "in_prev",
                             "in_next",
                             "in_side",
                             "in_dist",
+                            "in_values",
+                            "in_time",
                         )
                     ],
                     g.ibo,
@@ -442,6 +512,14 @@ class TrackLayer:
             _set(program, "u_track_length", g.length_m)
             _set(program, "u_track_offset", g.offset_m)
             walked = g.track.role == "walked"  # planned routes are always drawn in full
+            color_by = store["tracks.color_by"] if store is not None and walked else "none"
+            kind = 0 if color_by == "none" else VALUE_KINDS.index(color_by) + 1
+            _set(program, "u_color_by", kind)
+            if color_by != "none":
+                _set(program, "u_color_min", float(store["tracks.color_min"]))
+                _set(program, "u_color_max", float(store["tracks.color_max"]))
+                ramps = [v for v, _ in store.registry["tracks.color_ramp"].options]
+                _set(program, "u_color_ramp", ramps.index(store["tracks.color_ramp"]))
             _set(program, "u_head_m", min(self.head_m, 1e12) if walked else 1e12)
             _set(program, "u_tail_m", self.tail_m if walked else 0.0)
             vao.render(moderngl.TRIANGLE_STRIP)
