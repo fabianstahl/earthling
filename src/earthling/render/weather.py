@@ -37,6 +37,94 @@ def wind_vector(speed: float, direction_deg: float) -> tuple[float, float]:
     return speed * math.sin(a), speed * math.cos(a)
 
 
+# gusts: the sum of a few sines (incommensurate periods around the gust period), zero mean
+GUST_WAVES = ((1.0, 1.0, 0.3), (0.55, 1.73, 2.1), (0.3, 2.91, 4.0))  # amplitude, frequency, phase
+GUST_NORM = 1.0 / sum(a for a, _, _ in GUST_WAVES)
+
+
+def gust_factor(time: float, strength: float, period: float) -> float:
+    """Wind speed multiplier at ``time``: 1 +- ``strength`` (gusts and lulls)."""
+    if strength <= 0.0:
+        return 1.0
+    w = 2.0 * math.pi / max(period, 0.1)
+    n = sum(a * math.sin(f * w * time + p) for a, f, p in GUST_WAVES) * GUST_NORM
+    return max(0.0, 1.0 + strength * n)
+
+
+INTEGRATION_STEP = 1.0 / 30.0  # seconds
+
+
+class WindIntegrator:
+    """Wind drift (metres east, north) as the integral of the wind velocity over the timeline.
+
+    With a constant wind this is speed x time; a keyed wind speed or direction (or gusts) must
+    be integrated, or the clouds would jump whenever the speed changes. Tables of the
+    integral are cached per (speed, direction, gust) curves and only rebuilt when they change.
+    """
+
+    def __init__(self) -> None:
+        self._tables: dict[tuple, tuple[np.ndarray, np.ndarray]] = {}
+
+    @staticmethod
+    def _signature(animation, pids) -> tuple:
+        out = []
+        for pid in pids:
+            curve = animation.curves.get(pid) if animation is not None else None
+            out.append(tuple((k.time, repr(k.value), str(k.interp)) for k in curve.keys)
+                       if curve is not None and curve.keys else None)  # fmt: skip
+        return tuple(out)
+
+    def offset(self, store, animation, speed_pid: str, dir_pid: str, time: float,
+               scale: float = 1.0) -> tuple[float, float]:  # fmt: skip
+        """Drift at ``time`` of a wind given by the speed / direction properties (``scale``
+        multiplies the speed, e.g. the rain deck drifts twice as fast as the rain wind)."""
+        gust_pids = ("weather.gusts", "weather.gust_period")
+        pids = (speed_pid, dir_pid, *gust_pids)
+        sig = self._signature(animation, pids)
+        animated = any(s is not None for s in sig)
+        gusts = store["weather.gusts"] > 0.0 or sig[2] is not None
+        if not animated and not gusts:  # constant wind: closed form
+            wx, wy = wind_vector(store[speed_pid] * scale, store[dir_pid])
+            return wx * time, wy * time
+        static = tuple(store[p] for p in pids)
+        key = (speed_pid, dir_pid, scale, sig, static if not animated else
+               tuple(store[p] for p, s in zip(pids, sig, strict=True) if s is None))  # fmt: skip
+        table = self._tables.get(key)
+        end = max(time, 0.0)
+        if table is None or table[0][-1] < end:
+            table = self._build(store, animation, pids, scale, max(end, 60.0) * 1.5)
+            if len(self._tables) > 32:
+                self._tables.clear()
+            self._tables[key] = table
+        times, drift = table
+        t = min(max(time, 0.0), times[-1])
+        x = float(np.interp(t, times, drift[:, 0]))
+        y = float(np.interp(t, times, drift[:, 1]))
+        if time < 0.0:  # before the timeline: the wind of time 0
+            wx, wy = drift[1] / INTEGRATION_STEP if len(drift) > 1 else (0.0, 0.0)
+            x, y = wx * time, wy * time
+        return x, y
+
+    @staticmethod
+    def _build(store, animation, pids, scale: float, until: float):
+        def value(pid: str, t: float):
+            curve = animation.curves.get(pid) if animation is not None else None
+            return curve.evaluate(t) if curve is not None and curve.keys else store[pid]
+
+        n = int(math.ceil(until / INTEGRATION_STEP)) + 1
+        times = np.arange(n) * INTEGRATION_STEP
+        drift = np.zeros((n, 2))
+        speed_pid, dir_pid, gust_pid, period_pid = pids
+        previous = None
+        for i, t in enumerate(times):
+            g = gust_factor(t, value(gust_pid, t), value(period_pid, t))
+            v = np.array(wind_vector(value(speed_pid, t) * scale * g, value(dir_pid, t)))
+            if previous is not None:  # trapezoidal rule
+                drift[i] = drift[i - 1] + (previous + v) * 0.5 * INTEGRATION_STEP
+            previous = v
+        return times, drift
+
+
 class WeatherSystem:
     def __init__(self, ctx: moderngl.Context, shaders: ShaderLibrary, passes) -> None:
         self.ctx = ctx
@@ -47,6 +135,8 @@ class WeatherSystem:
         self.layers: list[tuple] = []  # (shape, noise, color) per active layer
         self.time = 0.0
         self.shadow_strength = 0.0
+        self.animation = None  # the scene animation (keyed wind is integrated over time)
+        self.wind = WindIntegrator()
 
     # --- resources ----------------------------------------------------------------------
     def _ensure_noise(self) -> None:
@@ -102,11 +192,12 @@ class WeatherSystem:
             p = f"weather.layer{i}."
             if not store[p + "enabled"] or store[p + "density"] <= 0.0:
                 continue
-            wx, wy = wind_vector(store[p + "wind_speed"], store[p + "wind_dir"])
+            ox, oy = self.wind.offset(store, self.animation, p + "wind_speed", p + "wind_dir",
+                                      time)  # fmt: skip
             self.layers.append((
                 (store[p + "base"], store[p + "thickness"], store[p + "coverage"],
                  store[p + "density"] * EXTINCTION_PER_DENSITY),
-                (store[p + "scale"], wx * time, wy * time, store[p + "detail"]),
+                (store[p + "scale"], ox, oy, store[p + "detail"]),
                 (0.95, 0.96, 1.0, store[p + "brightness"]),
             ))  # fmt: skip
         self.layers.extend(self.extra_layers(store, time))
@@ -117,12 +208,12 @@ class WeatherSystem:
         """The rain cloud deck (a dense, dark layer)."""
         if not store["rain.enabled"]:
             return []
-        wx, wy = wind_vector(store["rain.wind"] * 2.0, store["rain.wind_dir"])
+        ox, oy = self.wind.offset(store, self.animation, "rain.wind", "rain.wind_dir", time, 2.0)
         albedo = 1.0 - 0.75 * store["rain.darkness"]
         return [(
             (store["rain.cloud_base"], store["rain.cloud_thickness"], store["rain.coverage"],
              store["rain.cloud_density"] * EXTINCTION_PER_DENSITY),
-            (4500.0, wx * time, wy * time, 0.5),
+            (4500.0, ox, oy, 0.5),
             (albedo * 0.92, albedo * 0.94, albedo, 1.0),
         )]  # fmt: skip
 
@@ -156,7 +247,8 @@ class WeatherSystem:
         program = self.passes("rain")
         sky = lighting.sky_ambient
         light = tuple(1.6 * c + 0.12 * s for c, s in zip(sky, lighting.sun_radiance, strict=True))
-        wx, wy = wind_vector(store["rain.wind"], store["rain.wind_dir"])
+        gust = gust_factor(time, store["weather.gusts"], store["weather.gust_period"])
+        wx, wy = wind_vector(store["rain.wind"] * gust, store["rain.wind_dir"])
         for name, value in {
             "u_depth": 0,
             "u_log_depth_coef": camera.log_depth_coef,
@@ -262,6 +354,10 @@ def weather_properties() -> list:
         boolean("weather.enabled", "Weather", False,
                 tooltip="Volumetric cloud and fog layers, rain and thunderstorms"),
         flt("weather.cloud_shadows", "Cloud shadows", 0.8, 0.0, 1.0),
+        flt("weather.gusts", "Gusts", 0.0, 0.0, 1.0,
+            tooltip="The wind of all layers (and the rain) speeds up and calms down in gusts"),
+        flt("weather.gust_period", "Gust period", 8.0, 1.0, 60.0, step=0.5, decimals=1, unit="s",
+            tooltip="Typical time between two gusts"),
     ]  # fmt: skip
     names = ["Low layer (fog)", "Middle layer", "High layer"]
     for i, (name, d) in enumerate(zip(names, layer_defaults(), strict=True), start=1):

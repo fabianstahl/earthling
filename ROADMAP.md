@@ -533,6 +533,20 @@ grey veil over the whole picture. The height fog integral is evaluated with boun
 of fog colour).
 → Flights out of the rain and over fog look right.
 
+### Phase 19 – Showcase features (ten very different scenes)
+
+Ten synthetic showcase scenes (`examples/showcase`: Patagonia from space, the Hurtigruten,
+the Stelvio by bike, the Grand Canyon, Kilimanjaro, Iceland, the Berlin marathon, Everest, the
+Boundary Waters, the Trans-Siberian) each push a different part of the app. These steps add
+what they need.
+
+**19.1 Wind over time and gusts**
+The clouds and the rain deck drift by the integral of the wind velocity over the timeline
+(cached tables), not speed x time: a keyed wind speed or direction changes how fast the
+clouds move, never where they are. `weather.gusts` / `weather.gust_period` let the wind of
+all layers (and the slant of the rain) speed up and calm down in gusts.
+→ A storm that builds up, with clouds racing in gusts, without jumps.
+
 ---
 
 ## 5. Risks & notes

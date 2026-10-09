@@ -232,6 +232,7 @@ class Renderer:
                 float(v) for v in to_local.T @ np.asarray(self.lighting.sun_direction)
             )
             self.lighting.atm_frame = tuple(float(v) for v in to_local.T.ravel())
+            self.weather.animation = self.animation
             self.weather.update(s, self.animation_time)
             self.weather.dim_lighting(s, self.lighting)
             self.lightning.update(s, self.animation, self.animation_time, camera, self.frame,

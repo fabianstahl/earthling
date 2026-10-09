@@ -210,3 +210,43 @@ def test_rain_haze_only_below_the_clouds():
     weather = SimpleNamespace(raining=lambda s: True)
     uniforms = WeatherSystem.rain_uniforms(weather, store)
     assert uniforms["u_rain_haze"] > 0.0 and uniforms["u_rain_haze_top"] == 1300.0
+
+
+def test_keyed_wind_is_integrated():
+    """A wind speed key changes the drift rate, never the drift itself (no jumping clouds)."""
+    from earthling.core.animation import Interp
+    from earthling.render.weather import WindIntegrator
+
+    scene = Scene()
+    store, anim = scene.store, scene.animation
+    store.set("weather.layer2.wind_dir", 90.0)
+    anim.set_key("weather.layer2.wind_speed", 0.0, 5.0, Interp.STEP)
+    anim.set_key("weather.layer2.wind_speed", 10.0, 20.0, Interp.STEP)
+    wind = WindIntegrator()
+    p = "weather.layer2."
+    x9, _ = wind.offset(store, anim, p + "wind_speed", p + "wind_dir", 9.99)
+    x10, _ = wind.offset(store, anim, p + "wind_speed", p + "wind_dir", 10.01)
+    x20, y20 = wind.offset(store, anim, p + "wind_speed", p + "wind_dir", 20.0)
+    assert x9 == pytest.approx(50.0, abs=0.5)
+    assert x10 - x9 < 1.0  # continuous at the key
+    assert x20 == pytest.approx(50.0 + 200.0, abs=1.0) and y20 == pytest.approx(0.0, abs=1e-6)
+
+
+def test_gusts_vary_the_speed_around_the_mean():
+    from earthling.render.weather import WindIntegrator, gust_factor
+
+    factors = [gust_factor(t, 0.6, 8.0) for t in np.linspace(0.0, 120.0, 2000)]
+    assert min(factors) < 0.7 and max(factors) > 1.3
+    assert np.mean(factors) == pytest.approx(1.0, abs=0.08)
+    scene = Scene()
+    store = scene.store
+    store.set("weather.gusts", 0.6)
+    store.set("weather.layer2.wind_speed", 10.0)
+    store.set("weather.layer2.wind_dir", 0.0)
+    wind = WindIntegrator()
+    p = "weather.layer2."
+    ys = [wind.offset(store, scene.animation, p + "wind_speed", p + "wind_dir", t)[1]
+          for t in np.arange(0.0, 60.0, 0.5)]  # fmt: skip
+    steps = np.diff(ys) / 0.5
+    assert steps.min() > 0.0 and steps.max() > 1.25 * steps.min()  # gusts, never backwards
+    assert ys[-1] == pytest.approx(10.0 * 59.5, rel=0.1)
