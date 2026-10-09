@@ -222,8 +222,10 @@ class WeatherSystem:
         if not self.raining(store):
             return {"u_wetness": 0.0, "u_rain_haze": 0.0}
         visibility = max(store["rain.visibility_km"] * 1000.0, 50.0)
+        snow = store["rain.type"] == "snow"  # snow does not darken the ground (snow.cover)
         return {
-            "u_wetness": float(store["rain.wetness"] * min(1.0, store["rain.intensity"] * 1.5)),
+            "u_wetness": 0.0 if snow else
+            float(store["rain.wetness"] * min(1.0, store["rain.intensity"] * 1.5)),
             "u_rain_haze": float(3.0 / visibility * store["rain.intensity"]),
             "u_rain_haze_top": float(store["rain.cloud_base"]),
         }
@@ -260,6 +262,10 @@ class WeatherSystem:
             "u_rain_wind": (wx, wy),
             "u_rain_light": light,
             "u_pixel_angle": float(math.radians(camera.fov_y)) / max(height, 1),
+            "u_snow": int(store["rain.type"] == "snow"),
+            "u_rainbow": float(store["rain.rainbow"]),
+            "u_rainbow_sun": tuple(float(v) for v in lighting.sun_direction),
+            "u_rainbow_light": tuple(float(v) for v in lighting.sun_radiance),
         }.items():
             if name in program:
                 program[name] = value
@@ -385,11 +391,13 @@ def weather_properties() -> list:
 
 
 def rain_properties() -> list:
-    from earthling.render.parameters import boolean, flt, section
+    from earthling.render.parameters import boolean, enum, flt, section
 
     return section(
         "Weather: Rain & Thunder",
         boolean("rain.enabled", "Rain", False),
+        enum("rain.type", "Falls as", "rain", [("rain", "Rain"), ("snow", "Snow")],
+             tooltip="Snow: slow, tumbling flakes and no wet ground (see Snow cover)"),
         flt("rain.intensity", "Intensity", 0.7, 0.0, 1.0),
         flt("rain.cloud_base", "Rain clouds: base", 2200.0, 0.0, 8000.0, step=50.0, decimals=0,
             unit="m"),
@@ -404,4 +412,17 @@ def rain_properties() -> list:
         flt("rain.visibility_km", "Visibility", 6.0, 0.2, 50.0, step=0.1, decimals=1, unit="km",
             logarithmic=True),
         flt("rain.wetness", "Wet ground", 0.8, 0.0, 1.0),
+        flt("rain.rainbow", "Rainbow", 0.0, 0.0, 3.0,
+            tooltip="A rainbow opposite the sun where sunlit rain is in front of the scene "
+                    "(needs a low sun: below 42 degrees)"),
+    ) + section(
+        "Weather: Snow Cover",
+        flt("snow.cover", "Snow cover", 0.0, 0.0, 1.0, uniform="u_snow_cover",
+            tooltip="Fresh snow on the terrain above the snow line"),
+        flt("snow.line", "Snow line", 2500.0, -500.0, 9000.0, step=10.0, decimals=0, unit="m",
+            uniform="u_snow_line"),
+        flt("snow.transition", "Transition", 200.0, 1.0, 2000.0, step=10.0, decimals=0, unit="m",
+            uniform="u_snow_transition", tooltip="Height range over which the snow thins out"),
+        flt("snow.max_slope", "Steepest slope", 40.0, 10.0, 90.0, step=1.0, decimals=0,
+            unit="°", uniform="u_snow_max_slope", tooltip="Steeper rock stays dark"),
     )  # fmt: skip

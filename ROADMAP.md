@@ -574,6 +574,16 @@ and the heart rate, and an extra line of text (`stats.text`, a new keyframeable 
 type that switches at its keys, e.g. a hairpin counter or chapter titles).
 → A bike climb with its steep ramps in red, the speed and the pulse at the head.
 
+**19.6 Snow and rainbows**
+`rain.type = "snow"`: slow, tumbling flakes (round on screen at any viewing angle, drifting
+at most ~50 degrees in the wind) instead of rain streaks, and no wet ground. `snow.cover`
+whitens the imagery above a snow line with a noisy, patchy edge, keeps steep rock and dark
+outcrops free and a little of the imagery's detail in the snow. `rain.rainbow`: the primary
+and secondary bow (with the dark band between them and the brighter sky inside) at 42 and 51
+degrees around the antisolar point, wherever sunlit rain is between the camera and the scene
+(the terrain cuts the bow, nothing above the rain clouds).
+→ Fresh snow and a blizzard at Everest Base Camp; a rainbow over Iceland after a shower.
+
 ---
 
 ## 5. Risks & notes

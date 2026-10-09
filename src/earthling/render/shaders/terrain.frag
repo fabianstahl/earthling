@@ -6,6 +6,10 @@
 #include "weather.glsl"
 uniform vec3 u_camera_enu;
 uniform float u_wetness = 0.0;  // rain: darker, more saturated ground
+uniform float u_snow_cover = 0.0;        // fresh snow above the snow line (0 = none)
+uniform float u_snow_line = 2500.0;      // metres above sea level
+uniform float u_snow_transition = 200.0; // height range of the patchy edge
+uniform float u_snow_max_slope = 50.0;   // steeper rock stays free (degrees)
 in vec2 v_hm_uv;
 in vec2 v_tile_uv;
 in float v_skirt;  // 1 on the skirts hiding cracks between nodes
@@ -130,6 +134,33 @@ vec3 detail_normal(vec3 n, float strength) {
     return (abs(det) > 1e-12 && len2 > 1e-24) ? r * inversesqrt(len2) : n;
 }
 
+float snow_hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float snow_noise(vec2 p) {  // value noise, 0..1
+    vec2 i = floor(p), f = fract(p);
+    vec2 w = f * f * (3.0 - 2.0 * f);
+    return mix(mix(snow_hash(i), snow_hash(i + vec2(1, 0)), w.x),
+               mix(snow_hash(i + vec2(0, 1)), snow_hash(i + vec2(1, 1)), w.x), w.y);
+}
+
+// Fresh snow: above the snow line (with a patchy, noisy edge), not on steep rock. A partial
+// cover leaves snow only in the patches the noise favours.
+float snow_amount(float height, float slope) {
+    if (u_snow_cover <= 0.0) return 0.0;
+    vec2 xy = (v_world + u_camera_enu).xy;
+    float n = snow_noise(xy / 90.0) * 0.65 + snow_noise(xy / 23.0) * 0.35;
+    float h = height + (n - 0.5) * u_snow_transition * 1.2;
+    float above = smoothstep(u_snow_line - u_snow_transition, u_snow_line + u_snow_transition, h);
+    float flat_enough = 1.0 - smoothstep(u_snow_max_slope - 8.0, u_snow_max_slope + 4.0, slope);
+    float patches = smoothstep(0.0, 0.3, u_snow_cover * 1.3 - n * (1.0 - u_snow_cover));
+    // small rocks and ridges poke through (the bare slopes stay dark in the imagery)
+    patches *= mix(1.0, smoothstep(0.08, 0.3, dot(texture(u_imagery, v_tile_uv).rgb,
+                                                  vec3(0.299, 0.587, 0.114))), 0.5);
+    return clamp(above * flat_enough * patches, 0.0, 1.0);
+}
+
 void main() {
     if (valid_at(v_hm_uv) < 0.5) discard;
 #ifdef SHADOW_PASS
@@ -179,10 +210,16 @@ void main() {
     vec3 flat_light = mix(u_ground_ambient, u_sky_ambient, 0.75) + u_sun_radiance * 0.65;
 
     vec3 wet = mix(vec3(1.0), vec3(0.55, 0.58, 0.62), u_wetness);
+    float snow = snow_amount(v_height, li.slope);
+    const vec3 SNOW = vec3(0.78, 0.8, 0.84);  // linear albedo of fresh snow
     vec3 albedo_a = srgb_to_linear(layer_albedo(u_layer_a, li)) * layer_gain(u_layer_a) * wet;
+    // on the imagery: the snow keeps a little of its brightness detail (no plastic look)
+    vec3 snow_albedo = SNOW * (0.82 + 0.35 * dot(li.imagery, vec3(0.299, 0.587, 0.114)));
+    if (u_layer_a == 0) albedo_a = mix(albedo_a, snow_albedo, snow);
     vec3 color = albedo_a * mix(flat_light, lit, layer_shading(u_layer_a));
     if (u_layer_mix > 0.0) {
         vec3 albedo_b = srgb_to_linear(layer_albedo(u_layer_b, li)) * layer_gain(u_layer_b) * wet;
+        if (u_layer_b == 0) albedo_b = mix(albedo_b, snow_albedo, snow);
         vec3 color_b = albedo_b * mix(flat_light, lit, layer_shading(u_layer_b));
         color = mix(color, color_b, u_layer_mix);
     }

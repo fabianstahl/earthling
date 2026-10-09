@@ -394,7 +394,8 @@ class Renderer:
         """Cloud layers for the terrain shader (cloud shadows), wet ground, rain haze."""
         rain = self.weather.rain_uniforms(self.store)
         if not self.weather.layers:
-            return {"u_layer_count": 0, "u_cloud_shadow_strength": 0.0, **rain}
+            return {"u_layer_count": 0, "u_cloud_shadow_strength": 0.0, **rain,
+                    "u_camera_enu": tuple(float(v) for v in camera.position)}  # fmt: skip
         self.weather.bind()
         return {**self.weather.uniforms(), **rain,
                 "u_camera_enu": tuple(float(v) for v in camera.position)}  # fmt: skip

@@ -250,3 +250,51 @@ def test_gusts_vary_the_speed_around_the_mean():
     steps = np.diff(ys) / 0.5
     assert steps.min() > 0.0 and steps.max() > 1.25 * steps.min()  # gusts, never backwards
     assert ys[-1] == pytest.approx(10.0 * 59.5, rel=0.1)
+
+
+def test_snow_falls_and_covers_the_ground(gl_ctx):
+    import datetime
+
+    base = {"sun__datetime": datetime.datetime(2026, 7, 1, 12, 0), "haze__aerial": 0.0}
+    dry = render(gl_ctx, **base)
+    covered = render(gl_ctx, **base, snow__cover=1.0, snow__line=0.0, snow__max_slope=90.0)
+    assert covered.mean() > dry.mean() + 20.0  # white terrain
+    above = render(gl_ctx, **base, snow__cover=1.0, snow__line=8000.0)  # no snow that low
+    assert above.mean() == pytest.approx(dry.mean(), abs=1.0)
+    snowing = {**base, "rain__enabled": True, "rain__intensity": 1.0,
+               "rain__cloud_base": 40000.0, "rain__coverage": 0.0, "rain__wetness": 0.8,
+               "rain__visibility_km": 50.0}  # fmt: skip
+    rain = render(gl_ctx, 0.08, **snowing)
+    snow = render(gl_ctx, 0.08, **snowing, rain__type="snow")
+    assert np.abs(rain - snow).mean() > 1.0  # flakes instead of streaks
+    assert Renderer(gl_ctx).weather.rain_uniforms(_store(rain__enabled=True, rain__type="snow"))[
+        "u_wetness"] == 0.0  # snow does not darken the ground  # fmt: skip
+
+
+def _store(**props):
+    store = Scene().store
+    for pid, value in props.items():
+        store.set(pid.replace("__", "."), value)
+    return store
+
+
+def test_rainbow_opposite_the_sun(gl_ctx):
+    """With a low sun behind the camera a coloured bow appears in the rain ahead."""
+    import datetime
+
+    from earthling.render.lighting import compute_lighting
+
+    when = datetime.datetime(2026, 7, 1, 18, 0)
+    sun = compute_lighting(_store(sun__datetime=when), 46.0, 7.0, "UTC").sun
+    # the camera looks north (heading 0) and down: put the sun low in the south behind it
+    base = {"sun__datetime": when, "haze__aerial": 0.0,
+            "sun__azimuth_offset": 180.0 - sun.azimuth,
+            "sun__elevation_offset": 8.0 - sun.elevation,
+            "rain__enabled": True, "rain__intensity": 0.6, "rain__cloud_base": 40000.0,
+            "rain__coverage": 0.0, "rain__visibility_km": 50.0, "rain__wetness": 0.0}  # fmt: skip
+    plain = render(gl_ctx, 0.08, **base)
+    bow = render(gl_ctx, 0.08, **base, rain__rainbow=3.0)
+    assert np.abs(bow - plain).mean() > 1.5  # (the fake terrain is green: no saturation test)
+    away = {**base, "sun__azimuth_offset": -sun.azimuth}  # the sun ahead: no bow
+    diff = render(gl_ctx, 0.08, **away, rain__rainbow=3.0) - render(gl_ctx, 0.08, **away)
+    assert np.abs(diff).mean() < 0.3 * np.abs(bow - plain).mean()
