@@ -212,12 +212,14 @@ class TerrainData:
     def _ensurer(self, provider: TileProvider):
         downloader = self.downloaders.get(provider.id)
         coverage = provider.coverage_area
+        # coarse global sources (night lights) are fetched wherever a node needs them
+        anywhere = provider.kind == "night"
 
         def ensure(z: int, x: int, y: int) -> None:
             if (
                 self.on_demand
                 and downloader is not None
-                and (x, y) in self._imagery_sets.get(z, ())
+                and (anywhere or (x, y) in self._imagery_sets.get(z, ()))
                 and (coverage is None or coverage.classify(tile_bounds_mercator(z, x, y)) != "none")
             ):
                 # network problems must never break rendering

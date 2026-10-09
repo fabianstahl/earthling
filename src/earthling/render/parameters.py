@@ -146,6 +146,14 @@ LIGHT = section(
     color("light.ground_color", "Ground bounce color", (0.45, 0.4, 0.33)),
 )  # fmt: skip
 
+NIGHT = section(
+    "Night Lights",
+    flt("night.lights", "City lights", 0.0, 0.0, 10.0, step=0.1, uniform="u_night_lights",
+        tooltip="Lights of the cities where it is night (NASA Black Marble, up to ~600 m "
+                "detail: for views from far up)"),
+    color("night.color", "Light colour", (1.0, 0.72, 0.42), uniform="u_night_color"),
+)  # fmt: skip
+
 SHADOWS = section(
     "Shadows",
     boolean("shadows.enabled", "Terrain shadows", True),
@@ -368,6 +376,7 @@ def build_registry() -> PropertyRegistry:
         TERRAIN,
         SUN,
         LIGHT,
+        NIGHT,
         SHADOWS,
         SKY,
         FOG,

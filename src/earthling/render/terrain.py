@@ -46,7 +46,7 @@ PIXEL_UNIFORMS = (
     ("u_contour_width", "contours.width"),
 )
 # texture unit per tile source (0 = heightmap, 2 = optical depth LUT, 3 = shadow atlas)
-TEXTURE_UNITS = {"imagery": 1, "topo": 4, "borders": 5}
+TEXTURE_UNITS = {"imagery": 1, "topo": 4, "borders": 5, "night": 16}
 PARENT_HEIGHTMAP_UNIT = 6  # geomorphing: the parent node's heightmap
 PARENT_IMAGERY_UNIT = 14  # ... and its imagery (no sharpness / colour pop when refining)
 DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0

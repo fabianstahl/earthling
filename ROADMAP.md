@@ -584,6 +584,16 @@ degrees around the antisolar point, wherever sunlit rain is between the camera a
 (the terrain cuts the bow, nothing above the rain clouds).
 → Fresh snow and a blizzard at Everest Base Camp; a rainbow over Iceland after a shower.
 
+**19.7 Day and night side, city lights**
+Seen from far up (blended in from 20 to 200 km camera height) every point of the terrain is
+lit by its own sun elevation: the sunlight through the atmosphere's transmittance LUT (red at
+the terminator) and the ambient light from its day and night parts (as a ratio of the
+camera's, so the weather's dimming and lightning stay in), instead of the light at the
+camera everywhere. `night.lights` adds the city lights of NASA's Black Marble (VIIRS 2016, a
+new "night" tile source, zoom 8, downloaded on demand) where it is night, switching on in the
+dusk.
+→ The day-night line sweeping over Siberia, the cities lighting up behind it.
+
 ---
 
 ## 5. Risks & notes

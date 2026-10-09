@@ -83,3 +83,62 @@ def test_height_fog_from_space_is_finite(gl_ctx):
     img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(64, 64, 3)
     # (no terrain in this test: the sky and the empty ground below must not be fog-filled)
     assert img.std() > 0.0 or img.mean() < 250
+
+
+def test_day_and_night_parts_of_the_ambient_light():
+    """Step 19.7: the ambient light splits into a day and a night part (local light)."""
+    import datetime
+
+    from earthling.core.scene import Scene
+    from earthling.render.lighting import compute_lighting, lighting_uniforms
+
+    store = Scene().store
+    for hour in (12, 19, 23):
+        store.set("sun.datetime", datetime.datetime(2026, 7, 1, hour, 0))
+        lit = compute_lighting(store, 46.0, 7.0, "UTC", camera_height=2000.0)
+        mixed = np.array(lit.sky_day) * lit.day + np.array(lit.sky_night) * (1.0 - lit.day)
+        assert np.allclose(mixed, lit.sky_ambient)
+    assert lighting_uniforms(lit)["u_local_light"] == 0.0  # near the ground: the camera's light
+    far = compute_lighting(store, 46.0, 7.0, "UTC", camera_height=5e6)
+    assert lighting_uniforms(far)["u_local_light"] == 1.0
+
+
+def test_city_lights_shine_at_night_only(gl_ctx):
+    import datetime
+
+    from earthling.core.geo import lonlat_to_tile
+    from earthling.core.scene import Scene
+    from earthling.render import lod
+    from earthling.render.camera import Camera, OrbitController
+    from earthling.render.renderer import Renderer
+    from test_terrain import FRAME, FakeTerrainData
+
+    class WithLights(FakeTerrainData):
+        def texture_for(self, key, source="imagery"):
+            if source == "night":
+                return np.full((64, 64, 3), 230, dtype=np.uint8)  # a bright city everywhere
+            return super().texture_for(key, source)
+
+    def render(hour, lights):
+        renderer = Renderer(gl_ctx)
+        renderer.set_scene(FRAME, [])
+        tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+        renderer.set_terrain_source(WithLights(), lod.NodeSet({10: [(int(tx), int(ty))]}))
+        store = Scene().store
+        store.set("sun.datetime", datetime.datetime(2026, 7, 1, hour, 0))
+        store.set("night.lights", lights)
+        store.set("haze.aerial", 0.0)
+        renderer.store = store
+        renderer.timezone = "UTC"
+        camera = Camera()
+        renderer.apply_properties(camera)
+        renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 64)
+        OrbitController(camera).frame_bounds(*renderer.scene_bounds())
+        renderer.apply_properties(camera)
+        renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 64)
+        fbo = gl_ctx.simple_framebuffer((64, 64))
+        renderer.render(fbo, 64, 64, camera)
+        return np.frombuffer(fbo.read(components=3), dtype=np.uint8).astype(float)
+
+    assert render(23, 2.0).mean() > render(23, 0.0).mean() + 5.0  # night: lights on
+    assert abs(render(12, 2.0).mean() - render(12, 0.0).mean()) < 1.0  # day: none

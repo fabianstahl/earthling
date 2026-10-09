@@ -281,9 +281,12 @@ class Session:
     # --- terrain ---------------------------------------------------------------------------
     def tile_sources(self) -> dict[str, list[TileProvider]]:
         """Texture sources by layer tile-source name (providers in priority order)."""
+        from earthling.data.providers import NASA_BLACK_MARBLE
+
         sources = {"imagery": list(self.imagery_providers)}
         if self.topo_providers:
             sources["topo"] = list(self.topo_providers)
+        sources["night"] = [NASA_BLACK_MARBLE]  # city lights (only loaded when switched on)
         return sources
 
     def provider_tiles(self, kind: str) -> list[tuple[object, dict[int, np.ndarray]]]:

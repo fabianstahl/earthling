@@ -10,6 +10,18 @@ uniform float u_snow_cover = 0.0;        // fresh snow above the snow line (0 = 
 uniform float u_snow_line = 2500.0;      // metres above sea level
 uniform float u_snow_transition = 200.0; // height range of the patchy edge
 uniform float u_snow_max_slope = 50.0;   // steeper rock stays free (degrees)
+// views from far up: every point lit by its own sun elevation (see lighting.py)
+uniform float u_local_light = 0.0;       // 0 the camera's light everywhere .. 1 local light
+uniform vec3 u_sun_base = vec3(1.4);     // sunlight before the atmosphere (linear)
+uniform vec3 u_sky_day = vec3(0.2);      // ambient parts by day and at night
+uniform vec3 u_sky_night = vec3(0.01);
+uniform vec3 u_ground_day = vec3(0.1);
+uniform vec3 u_ground_night = vec3(0.004);
+uniform float u_cam_day = 1.0;           // the camera's daylight factor
+uniform sampler2D u_night;               // city lights (NASA Black Marble)
+uniform bool u_has_night = false;
+uniform float u_night_lights = 0.0;      // strength (0 = off)
+uniform vec3 u_night_color = vec3(1.0, 0.7, 0.4);
 in vec2 v_hm_uv;
 in vec2 v_tile_uv;
 in float v_skirt;  // 1 on the skirts hiding cracks between nodes
@@ -174,6 +186,28 @@ void main() {
         if (fade > 0.0) n = detail_normal(n, u_detail_normals * fade);
     }
     vec3 sun = normalize(u_sun_dir);
+    // the sun elevation at this point (the planet's centre is R below the frame origin)
+    vec3 up_here = normalize(v_world + u_camera_enu + vec3(0.0, 0.0, PLANET_RADIUS));
+    float sin_sun = dot(up_here, sun);
+    vec3 sun_radiance = u_sun_radiance;
+    vec3 sky_ambient = u_sky_ambient;
+    vec3 ground_ambient = u_ground_ambient;
+    if (u_local_light > 0.0) {
+        float day_here = smoothstep(-0.139, 0.139, sin_sun);  // +-8 degrees, like lighting.py
+        vec3 sky_cam = u_sky_day * u_cam_day + u_sky_night * (1.0 - u_cam_day);
+        vec3 ground_cam = u_ground_day * u_cam_day + u_ground_night * (1.0 - u_cam_day);
+        // (as a ratio: the weather's dimming and lightning flashes stay in)
+        vec3 sky_here = u_sky_ambient * (u_sky_day * day_here + u_sky_night * (1.0 - day_here))
+                        / max(sky_cam, vec3(1e-6));
+        vec3 ground_here = u_ground_ambient
+            * (u_ground_day * day_here + u_ground_night * (1.0 - day_here)) / max(ground_cam, vec3(1e-6));
+        float r_here = PLANET_RADIUS + max(v_height, 0.0);
+        vec3 sun_here = u_sun_base * transmittance_to_top(r_here, sin_sun)
+                        * smoothstep(-0.017, 0.035, sin_sun);  // the disc sets over ~1 degree
+        sky_ambient = mix(u_sky_ambient, sky_here, u_local_light);
+        ground_ambient = mix(u_ground_ambient, ground_here, u_local_light);
+        sun_radiance = mix(u_sun_radiance, sun_here, u_local_light);
+    }
     float diffuse = max(dot(n, sun), 0.0);
     if (diffuse > 0.0) diffuse *= mix(1.0, sun_shadow(v_world, n, sun), u_shadow_strength);
     if (diffuse > 0.0 && u_layer_count > 0) {
@@ -204,10 +238,10 @@ void main() {
     }
 
     // Hemispherical ambient (sky from above, bounce light from below) + direct sun.
-    vec3 ambient = mix(u_ground_ambient, u_sky_ambient, li.normal_local.z * 0.5 + 0.5);
-    vec3 lit = ambient + u_sun_radiance * diffuse;
+    vec3 ambient = mix(ground_ambient, sky_ambient, li.normal_local.z * 0.5 + 0.5);
+    vec3 lit = ambient + sun_radiance * diffuse;
     // "flat" presentation: same overall brightness as the scene, without relief
-    vec3 flat_light = mix(u_ground_ambient, u_sky_ambient, 0.75) + u_sun_radiance * 0.65;
+    vec3 flat_light = mix(ground_ambient, sky_ambient, 0.75) + sun_radiance * 0.65;
 
     vec3 wet = mix(vec3(1.0), vec3(0.55, 0.58, 0.62), u_wetness);
     float snow = snow_amount(v_height, li.slope);
@@ -244,6 +278,14 @@ void main() {
                    + step(0.996, max(v_tile_uv.x, v_tile_uv.y));
         color = mix(color, srgb_to_linear(zoom_color(u_zoom)) * lit, 0.55);
         color = mix(color, vec3(0.0), clamp(edge, 0.0, 1.0));
+    }
+    if (u_night_lights > 0.0 && u_has_night) {
+        // city lights where it is night here (they come on in the dusk)
+        float dark = 1.0 - smoothstep(-0.105, 0.05, sin_sun);
+        vec3 lights = texture(u_night, v_tile_uv).rgb;
+        float lum = dot(lights, vec3(0.299, 0.587, 0.114));
+        float glow = max(lum - 0.12, 0.0) / 0.88;  // (the dark land of the mosaic stays dark)
+        color += u_night_color * glow * u_night_lights * dark * 0.08;
     }
     float dist = length(v_world);
     color = apply_atmosphere(color, v_world / max(dist, 1e-3), dist);

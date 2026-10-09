@@ -153,9 +153,31 @@ SWISSTOPO_SWISSIMAGE = TileProvider(
     coverage="switzerland",  # tiles beyond the border exist but are not SWISSIMAGE quality
 )
 
+# --- night lights: NASA Black Marble (VIIRS, 2016), up to zoom 8 (~600 m) ---------------------
+NASA_BLACK_MARBLE = TileProvider(
+    id="nasa_black_marble",
+    name="NASA Black Marble 2016 (night lights)",
+    kind="night",
+    url_template=(
+        "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/"
+        "2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png"
+    ),
+    ext="png",
+    max_zoom=8,
+    license=License(
+        "NASA open data (no restrictions, credit requested)",
+        "Night lights: NASA Earth Observatory / GIBS (Black Marble)",
+        "https://earthdata.nasa.gov/engage/open-data-services-and-software/data-use-policy",
+        commercial_use=True,
+    ),
+    max_requests_per_second=10.0,
+    concurrency=4,
+)
+
 PROVIDERS: dict[str, TileProvider] = {
     p.id: p
-    for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP, IGN_BDORTHO, SWISSTOPO_SWISSIMAGE)
+    for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP, IGN_BDORTHO, SWISSTOPO_SWISSIMAGE,
+              NASA_BLACK_MARBLE)
 }
 
 

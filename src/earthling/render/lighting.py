@@ -61,6 +61,15 @@ class Lighting:
     fog_density: float = 0.0  # per metre
     # world ENU -> ENU at the camera (planet "up" = +z for the atmosphere), column-major mat3
     atm_frame: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    # the parts of the ambient light by daylight (sky_day, ground_day) and at night, the sun's
+    # colour before the atmosphere and the camera's daylight factor: views from far up light
+    # every point by its own sun elevation (day and night side, terminator; terrain.frag)
+    sun_base: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    sky_day: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    sky_night: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    ground_day: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    ground_night: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    day: float = 1.0
 
 
 def compute_lighting(
@@ -93,11 +102,13 @@ def compute_lighting(
     night = 1.0 - smoothstep(-16.0, -4.0, sun.elevation)
     tint = 0.35 + 0.65 * transmittance / max(float(transmittance.max()), 1e-6)
     night_sky = np.array([0.012, 0.016, 0.03])
-    sky = np.array(srgb_to_linear(store["light.sky_color"])) * store[
-        "light.ambient"
-    ] * day * tint + night_sky * store["light.night_ambient"] * (1.0 - day)
-    ground = np.array(srgb_to_linear(store["light.ground_color"])) * store["light.ambient"] * day
-    ground = ground * (0.3 + 0.7 * float(visibility)) + night_sky * 0.3 * (1.0 - day)
+    sky_day = np.array(srgb_to_linear(store["light.sky_color"])) * store["light.ambient"] * tint
+    sky_night = night_sky * store["light.night_ambient"]
+    sky = sky_day * day + sky_night * (1.0 - day)
+    ground_day = np.array(srgb_to_linear(store["light.ground_color"])) * store["light.ambient"]
+    ground_day = ground_day * (0.3 + 0.7 * float(visibility))
+    ground_night = night_sky * 0.3
+    ground = ground_day * day + ground_night * (1.0 - day)
     fog_color = np.array(srgb_to_linear(store["fog.color"]))
     fog_ambient = fog_color * (sky * 0.8 + ground * 0.2)
     fog_sun = fog_color * radiance * store["fog.sun_scatter"] * 0.25
@@ -117,6 +128,12 @@ def compute_lighting(
         vec(fog_ambient),
         vec(fog_sun),
         store["fog.density"] / 1000.0,
+        sun_base=vec(base),
+        sky_day=vec(sky_day),
+        sky_night=vec(sky_night),
+        ground_day=vec(ground_day),
+        ground_night=vec(ground_night),
+        day=float(day),
     )
 
 
@@ -132,4 +149,13 @@ def lighting_uniforms(lighting: Lighting) -> dict[str, object]:
         "u_fog_density": lighting.fog_density,
         "u_optical_depth": OPTICAL_DEPTH_UNIT,
         "u_atm_frame": lighting.atm_frame,
+        "u_sun_base": lighting.sun_base,
+        "u_sky_day": lighting.sky_day,
+        "u_sky_night": lighting.sky_night,
+        "u_ground_day": lighting.ground_day,
+        "u_ground_night": lighting.ground_night,
+        "u_cam_day": lighting.day,
+        # views from far up: every point lit by its own sun elevation (0 near the ground,
+        # where the camera's light is the same everywhere)
+        "u_local_light": smoothstep(20e3, 200e3, lighting.camera_height),
     }

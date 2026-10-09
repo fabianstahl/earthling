@@ -70,6 +70,8 @@ def compose_tile_texture(
     d = image_zoom - z
     if d < 0:
         # Terrain finer than imagery: crop from the ancestor.
+        if ensure is not None:
+            ensure(image_zoom, x >> -d, y >> -d)
         found = load_tile_rgb(cache, provider, z, x, y)
         if found is None:
             return None
