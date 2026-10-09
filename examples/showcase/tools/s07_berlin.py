@@ -81,7 +81,7 @@ def main() -> None:
     s.set("rain.enabled", True)
     s.set("rain.cloud_base", 4200.0)
     s.set("rain.coverage", 0.0)  # (the drizzle falls from the stratus layer)
-    s.set("rain.visibility_km", 9.0)
+    s.set("rain.visibility_km", 25.0)  # (drizzle: from 3 km up 9 km turned the city grey)
     s.set("rain.wind", 2.0)
     key(scene, "rain.intensity", 0.0, 0.0)
     key(scene, "rain.intensity", 13.0, 0.0)

@@ -9,6 +9,8 @@ The ship's track draws in its real time; the clock shows that the sun never sets
 
 from __future__ import annotations
 
+import datetime as dt
+
 import numpy as np
 from sc_common import (
     Interp,
@@ -89,8 +91,18 @@ def main() -> None:
     s.set("sun.follow_track", False)
     stamps = np.array([path.time_at(min(head_of(t), total - 1.0)) for t in times])
     stamps = gaussian(stamps, 0.8 * 30)
+    from earthling.core.sun import solar_position
+
     for t, stamp in zip(times[::2], stamps[::2], strict=True):
         key(scene, "sun.datetime", round(float(t), 4), local(float(stamp)), Interp.LINEAR)
+    # the light summer night: in June the sky stays bright with the sun a few degrees below
+    # the horizon (civil twilight), the light model darkens too early - eyes adapted
+    for t, stamp in zip(times[::15], stamps[::15], strict=True):
+        lon, lat = hike.lonlat(path.position_at(min(head_of(t), total - 1.0)))
+        elev = solar_position(dt.datetime.fromtimestamp(float(stamp), dt.UTC), lat, lon).elevation
+        boost = float(np.clip((3.0 - elev) / 9.0, 0.0, 1.0))
+        key(scene, "post.exposure", round(float(t), 4), 2.2 * boost, Interp.LINEAR)
+        key(scene, "light.night_ambient", round(float(t), 4), 1.0 + 5.0 * boost, Interp.LINEAR)
     close = follow_shots(hike, times, head_of, distance=2200.0, pitch=-6.0, side=80.0,
                          window=3000.0, sigma_s=0.8, heading_sigma_s=2.0, clearance=40.0)  # fmt: skip
     wide = follow_shots(hike, times, head_of, distance=95_000.0, pitch=-48.0, side=30.0,
