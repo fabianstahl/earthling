@@ -136,6 +136,9 @@ class TrackGroupDef(_Model):
     # default: the Tracks setting (on the terrain)
     elevation: Literal["dem", "gpx"] | None = None
     labels: bool | None = None  # label area (default: walked groups)
+    # split the tracks by the water mask: the parts on water get their own style (a canoe
+    # trip: paddling and portages; trackgroup.<name>.water_*)
+    water: bool = False
 
 
 class ProviderDef(_Model):

@@ -470,6 +470,9 @@ class Renderer:
         s = self.store
         data = self.terrain.data
         self.tracks.heights_at = getattr(data, "heights_at", None)
+        water = getattr(data, "water", None)
+        if water is not None:  # (the water mask of the project; tests may set their own)
+            self.tracks.water_at = water.is_water
         options = TrackGeometryOptions(
             elevation_source=s["tracks.elevation"] if s else "dem",
             height_offset_m=s["tracks.height_offset"] if s else 3.0,

@@ -624,6 +624,12 @@ and the glint widens with the distance. Waves and glint calm down along the shor
 `water.*` (reflection, waves, wind, direction).
 → Fjords glittering in the midnight sun, the sun's glint on the Gulf of Thailand from space.
 
+**19.11 Tracks on water**
+`water = true` in a `[[tracks]]` group splits its tracks by the water mask (19.10): every
+point knows whether it is on water, and the parts on water take the group's water style
+(`trackgroup.<name>.water_color`, dashes or dots), the rest the normal one.
+→ A canoe trip: blue lines across the lakes, dotted portages between them.
+
 ---
 
 ## 5. Risks & notes

@@ -121,6 +121,7 @@ class Session:
                 track.group, track.role = d.name, d.role
                 track.spacing_m = d.spacing_m
                 track.elevation = d.elevation
+                track.split_water = d.water
             area = d.area or config.area
             groups.append(TrackGroup(d, tracks, area, compute_aoi(tracks, area)))
         return groups
@@ -160,6 +161,12 @@ class Session:
                              "while the head is on this group's tracks"),
                 flt(p + "marker_size", "Vehicle size", 46.0, 8.0, 200.0, step=1.0, decimals=0,
                     unit="px"),
+                color(p + "water_color", "On water: colour", (0.35, 0.75, 1.0),
+                      tooltip="Groups split by the water mask (water = true): the parts on "
+                              "water"),
+                flt(p + "water_dash", "On water: dashes", 0.0, 0.0, 100.0, step=1.0,
+                    decimals=0, unit="px"),
+                boolean(p + "water_dots", "On water: dotted", False),
                 flt(p + "time_offset", "Time shift", 0.0, -1e6, 1e6, step=0.01, decimals=4,
                     unit="h", animatable=False,
                     tooltip="Progress by clock: shift the group's times (e.g. start last year's "

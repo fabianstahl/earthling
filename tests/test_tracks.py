@@ -61,7 +61,7 @@ def test_ribbon_layout():
     enu = np.array([[0.0, 0, 0], [10.0, 0, 0], [20.0, 0, 0]])
     geometry = TrackSegmentGeometry(enu, np.array([0.0, 10, 20]), np.full(3, np.nan))
     verts, idx = ribbon_vertices([geometry], enu[0])
-    assert verts.shape == (6, 16)
+    assert verts.shape == (6, 17)
     assert list(verts[:, 9]) == [-1, 1, -1, 1, -1, 1]
     assert idx[-1] == PRIMITIVE_RESTART and len(idx) == 7
     # mirrored neighbours at the ends
@@ -398,3 +398,40 @@ def test_tracks_coloured_by_gradient(gl_ctx):
     store.set("tracks.color_max", 10.0)  # 10 % = the red end of turbo
     red = centre_colour()
     assert red[0] > red[1] + 80 and red[0] > red[2] + 80
+
+
+def test_tracks_split_by_water(gl_ctx):
+    """Step 19.11: the parts of a track on water take the group's water style."""
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.parameters import boolean, color, flt
+    from earthling.render.renderer import Renderer
+
+    track = straight_track()  # 46.0 .. 46.01 N
+    track.split_water = True
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [track])
+    scene = Scene()
+    p = "trackgroup.tracks."
+    scene.set_dynamic("groups", [color(p + "water_color", "w", (0.1, 0.3, 1.0)),
+                                 flt(p + "water_dash", "d", 0.0, 0.0, 100.0),
+                                 boolean(p + "water_dots", "o", False)])  # fmt: skip
+    store = scene.store
+    renderer.store = store
+    for pid, value in (("tracks.elevation", "gpx"), ("tracks.width", 8.0), ("haze.aerial", 0.0),
+                       ("glow.enabled", False), ("tracks.color_mode", "single"),
+                       ("tracks.color", (1.0, 0.2, 0.1)), ("tracks.emissive", 1.0),
+                       ("tracks.outline", 0.0), ("marker.visible", False)):  # fmt: skip
+        store.set(pid, value)
+    renderer.tracks.water_at = lambda lon, lat: (np.asarray(lat) > 46.005).astype(float)
+    mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
+    camera = Camera(position=mid + np.array([0.0, 0.0, 3000.0]), heading=0.0, pitch=-89.9)
+    fbo = gl_ctx.simple_framebuffer((200, 200))
+    renderer.render(fbo, 200, 200, camera)
+    img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3)
+    img = img[::-1].astype(int)  # top row first: north at the top
+    column = img[:, 95:105]
+    blue = (column[..., 2] > column[..., 0] + 60).any(axis=1)
+    red = (column[..., 0] > column[..., 2] + 60).any(axis=1)
+    # the track runs from row ~61 (north, water) to ~139 (south, land)
+    assert blue[65:95].mean() > 0.8 and red[105:135].mean() > 0.8

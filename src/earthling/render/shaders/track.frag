@@ -9,6 +9,7 @@ in vec3 v_world;
 in float v_log_z;
 in vec4 v_values;
 in float v_time;
+in float v_water;
 out vec4 f_color;
 
 uniform vec3 u_color = vec3(1.0, 0.2, 0.05);  // linear
@@ -34,12 +35,16 @@ uniform int u_color_by = 0;          // 0 the track colour, 1..4 elevation, grad
 uniform float u_color_min = 0.0;     // value range of the colour ramp
 uniform float u_color_max = 1.0;
 uniform int u_color_ramp = 2;
+uniform int u_water_split = 0;       // the parts on water in their own style:
+uniform vec3 u_water_color = vec3(0.1, 0.5, 1.0);  // linear
+uniform float u_water_dash_px = 0.0;
+uniform int u_water_dots = 0;
 
 // Dashes of about u_dash_px on screen at any zoom: the period snaps to powers of two metres
 // and crossfades between neighbouring octaves, so dashes neither crawl nor pop.
-float dash_mask(float dist) {
+float dash_mask(float dist, float dash_px) {
     float m_per_px = max(fwidth(dist), 1e-5);
-    float level = log2(u_dash_px * 2.0 * m_per_px);
+    float level = log2(dash_px * 2.0 * m_per_px);
     float l0 = floor(level);
     float f = level - l0;
     float on0 = 1.0 - step(0.5, fract(dist / exp2(l0)));
@@ -47,13 +52,13 @@ float dash_mask(float dist) {
     return mix(on0, on1, f);
 }
 
-// Round dots of the line's width, about u_dash_px apart on screen. Like the dashes the spacing
+// Round dots of the line's width, about dash_px apart on screen. Like the dashes the spacing
 // snaps to powers of two metres; dot centres sit at multiples of the period, so the coarser
 // octave keeps every other dot and the crossfade only fades the ones in between.
 // Returns the coverage and (in .y) the distance from the dot centre in pixels.
-vec2 dot_mask(float dist, float px, float radius) {
+vec2 dot_mask(float dist, float px, float radius, float dash_px) {
     float m_per_px = max(fwidth(dist), 1e-5);
-    float level = log2(u_dash_px * m_per_px);
+    float level = log2(dash_px * m_per_px);
     float l0 = floor(level);
     float p0 = exp2(l0);
     float a0 = (fract(dist / p0 + 0.5) - 0.5) * p0 / m_per_px;
@@ -65,14 +70,18 @@ vec2 dot_mask(float dist, float px, float radius) {
 }
 
 void main() {
+    bool on_water = u_water_split != 0 && v_water > 0.5;
+    float dash_px = on_water ? u_water_dash_px : u_dash_px;
+    int dots_on = on_water ? u_water_dots : u_dots;
+    vec3 line_color = on_water ? u_water_color : u_color;
     write_log_depth(v_log_z);
     float px = abs(v_side) * v_width_px * 0.5;  // pixels from the centre line
     float outer = v_width_px * 0.5 - 1.0;       // 1 px AA margin
     float half_w = outer - u_track_casing;      // visible half width of the line itself
     float a = min(px / max(half_w + 1.0, 1e-3), 1.0);
     vec2 dots = vec2(1.0, px);
-    if (u_dots != 0 && u_dash_px > 0.0) {
-        dots = dot_mask(v_dist, px, half_w);
+    if (dots_on != 0 && dash_px > 0.0) {
+        dots = dot_mask(v_dist, px, half_w, dash_px);
         a = min(dots.y / max(half_w + 1.0, 1e-3), 1.0);  // round shading per dot
     }
     float gd = v_dist + u_track_offset;
@@ -83,11 +92,11 @@ void main() {
         if (u_track_casing <= 0.0) discard;
         float x = clamp((px - half_w) / max(u_track_casing, 1e-3), 0.0, 1.0);
         float c = (1.0 - x * x) * (1.0 - smoothstep(outer - 0.5, outer + 0.5, px));
-        if (u_dots != 0 && u_dash_px > 0.0) {  // a round casing around every dot
+        if (dots_on != 0 && dash_px > 0.0) {  // a round casing around every dot
             float rx = clamp((dots.y - half_w) / max(u_track_casing, 1e-3), 0.0, 1.0);
             c = (1.0 - rx * rx) * (1.0 - smoothstep(outer - 0.5, outer + 0.5, dots.y));
-        } else if (u_dash_px > 0.0) {
-            c *= mix(0.5, 1.0, dash_mask(v_dist));  // dashed lines: gaps show
+        } else if (dash_px > 0.0) {
+            c *= mix(0.5, 1.0, dash_mask(v_dist, dash_px));  // dashed lines: gaps show
         }
         c *= along * u_casing_opacity * u_track_opacity;
         if (c <= 0.0) discard;
@@ -95,7 +104,7 @@ void main() {
         return;
     }
 #endif
-    vec3 base_color = u_color;
+    vec3 base_color = line_color;
     if (u_color_by > 0) {  // colour ramp by a value of the track (e.g. the gradient)
         float v = v_values[clamp(u_color_by - 1, 0, 3)];
         float t = (v - u_color_min) / max(u_color_max - u_color_min, 1e-6);
@@ -103,8 +112,8 @@ void main() {
     }
     float alpha = 1.0 - smoothstep(half_w - 0.5, half_w + 0.5, px);
     alpha *= along;
-    if (u_dots != 0 && u_dash_px > 0.0) alpha = dots.x * along;
-    else if (u_dash_px > 0.0) alpha *= dash_mask(v_dist);
+    if (dots_on != 0 && dash_px > 0.0) alpha = dots.x * along;
+    else if (dash_px > 0.0) alpha *= dash_mask(v_dist, dash_px);
     // the freshly drawn part near the head is brighter
     float near_head = u_head_m < 1e11 ? 1.0 - smoothstep(0.0, max(u_head_fade, 1.0), u_head_m - gd) : 0.0;
     if (alpha <= 0.0) discard;
@@ -123,7 +132,7 @@ void main() {
     vec3 color = mix(lit, self_lit, u_track_emissive) * (1.0 + u_head_boost * near_head);
     // dark outline for readability on bright ground
     float outline = smoothstep(half_w - u_track_outline - 0.5, half_w - u_track_outline + 0.5,
-                               u_dots != 0 && u_dash_px > 0.0 ? dots.y : px);
+                               dots_on != 0 && dash_px > 0.0 ? dots.y : px);
     color = mix(color, color * 0.25, outline * step(0.01, u_track_outline));
     float dist = length(v_world);
     color = apply_atmosphere(color, v_world / max(dist, 1e-3), dist);

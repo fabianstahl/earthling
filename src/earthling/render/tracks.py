@@ -131,14 +131,17 @@ class TrackSegmentGeometry:
     ele: np.ndarray | None = None  # (n,) true elevation (no exaggeration / offset)
     ground: np.ndarray | None = None  # (n,) metres actually walked (3D, true heights)
     hr: np.ndarray | None = None  # (n,) heart rate (bpm), NaN where unknown
+    water: np.ndarray | None = None  # (n,) 1 on water, 0 on land (groups split by water)
 
 
 def build_track_positions(
-    track: Track, frame: LocalFrame, options: TrackGeometryOptions, heights_at=None
-) -> list[TrackSegmentGeometry]:
+    track: Track, frame: LocalFrame, options: TrackGeometryOptions, heights_at=None,
+    water_at=None,
+) -> list[TrackSegmentGeometry]:  # fmt: skip
     """Per segment: ENU positions, cumulative distance along the track and timestamps.
 
-    ``heights_at(lon, lat) -> heights`` (vectorised, NaN where unknown) provides DEM heights.
+    ``heights_at(lon, lat) -> heights`` (vectorised, NaN where unknown) provides DEM heights,
+    ``water_at(lon, lat) -> coverage`` the water mask (tracks split by water).
     """
     result = []
     distance_offset = 0.0
@@ -177,13 +180,17 @@ def build_track_positions(
             true_steps = steps
         ground = ground_offset + np.concatenate([[0.0], np.cumsum(true_steps)])
         ground_offset = float(ground[-1])
+        water = None
+        if water_at is not None and getattr(track, "split_water", False):
+            water = (np.asarray(water_at(lon, lat), dtype=np.float64) > 0.5).astype(np.float64)
+            water = (smooth(water, 3) > 0.5).astype(np.float64)  # no single-point flicker
         result.append(
-            TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground, hr)
+            TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground, hr, water)
         )
     return result
 
 
-VERTEX_FLOATS = 16
+VERTEX_FLOATS = 17
 
 
 def ribbon_vertices(segments: list[TrackSegmentGeometry], origin: np.ndarray,
@@ -211,6 +218,7 @@ def ribbon_vertices(segments: list[TrackSegmentGeometry], origin: np.ndarray,
             block[:, k, 10] = dist
             block[:, k, 11:15] = np.nan_to_num(vals, nan=0.0)
             block[:, k, 15] = np.nan_to_num(rel_t, nan=-1e9)
+            block[:, k, 16] = geometry.water if geometry.water is not None else 0.0
         verts.append(block.reshape(-1, VERTEX_FLOATS))
         first += n
         indices.append(np.arange(base, base + 2 * n, dtype=np.uint32))
@@ -411,6 +419,7 @@ class TrackLayer:
         self.tracks: list[Track] = []
         self.frame: LocalFrame | None = None
         self.heights_at = None  # vectorised DEM height function
+        self.water_at = None  # vectorised water coverage (tracks split by water)
         self._built_key: tuple | None = None
         self.uniforms: dict[str, object] = {}  # lighting/atmosphere uniforms
         self.path: ProgressPath | None = None
@@ -461,7 +470,8 @@ class TrackLayer:
             if getattr(track, "elevation", None) == "gpx":  # e.g. a flight: heights as recorded
                 track_options = replace(track_options, elevation_source="gpx", height_offset_m=0.0,
                                         exaggeration=1.0)  # fmt: skip
-            segments = build_track_positions(track, self.frame, track_options, self.heights_at)
+            segments = build_track_positions(track, self.frame, track_options, self.heights_at,
+                                             self.water_at)  # fmt: skip
             if not segments:
                 continue
             origin = segments[0].enu[0].copy()
@@ -570,7 +580,7 @@ class TrackLayer:
                     [
                         (
                             g.vbo,
-                            "3f 3f 3f 1f 1f 4f 1f",
+                            "3f 3f 3f 1f 1f 4f 1f 1f",
                             "in_pos",
                             "in_prev",
                             "in_next",
@@ -578,6 +588,7 @@ class TrackLayer:
                             "in_dist",
                             "in_values",
                             "in_time",
+                            "in_water",
                         )
                     ],
                     g.ibo,
@@ -595,6 +606,14 @@ class TrackLayer:
             _set(program, "u_track_glow", base["glow"] * glow)
             _set(program, "u_dash_px", dash * self.pixel_scale)
             _set(program, "u_dots", int(dots and dash > 0.0))
+            p = f"trackgroup.{g.track.group}."
+            water_style = (store is not None and g.track.split_water
+                           and p + "water_color" in store.registry)
+            _set(program, "u_water_split", int(bool(water_style)))
+            if water_style:
+                _set(program, "u_water_color", tuple(c**2.2 for c in store[p + "water_color"]))
+                _set(program, "u_water_dash_px", store[p + "water_dash"] * self.pixel_scale)
+                _set(program, "u_water_dots", int(store[p + "water_dots"]))
             _set(program, "u_track_length", g.length_m)
             _set(program, "u_track_offset", g.offset_m)
             walked = g.track.role == "walked"  # planned routes are always drawn in full
