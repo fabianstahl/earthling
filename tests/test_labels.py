@@ -198,3 +198,13 @@ def test_labels_json_cache_roundtrip(tmp_path):
     data = LabelData(cache, bounds)
     data.start()
     assert data.wait(10.0) and len(data.features) == 4
+
+
+def test_names_the_font_can_draw():
+    from earthling.data.labels import display_name
+
+    assert display_name({"name": "Mont Blanc"}) == "Mont Blanc"
+    assert display_name({"name": "Эльбрус"}) == "Эльбрус"  # Cyrillic: the font has it
+    assert display_name({"name": "सगरमाथा", "name:en": "Mount Everest"}) == "Mount Everest"
+    assert display_name({"name": "珠穆朗玛峰", "int_name": "Qomolangma"}) == "Qomolangma"
+    assert display_name({"name": "ดอยสุเทพ"}) is None  # nothing drawable: no label

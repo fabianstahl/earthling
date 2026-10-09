@@ -75,11 +75,34 @@ def parse_elevation(text: str | None) -> float | None:
     return value * 0.3048 if match.group(2) == "ft" else value
 
 
+def _renderable(text: str) -> bool:
+    """True if the label font (Noto Sans: Latin, Greek, Cyrillic) has every character."""
+    for ch in text:
+        o = ord(ch)
+        if o < 0x250 or 0x370 <= o < 0x530 or 0x1E00 <= o < 0x2070 or 0x2070 <= o < 0x2200:
+            continue
+        return False
+    return True
+
+
+def display_name(tags: dict) -> str | None:
+    """The local name, or - in a script the font cannot draw (Devanagari, Chinese, Thai ...) -
+    the English or international one."""
+    name = tags.get("name")
+    if name and _renderable(name):
+        return name
+    for key in ("name:en", "int_name", "name:de", "name:fr"):
+        alt = tags.get(key)
+        if alt and _renderable(alt):
+            return alt
+    return None
+
+
 def parse_overpass(data: dict) -> list[LabelFeature]:
     features = []
     for element in data.get("elements", []):
         tags = element.get("tags", {})
-        name = tags.get("name")
+        name = display_name(tags)
         if not name:
             continue
         if "lat" in element:

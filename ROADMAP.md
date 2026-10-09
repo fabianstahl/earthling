@@ -641,6 +641,13 @@ gradient from the file's smoothed elevations where it has them (a road draped on
 goes up and down at every hairpin), and the stats profile uses the same values as the line.
 → A clean globe from 14 000 km, Antarctica included.
 
+**19.13 Fixes from the showcase scenes**
+Labels: names in a script the label font cannot draw (Devanagari, Chinese, Thai ...) showed
+as boxes around Everest; they now fall back to `name:en` / `int_name` (or are left out). By
+clock (19.9), the lead group's line is drawn on top of the others on a shared course (the
+ghost run lay over this year's line and turned its colour pale).
+→ "Mount Everest", "Lhotse", "Ama Dablam" instead of boxes; this year's line stays orange.
+
 ---
 
 ## 5. Risks & notes

@@ -580,8 +580,11 @@ class TrackLayer:
             "width": store["tracks.width"] if store is not None else 5.0,
             "glow": store["tracks.glow"] if store is not None else 1.2,
         }
-        # planned routes first: the walked tracks are drawn on top of them
-        for g in sorted(self._gpu, key=lambda g: g.track.role == "walked"):
+        # planned routes first: the walked tracks are drawn on top of them; by clock (several
+        # heads on one course) the lead group on top of the others
+        lead = self.path.lead_group if self.track_heads is not None and self.path else None
+        for g in sorted(self._gpu, key=lambda g: (g.track.role == "walked",
+                                                  g.track.group == lead)):  # fmt: skip
             if not g.track.visible:
                 continue
             style = self._group_style(store, g, single)
