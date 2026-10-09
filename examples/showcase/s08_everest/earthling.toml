@@ -1,0 +1,41 @@
+# Showcase 8: the flight to Lukla and the trek to Everest Base Camp - synthetic tracks.
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Asia/Kathmandu"
+
+[area]
+border_km = 50.0
+zones = [
+  { within_km = 1.0,  imagery_zoom = 16, dem_zoom = 13 },
+  { within_km = 5.0,  imagery_zoom = 14, dem_zoom = 12 },
+  { within_km = 20.0, imagery_zoom = 12, dem_zoom = 11 },
+  { within_km = 50.0, imagery_zoom = 10, dem_zoom = 9 },
+]
+
+[[tracks]]
+name      = "flight"
+label     = "Flight to Lukla"
+gpx       = "gpx/flight"
+role      = "walked"
+elevation = "gpx"
+spacing_m = 100.0
+labels    = false
+[tracks.area]
+border_km = 25.0
+zones = [
+  { within_km = 5.0,  imagery_zoom = 13, dem_zoom = 12 },
+  { within_km = 25.0, imagery_zoom = 11, dem_zoom = 10 },
+]
+
+[[tracks]]
+name  = "trek"
+label = "Trek"
+gpx   = "gpx/trek"
+role  = "walked"
+
+[sources]
+imagery = ["esri_world_imagery"]
+colour_reference = "eox_s2cloudless_2024"
+dem     = ["aws_terrarium"]

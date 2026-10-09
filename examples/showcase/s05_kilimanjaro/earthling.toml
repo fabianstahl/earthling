@@ -1,0 +1,20 @@
+# Showcase 5: Kilimanjaro summit night (Barafu Camp - Uhuru Peak) - synthetic hike.
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Africa/Dar_es_Salaam"
+
+[area]
+border_km = 60.0
+zones = [
+  { within_km = 1.0,  imagery_zoom = 16, dem_zoom = 13 },
+  { within_km = 4.0,  imagery_zoom = 15, dem_zoom = 12 },
+  { within_km = 15.0, imagery_zoom = 13, dem_zoom = 11 },
+  { within_km = 60.0, imagery_zoom = 10, dem_zoom = 9 },
+]
+
+[sources]
+imagery = ["esri_world_imagery"]
+colour_reference = "eox_s2cloudless_2024"
+dem     = ["aws_terrarium"]

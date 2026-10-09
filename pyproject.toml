@@ -47,6 +47,10 @@ src = ["src", "tests"]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
 ignore = ["N802"]  # Qt overrides use camelCase
 
+[tool.ruff.lint.per-file-ignores]
+# scene scripts: long keyframe tables read better on one line
+"examples/showcase/tools/*" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]

@@ -1,0 +1,28 @@
+# Showcase 9: five days by canoe through the Boundary Waters (paddling and portages).
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "America/Chicago"
+
+[area]
+border_km = 30.0
+zones = [
+  { within_km = 1.0,  imagery_zoom = 17, dem_zoom = 13 },
+  { within_km = 3.0,  imagery_zoom = 15, dem_zoom = 12 },
+  { within_km = 10.0, imagery_zoom = 13, dem_zoom = 11 },
+  { within_km = 30.0, imagery_zoom = 11, dem_zoom = 10 },
+]
+
+[sources]
+imagery = ["esri_world_imagery"]
+colour_reference = "eox_s2cloudless_2024"
+dem     = ["aws_terrarium"]
+
+# the canoe days: split by the water mask (paddling on the lakes, portages over land)
+[[tracks]]
+name  = "canoe"
+label = "Canoe trip"
+gpx   = "gpx/"
+role  = "walked"
+water = true

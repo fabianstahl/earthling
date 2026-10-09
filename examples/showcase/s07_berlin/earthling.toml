@@ -1,0 +1,30 @@
+# Showcase 7: the Berlin marathon, two runs on the same course (2025 against 2024).
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Europe/Berlin"
+
+[area]
+border_km = 12.0
+zones = [
+  { within_km = 0.8,  imagery_zoom = 18, dem_zoom = 12 },
+  { within_km = 3.0,  imagery_zoom = 16, dem_zoom = 12 },
+  { within_km = 12.0, imagery_zoom = 14, dem_zoom = 11 },
+]
+
+[[tracks]]
+name  = "run2025"
+label = "2025"
+gpx   = "gpx/run_2025"
+role  = "walked"
+
+[[tracks]]
+name  = "run2024"
+label = "2024"
+gpx   = "gpx/run_2024"
+role  = "walked"
+
+[sources]
+imagery = ["esri_world_imagery"]
+dem     = ["aws_terrarium"]

@@ -1,0 +1,40 @@
+# Showcase 6: eight days around Iceland - car on the ring road (dotted) and short hikes.
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Atlantic/Reykjavik"
+
+[area]
+border_km = 60.0
+zones = [
+  { within_km = 2.0,  imagery_zoom = 14, dem_zoom = 12 },
+  { within_km = 10.0, imagery_zoom = 12, dem_zoom = 11 },
+  { within_km = 60.0, imagery_zoom = 9,  dem_zoom = 8 },
+]
+
+[[tracks]]
+name      = "drive"
+label     = "Ring road"
+gpx       = "gpx/drive"
+role      = "walked"
+spacing_m = 50.0
+labels    = false
+
+[[tracks]]
+name  = "hike"
+label = "Hikes"
+gpx   = "gpx/hike"
+role  = "walked"
+[tracks.area]
+border_km = 6.0
+zones = [
+  { within_km = 1.0, imagery_zoom = 17, dem_zoom = 13 },
+  { within_km = 3.0, imagery_zoom = 15, dem_zoom = 12 },
+  { within_km = 6.0, imagery_zoom = 14, dem_zoom = 12 },
+]
+
+[sources]
+imagery = ["esri_world_imagery"]
+colour_reference = "eox_s2cloudless_2024"
+dem     = ["aws_terrarium"]

@@ -1,0 +1,19 @@
+# Showcase 4: Grand Canyon rim to rim (South Kaibab - North Kaibab) - synthetic hike.
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "America/Phoenix"
+
+[area]
+border_km = 40.0
+zones = [
+  { within_km = 1.5,  imagery_zoom = 16, dem_zoom = 13 },
+  { within_km = 5.0,  imagery_zoom = 15, dem_zoom = 13 },
+  { within_km = 15.0, imagery_zoom = 13, dem_zoom = 12 },
+  { within_km = 40.0, imagery_zoom = 11, dem_zoom = 10 },
+]
+
+[sources]
+imagery = ["esri_world_imagery"]
+dem     = ["aws_terrarium"]

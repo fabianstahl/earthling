@@ -1,0 +1,20 @@
+# Showcase 3: the Stelvio pass by road bike (48 hairpins) - synthetic ride with heart rate.
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Europe/Rome"
+
+[area]
+border_km = 20.0
+zones = [
+  { within_km = 1.0,  imagery_zoom = 17, dem_zoom = 13 },
+  { within_km = 3.0,  imagery_zoom = 16, dem_zoom = 13 },
+  { within_km = 8.0,  imagery_zoom = 14, dem_zoom = 12 },
+  { within_km = 20.0, imagery_zoom = 12, dem_zoom = 11 },
+]
+
+[sources]
+imagery = ["esri_world_imagery"]
+colour_reference = "eox_s2cloudless_2024"
+dem     = ["aws_terrarium"]

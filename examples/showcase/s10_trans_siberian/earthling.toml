@@ -1,0 +1,24 @@
+# Showcase 10: Moscow - Beijing by train in winter (Trans-Siberian / Trans-Mongolian).
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Europe/Moscow"
+
+# the globe around the journey (views from far up)
+[world]
+imagery_zoom = 5
+dem_zoom     = 3
+
+[area]
+border_km = 400.0
+zones = [
+  { within_km = 20.0,  imagery_zoom = 10, dem_zoom = 8 },
+  { within_km = 100.0, imagery_zoom = 8,  dem_zoom = 7 },
+  { within_km = 400.0, imagery_zoom = 6,  dem_zoom = 5 },
+]
+
+[sources]
+imagery = ["esri_world_imagery"]
+colour_reference = "eox_s2cloudless_2024"
+dem     = ["aws_terrarium"]

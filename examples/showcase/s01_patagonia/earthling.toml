@@ -1,0 +1,26 @@
+# Showcase 1: from space into Torres del Paine (W trek, day 1) - synthetic track.
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "America/Punta_Arenas"
+
+# the globe for the start of the dive
+[world]
+imagery_zoom = 5
+dem_zoom     = 3
+
+[area]
+border_km = 300.0
+zones = [
+  { within_km = 4.0,   imagery_zoom = 15, dem_zoom = 13 },
+  { within_km = 15.0,  imagery_zoom = 13, dem_zoom = 11 },
+  { within_km = 60.0,  imagery_zoom = 11, dem_zoom = 10 },
+  { within_km = 300.0, imagery_zoom = 8,  dem_zoom = 7 },
+]
+
+[sources]
+# one consistent mosaic from space down to the valley (10 m Sentinel-2): no zoom-level
+# patchwork on the dive, and no colour matching needed
+imagery = ["eox_s2cloudless_2024"]
+dem     = ["aws_terrarium"]

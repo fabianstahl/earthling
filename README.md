@@ -17,19 +17,28 @@ timeline and export 4K video.
   place (or from the GPX timestamps), shadows, a night sky with stars.
 - **Tracks that tell the story:** a progress head that follows the hike through time or
   distance, glow, casing, dashes for planned routes, and track groups with their own styles
-  (for example "walked" and "official route").
+  (for example "walked" and "official route"). Vehicles at the head (a ship, a plane, a
+  cyclist ...), lines coloured by gradient, speed or heart rate, and several heads at once
+  (a race against last year's run).
 - **Overlays:** peak, pass and place labels (OpenStreetMap), a stats panel with distance,
-  ascent, elevation profile and time of day (in English or German), and data attribution.
+  ascent, speed or pace, gradient, heart rate, the gap in a race, elevation profile and time
+  of day (in English or German), and data attribution.
 - **Points of interest:** icons (PNG, animated GIF or APNG, sprite sheets) with captions,
   pop-in animations and effects.
-- **Weather:** volumetric fog and cloud layers with shadows, rain with wet ground and reduced
-  visibility, and thunderstorms with lightning.
+- **Weather:** volumetric fog and cloud layers with shadows and gusting wind, rain with wet
+  ground and reduced visibility, rainbows, snowfall and fresh snow above a snow line, and
+  thunderstorms with lightning.
+- **Water:** sea and lakes from the OpenStreetMap water areas reflect the sky and glint in the
+  sun, with waves close up; tracks can switch style on water (a canoe trip: paddling and
+  portages).
+- **The whole globe:** views from space with the day and night side, the city lights at night
+  (NASA Black Marble), and the local time of the place a journey passes.
 - **Texture layers:** satellite, topographic map, a border map with glowing country borders,
   slope classes, aspect, elevation, contour lines and hillshade. Crossfade between any two.
 - **Keyframe everything:** camera paths, sun, weather, layers and overlays on a timeline with
   a dope sheet and graph editor, undo/redo and auto-key. Scenes are saved as JSON.
-- **Video export:** H.264, H.265, ProRes 4444 and DNxHR, up to 4K, with anti-aliasing and
-  motion blur. From the GUI or the command line.
+- **Video export:** H.264, H.265, ProRes 4444 and DNxHR, up to 4K, landscape, portrait (9:16)
+  or square, with anti-aliasing and motion blur. From the GUI or the command line.
 
 ![The application: viewport, parameters and timeline](docs/images/gui.jpg)
 
@@ -45,7 +54,8 @@ timeline and export 4K video.
 | **Dusk and night:** afterglow, stars and a glowing track | **Graph editor:** eased keyframe curves for every animated property |
 
 The pictures come from the demo project in [examples/alps_demo](examples/alps_demo), two
-synthetic days on the Tour du Mont Blanc. [tools/make_readme_images.py](tools/make_readme_images.py)
+synthetic days on the Tour du Mont Blanc. [examples/showcase](examples/showcase) has ten more
+scenes, from a dive from space into Patagonia to a canoe trip and a train across Siberia. [tools/make_readme_images.py](tools/make_readme_images.py)
 renders them again.
 
 ## Quick start
