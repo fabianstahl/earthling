@@ -36,8 +36,12 @@ float cloud_density_lod(int i, vec2 xy, float h, float lod, float detail_amount)
     // no modulation at coverage 0 (clear) and 1 (overcast)
     float cover = mix(texture(u_weather_map, p / (nz.x * 9.0)).r,
                       texture(u_weather_map, p / (nz.x * 40.0) + 0.53).r, 0.6);
-    float spread = 1.9 * sqrt(max(4.0 * shape.z * (1.0 - shape.z), 0.0));
-    float c = clamp(shape.z + (cover - 0.5) * spread, 0.0, 1.0);
+    cover = clamp((cover - 0.5) * 1.5 + 0.5, 0.0, 1.0);  // (the mix is narrower than 0..1)
+    // the local coverage: up to 3 x the set one in the cloud fields, none in the gaps (mean
+    // about the set coverage; mirrored for a mostly covered sky: holes in the deck)
+    float sparse = shape.z * 3.0 * cover * cover;
+    float dense = 1.0 - (1.0 - shape.z) * 3.0 * (1.0 - cover) * (1.0 - cover);
+    float c = clamp(mix(sparse, dense, smoothstep(0.3, 0.7, shape.z)), 0.0, 1.0);
     if (c <= 0.001) return 0.0;
     float profile = smoothstep(0.0, 0.25, hf) * smoothstep(1.0, 0.45, hf);
     vec3 uvw = vec3(p, h + u_weather_time * 0.3) / nz.x;

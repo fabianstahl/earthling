@@ -453,7 +453,8 @@ class HudLayer:
                 if n < len(pts):  # up to the head exactly
                     f = (head - dist[n - 1]) / max(dist[n] - dist[n - 1], 1e-6)
                     line = np.vstack([line, pts[n - 1] + (pts[n] - pts[n - 1]) * f])
-                _polyline(batch, line, 2.6 * s, color, alpha)
+                _polyline(batch, line, 5.0 * s, (0.05, 0.05, 0.05), 0.6 * alpha)  # outline
+                _polyline(batch, line, 3.2 * s, color, alpha)
         for hd in heads:  # the dots at the heads
             for _index, xy, dist in geo.routes:
                 if dist[0] - 1.0 <= hd <= dist[-1] + 1.0:

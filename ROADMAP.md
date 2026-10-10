@@ -728,6 +728,15 @@ shades them). From high up the layers stay visible up to three times the camera'
 whose sea differed from tile to tile.
 → Clouds look less like a uniform pattern; seen from 100 km the sea has no seams.
 
+**19.23 Cloud fields that keep their coverage; a clearer mini-map route**
+The cloud clusters of 19.22 shifted the local coverage up and down and clamped it at zero,
+which raised the mean: 5 % coverage looked like 30 %. The local coverage is now up to three
+times the set one inside the cloud fields and zero in the gaps (mirrored for a mostly covered
+sky), so the mean stays the set coverage and the fields stay clustered at any coverage. The
+drawn route on the mini-map is thicker, with a dark outline.
+→ Sparse fair-weather cumulus seen from 100 km really is sparse; the route on the mini-map
+reads on any land colour.
+
 ---
 
 ## 5. Risks & notes
