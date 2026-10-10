@@ -673,6 +673,11 @@ showed as rings around the camera sweeping over the terrain while zooming. (The 
 as a fallback, `u_ap_direct` < 1.)
 → Zooms without haze rings.
 
+**19.15 Stats panel with a fixed width**
+The panel's width comes from the widest each value can get (digits as "8", the longest month
+name, "888.8 km/h" ...), so it no longer grows and shrinks while the numbers change.
+→ A steady overlay box.
+
 ---
 
 ## 5. Risks & notes

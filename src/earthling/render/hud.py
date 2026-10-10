@@ -184,6 +184,19 @@ def format_number(value: float, decimals: int = 0, lang: str = "en") -> str:
     return s.replace(",", " ")  # thin space as thousands separator
 
 
+def _widest(text: str, lang: str = "en") -> str:
+    """``text`` as wide as it can get while its numbers and the month change: digits as "8"
+    (the font's digits are tabular), the month name as the longest one."""
+    import re
+
+    out = re.sub(r"\d", "8", text)
+    months = word(lang, "months")
+    for m in months:
+        if m in out:
+            return out.replace(m, max(months, key=len))
+    return out
+
+
 def format_gap(seconds: float) -> str:
     """"+1:23" (the other one is behind), "-0:45", "+1:02:10"."""
     sign = "+" if seconds >= 0 else "−"
@@ -380,36 +393,47 @@ class HudLayer:
                     subtitle += f" ({utc_offset_text(v.time)})"
         title_size, sub_size = 28.0 * s, 19.0 * s
         text = store["stats.text"].strip()
+        # (text, caption, template): the template is the widest the value can get, so the
+        # panel keeps its size while the numbers change
         columns = []
         if store["stats.show_distance"]:
             d = v.day_distance_m if day_scope else v.distance_m
-            columns.append((f"{format_number(d / 1000.0, 1, lang)} km", word(lang, "distance")))
+            columns.append((f"{format_number(d / 1000.0, 1, lang)} km", word(lang, "distance"),
+                            f"{format_number(8888.8, 1, lang)} km"))  # fmt: skip
         if store["stats.show_ascent"]:
             a = v.day_ascent_m if day_scope else v.ascent_m
-            columns.append((f"{format_number(a, 0, lang)} m", word(lang, "ascent")))
+            columns.append((f"{format_number(a, 0, lang)} m", word(lang, "ascent"),
+                            f"{format_number(88888, 0, lang)} m"))  # fmt: skip
         if store["stats.show_elevation"] and v.elevation_m is not None:
-            columns.append((f"{format_number(v.elevation_m, 0, lang)} m", word(lang, "elevation")))
+            columns.append((f"{format_number(v.elevation_m, 0, lang)} m", word(lang, "elevation"),
+                            f"{format_number(8888, 0, lang)} m"))  # fmt: skip
         if store["stats.show_speed"] and v.speed_kmh is not None:
-            columns.append(format_speed(v.speed_kmh, store["stats.speed_unit"], lang))
+            unit = store["stats.speed_unit"]
+            text_, caption_ = format_speed(v.speed_kmh, unit, lang)
+            widest = {"pace": "88:88 /km", "knots": f"{format_number(88.8, 1, lang)} kn"}.get(
+                unit, f"{format_number(888.8, 1, lang)} km/h")
+            columns.append((text_, caption_, widest))
         if store["stats.show_gradient"] and v.gradient is not None:
-            columns.append((f"{format_number(v.gradient, 1, lang)} %", word(lang, "gradient")))
+            columns.append((f"{format_number(v.gradient, 1, lang)} %", word(lang, "gradient"),
+                            f"−{format_number(88.8, 1, lang)} %"))  # fmt: skip
         if store["stats.show_heart_rate"] and v.heart_rate is not None:
-            columns.append((f"{v.heart_rate:.0f} bpm", word(lang, "heart_rate")))
+            columns.append((f"{v.heart_rate:.0f} bpm", word(lang, "heart_rate"), "888 bpm"))
         if store["stats.show_gap"] and self.gap_s is not None:
-            columns.append((format_gap(self.gap_s), word(lang, "gap")))
+            columns.append((format_gap(self.gap_s), word(lang, "gap"), "+8:88:88"))
         value_size, caption_size = 26.0 * s, 13.0 * s
-        widths = [max(self._width(t, value_size), self._width(c, caption_size))
-                  for t, c in columns]  # fmt: skip
+        widths = [max(self._width(t, value_size), self._width(w, value_size),
+                      self._width(c, caption_size)) for t, c, w in columns]  # fmt: skip
+        columns = [(t, c) for t, c, _ in columns]
         values_w = sum(widths) + gap * max(len(columns) - 1, 0)
-        title_w = self._width(title, title_size) + (
-            self._width(subtitle, sub_size) + 14.0 * s if subtitle else 0.0
+        title_w = self._width(_widest(title), title_size) + (
+            self._width(_widest(subtitle, lang), sub_size) + 14.0 * s if subtitle else 0.0
         )
         show_profile = store["stats.profile"] and stats.has_elevation
         profile_w = store["stats.profile_width"] * s if show_profile else 0.0
         profile_h = store["stats.profile_height"] * s if show_profile else 0.0
         inner_w = max(title_w, values_w, profile_w, 1.0)
         if text:
-            inner_w = max(inner_w, self._width(text, sub_size))
+            inner_w = max(inner_w, self._width(_widest(text), sub_size))
         rows = []
         if title or subtitle:
             rows.append(("title", title_size * 1.25))

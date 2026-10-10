@@ -228,3 +228,23 @@ def test_speed_gradient_heart_rate_and_extra_line(gl_ctx):
     assert h2 > h1 + 10  # an extra line
     store.set("tracks.color_by", "gradient")  # profile in the colour ramp
     assert draw() == (w2, h2)
+
+
+def test_panel_keeps_its_width(gl_ctx):
+    """The stats panel does not change its width while the numbers change."""
+    store = Scene().store
+    store.set("stats.visible", True)
+    store.set("stats.show_time", True)
+    store.set("stats.text", "Hairpin 3 / 38")
+    atlas = FontAtlas(gl_ctx)
+    hud = HudLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    fbo = gl_ctx.simple_framebuffer((960, 540))
+    widths = []
+    for head in (500.0, 9_000.0, 41_000.0):
+        fbo.use()
+        fbo.clear(0.0, 0.0, 0.0, 1.0)
+        hud.render(fbo, 960, 540, store, fake_path(), head, "UTC")
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(540, 960, 3)
+        cols = np.flatnonzero(img.sum(axis=(0, 2)) > 0)
+        widths.append(cols[-1] - cols[0])
+    assert max(widths) - min(widths) <= 1
