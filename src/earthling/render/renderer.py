@@ -222,8 +222,12 @@ class Renderer:
         self.terrain.debug_lod = s["terrain.debug_lod"]
         self.terrain.store = s
         self.terrain.required_sources = required_tile_sources(
-            s["layers.a"], s["layers.b"], s["layers.mix"], s["borders.overlay"],
-            s["night.lights"] > 0.0, s["water.enabled"],
+            s["layers.a"],
+            s["layers.b"],
+            s["layers.mix"],
+            s["borders.overlay"],
+            s["night.lights"] > 0.0,
+            s["water.enabled"],
         )
         self.outlines.visible = s["view.show_outlines"]
         self.tracks.visible = s["tracks.visible"]

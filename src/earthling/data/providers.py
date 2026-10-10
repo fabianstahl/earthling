@@ -176,8 +176,14 @@ NASA_BLACK_MARBLE = TileProvider(
 
 PROVIDERS: dict[str, TileProvider] = {
     p.id: p
-    for p in (ESRI_WORLD_IMAGERY, EOX_S2CLOUDLESS, OPENTOPOMAP, IGN_BDORTHO, SWISSTOPO_SWISSIMAGE,
-              NASA_BLACK_MARBLE)
+    for p in (
+        ESRI_WORLD_IMAGERY,
+        EOX_S2CLOUDLESS,
+        OPENTOPOMAP,
+        IGN_BDORTHO,
+        SWISSTOPO_SWISSIMAGE,
+        NASA_BLACK_MARBLE,
+    )
 }
 
 

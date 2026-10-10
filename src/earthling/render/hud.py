@@ -222,7 +222,7 @@ def _widest(text: str, lang: str = "en") -> str:
 
 
 def format_gap(seconds: float) -> str:
-    """"+1:23" (the other one is behind), "-0:45", "+1:02:10"."""
+    """ "+1:23" (the other one is behind), "-0:45", "+1:02:10"."""
     sign = "+" if seconds >= 0 else "−"
     s = int(round(abs(seconds)))
     h, rest = divmod(s, 3600)
@@ -510,7 +510,8 @@ class HudLayer:
             unit = store["stats.speed_unit"]
             text_, caption_ = format_speed(v.speed_kmh, unit, lang)
             widest = {"pace": "88:88 /km", "knots": f"{format_number(88.8, 1, lang)} kn"}.get(
-                unit, f"{format_number(888.8, 1, lang)} km/h")
+                unit, f"{format_number(888.8, 1, lang)} km/h"
+            )
             columns.append((text_, caption_, widest))
         if store["stats.show_gradient"] and v.gradient is not None:
             columns.append((f"{format_number(v.gradient, 1, lang)} %", word(lang, "gradient"),

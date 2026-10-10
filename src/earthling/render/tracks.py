@@ -189,8 +189,9 @@ def build_track_positions(
         if np.isfinite(ele).all():
             gpx_ele = smooth(ele, options.smoothing)
         result.append(
-            TrackSegmentGeometry(enu, dist, seconds, np.asarray(true_h, float), ground, hr, water,
-                                 gpx_ele)  # fmt: skip
+            TrackSegmentGeometry(
+                enu, dist, seconds, np.asarray(true_h, float), ground, hr, water, gpx_ele
+            )  # fmt: skip
         )
     return result
 
@@ -624,8 +625,9 @@ class TrackLayer:
             _set(program, "u_dash_px", dash * self.pixel_scale)
             _set(program, "u_dots", int(dots and dash > 0.0))
             p = f"trackgroup.{g.track.group}."
-            water_style = (store is not None and g.track.split_water
-                           and p + "water_color" in store.registry)
+            water_style = (
+                store is not None and g.track.split_water and p + "water_color" in store.registry
+            )
             _set(program, "u_water_split", int(bool(water_style)))
             if water_style:
                 _set(program, "u_water_color", tuple(c**2.2 for c in store[p + "water_color"]))

@@ -37,8 +37,13 @@ def test_vehicle_replaces_the_dot(gl_ctx):
     from earthling.render.parameters import enum, flt
     from earthling.render.vehicles import MARKER_OPTIONS
 
-    scene.set_dynamic("groups", [enum("trackgroup.tracks.marker", "Marker", "dot", MARKER_OPTIONS),
-                                 flt("trackgroup.tracks.marker_size", "Size", 46.0, 8.0, 200.0)])
+    scene.set_dynamic(
+        "groups",
+        [
+            enum("trackgroup.tracks.marker", "Marker", "dot", MARKER_OPTIONS),
+            flt("trackgroup.tracks.marker_size", "Size", 46.0, 8.0, 200.0),
+        ],
+    )
     store = scene.store
     renderer.store = store
     for pid, value in (("tracks.elevation", "gpx"), ("progress.head", 0.5), ("haze.aerial", 0.0),

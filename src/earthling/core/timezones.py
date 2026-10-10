@@ -26,7 +26,7 @@ def timezone_at(lon: float, lat: float) -> ZoneInfo:
 
 
 def utc_offset_text(t: datetime) -> str:
-    """"UTC+7", "UTC-3", "UTC+5:45" for an aware datetime."""
+    """Offset text like "UTC+7", "UTC-3", "UTC+5:45" for an aware datetime."""
     offset = t.utcoffset()
     minutes = int(round(offset.total_seconds() / 60.0)) if offset is not None else 0
     sign = "+" if minutes >= 0 else "-"
