@@ -678,6 +678,12 @@ The panel's width comes from the widest each value can get (digits as "8", the l
 name, "888.8 km/h" ...), so it no longer grows and shrinks while the numbers change.
 → A steady overlay box.
 
+**19.16 Less uniform clouds**
+`weather.layerN.variation`: the base and the top of the clouds vary across a layer (two
+coverage-map lookups), so they no longer all start at one flat height; a slow domain warp of
+the pattern breaks up rows of similar round blobs, and the vertical profile is softer.
+→ Cloud fields that look grown, not stamped.
+
 ---
 
 ## 5. Risks & notes

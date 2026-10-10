@@ -45,7 +45,7 @@ def test_layers_follow_the_properties(gl_ctx):
     store.set("weather.layer2.wind_speed", 5.0)
     store.set("weather.layer2.wind_dir", 90.0)
     weather.update(store, 10.0)
-    shape, noise, _ = weather.layers[1]
+    shape, noise, _, _ = weather.layers[1]
     assert shape[0] == store["weather.layer2.base"]
     assert noise[1] == pytest.approx(50.0) and noise[2] == pytest.approx(0.0, abs=1e-9)
     uniforms = weather.uniforms()

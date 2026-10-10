@@ -7,6 +7,7 @@ uniform int u_layer_count = 0;
 uniform vec4 u_layer_shape[MAX_CLOUD_LAYERS];  // base (m), thickness (m), coverage, extinction (1/m)
 uniform vec4 u_layer_noise[MAX_CLOUD_LAYERS];  // feature size (m), wind offset x, y (m), detail
 uniform vec4 u_layer_color[MAX_CLOUD_LAYERS];  // albedo rgb, brightness
+uniform float u_layer_vary[MAX_CLOUD_LAYERS];   // 0 .. 1: how much base and top vary
 uniform float u_weather_time = 0.0;             // seconds (noise evolution)
 uniform float u_cloud_shadow_strength = 0.0;
 
@@ -18,12 +19,25 @@ float cloud_density_lod(int i, vec2 xy, float h, float lod, float detail_amount)
     if (hf <= 0.0 || hf >= 1.0) return 0.0;
     vec4 nz = u_layer_noise[i];
     vec2 p = xy - nz.yz;
+    // a slow warp of the pattern (no row of similar round blobs)
+    vec2 warp = textureLod(u_cloud_noise, vec3(p / (nz.x * 3.0), 0.37), 1.0).ag - 0.5;
+    p += warp * nz.x * 0.45;
+    // base and top of each cloud vary (not all clouds at one height)
+    float vary = u_layer_vary[i];
+    if (vary > 0.0) {
+        float lo = texture(u_weather_map, p / (nz.x * 2.3) + 0.31).r;
+        float hi = texture(u_weather_map, p / (nz.x * 3.1) + 0.67).r;
+        float bottom = vary * 0.55 * lo;
+        float top = 1.0 - vary * 0.45 * (1.0 - hi);
+        hf = (hf - bottom) / max(top - bottom, 0.05);
+        if (hf <= 0.0 || hf >= 1.0) return 0.0;
+    }
     float cover = texture(u_weather_map, p / (nz.x * 9.0)).r;
     // clusters and gaps; no modulation at coverage 0 (clear) and 1 (overcast)
     float spread = 1.1 * sqrt(max(4.0 * shape.z * (1.0 - shape.z), 0.0));
     float c = clamp(shape.z + (cover - 0.5) * spread, 0.0, 1.0);
     if (c <= 0.001) return 0.0;
-    float profile = smoothstep(0.0, 0.18, hf) * smoothstep(1.0, 0.5, hf);
+    float profile = smoothstep(0.0, 0.25, hf) * smoothstep(1.0, 0.45, hf);
     vec3 uvw = vec3(p, h + u_weather_time * 0.3) / nz.x;
     vec4 n = textureLod(u_cloud_noise, uvw, max(lod, 0.0));
     float base = n.r * profile;

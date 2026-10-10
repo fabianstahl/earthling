@@ -199,6 +199,7 @@ class WeatherSystem:
                  store[p + "density"] * EXTINCTION_PER_DENSITY),
                 (store[p + "scale"], ox, oy, store[p + "detail"]),
                 (0.95, 0.96, 1.0, store[p + "brightness"]),
+                store[p + "variation"],
             ))  # fmt: skip
         self.layers.extend(self.extra_layers(store, time))
         self.layers = self.layers[:MAX_LAYERS]
@@ -215,6 +216,7 @@ class WeatherSystem:
              store["rain.cloud_density"] * EXTINCTION_PER_DENSITY),
             (4500.0, ox, oy, 0.5),
             (albedo * 0.92, albedo * 0.94, albedo, 1.0),
+            0.3,
         )]  # fmt: skip
 
     def rain_uniforms(self, store) -> dict[str, object]:
@@ -288,11 +290,13 @@ class WeatherSystem:
         shapes = [layer[0] for layer in self.layers] + [(0.0, 1.0, 0.0, 0.0)] * MAX_LAYERS
         noises = [layer[1] for layer in self.layers] + [(1000.0, 0.0, 0.0, 0.0)] * MAX_LAYERS
         colors = [layer[2] for layer in self.layers] + [(1.0, 1.0, 1.0, 1.0)] * MAX_LAYERS
+        vary = [float(layer[3]) for layer in self.layers] + [0.0] * MAX_LAYERS
         return {
             "u_layer_count": len(self.layers),
             "u_layer_shape": [tuple(map(float, v)) for v in shapes[:MAX_LAYERS]],
             "u_layer_noise": [tuple(map(float, v)) for v in noises[:MAX_LAYERS]],
             "u_layer_color": [tuple(map(float, v)) for v in colors[:MAX_LAYERS]],
+            "u_layer_vary": vary[:MAX_LAYERS],
             "u_weather_time": self.time,
             "u_cloud_shadow_strength": float(self.shadow_strength),
             "u_cloud_noise": CLOUD_NOISE_UNIT,
@@ -384,6 +388,8 @@ def weather_properties() -> list:
                 decimals=0, unit="°"),
             flt(p + "detail", f"{name}: fraying", d["detail"], 0.0, 1.0),
             flt(p + "brightness", f"{name}: brightness", d["brightness"], 0.0, 3.0),
+            flt(p + "variation", f"{name}: height variation", 0.5, 0.0, 1.0,
+                tooltip="How much the base and the top of the clouds vary (0: one flat base)"),
         ]  # fmt: skip
     from earthling.render.lightning import lightning_properties
 
