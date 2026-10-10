@@ -60,3 +60,48 @@ def test_vehicle_replaces_the_dot(gl_ctx):
     assert renderer.marker.position is None and renderer.vehicles[0].name == "ship"
     centre = (slice(80, 120), slice(80, 120))
     assert np.abs(ship[centre] - dot[centre]).sum() > 2000  # an icon instead of the dot
+
+
+def test_vehicle_tint_and_label(gl_ctx):
+    """Step 19.18: a tinted vehicle with a caption moving with it."""
+    from earthling.core.properties import PropertyDef, PType
+    from earthling.core.scene import Scene
+    from earthling.render.camera import Camera
+    from earthling.render.parameters import color, enum, flt
+    from earthling.render.renderer import Renderer
+    from earthling.render.vehicles import MARKER_OPTIONS
+    from test_tracks import FRAME, straight_track
+
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [straight_track()])
+    scene = Scene()
+    p = "trackgroup.tracks."
+    scene.set_dynamic("groups", [
+        enum(p + "marker", "Marker", "runner", MARKER_OPTIONS),
+        flt(p + "marker_size", "Size", 160.0, 8.0, 200.0),
+        color(p + "marker_tint", "Tint", (1.0, 1.0, 1.0)),
+        PropertyDef(p + "marker_label", "Label", PType.TEXT, "")])  # fmt: skip
+    store = scene.store
+    renderer.store = store
+    for pid, value in (("tracks.elevation", "gpx"), ("progress.head", 0.5), ("haze.aerial", 0.0),
+                       ("glow.enabled", False)):  # fmt: skip
+        store.set(pid, value)
+    mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
+    camera = Camera(position=mid + np.array([0.0, 0.0, 1500.0]), heading=0.0, pitch=-89.9)
+    fbo = gl_ctx.simple_framebuffer((200, 200))
+
+    def draw():
+        renderer.render(fbo, 200, 200, camera)
+        return np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3)[::-1]
+
+    plain = draw().astype(int)
+    store.set(p + "marker_tint", (1.0, 0.8, 0.2))  # gold
+    gold = draw().astype(int)
+    changed = np.abs(gold - plain).sum(axis=2) > 30
+    assert changed.sum() > 20  # the icon got its colour
+    assert (gold[changed][:, 2] < plain[changed][:, 2]).mean() > 0.8  # less blue: gold
+    store.set(p + "marker_label", "2025")
+    labelled = draw().astype(int)
+    rows = np.flatnonzero((np.abs(labelled - gold).sum(axis=2) > 30).any(axis=1))
+    icon_rows = np.flatnonzero(changed.any(axis=1))
+    assert len(rows) and rows.max() <= icon_rows.min() + 2  # the caption above the icon

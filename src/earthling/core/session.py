@@ -128,6 +128,7 @@ class Session:
 
     def track_group_properties(self) -> list:
         """Keyframeable style properties of every track group ("trackgroup.<name>.*")."""
+        from earthling.core.properties import PropertyDef, PType
         from earthling.render.parameters import boolean, color, enum, flt, section
         from earthling.render.tracks import track_color
         from earthling.render.vehicles import MARKER_OPTIONS
@@ -161,6 +162,10 @@ class Session:
                              "while the head is on this group's tracks"),
                 flt(p + "marker_size", "Vehicle size", 46.0, 8.0, 200.0, step=1.0, decimals=0,
                     unit="px"),
+                color(p + "marker_tint", "Vehicle colour", (1.0, 1.0, 1.0),
+                      tooltip="Multiplies the vehicle icon (e.g. gold and silver runners)"),
+                PropertyDef(p + "marker_label", "Vehicle label", PType.TEXT, "",
+                            tooltip="A caption moving with the vehicle, e.g. the year of a run"),
                 color(p + "water_color", "On water: colour", (0.35, 0.75, 1.0),
                       tooltip="Groups split by the water mask (water = true): the parts on "
                               "water"),

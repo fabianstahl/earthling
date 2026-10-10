@@ -25,6 +25,8 @@ class VehicleMarker:
     position: np.ndarray  # ENU of the head
     ahead: np.ndarray  # ENU a little further along the track (the direction of travel)
     size_px: float  # at 1080p
+    tint: tuple[float, float, float] = (1.0, 1.0, 1.0)  # multiplies the icon (sRGB)
+    label: str = ""  # a caption moving with the vehicle (e.g. "2024")
 
     @property
     def icon_path(self) -> Path:

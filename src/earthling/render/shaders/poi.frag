@@ -9,17 +9,20 @@ uniform sampler2D u_icon;
 uniform sampler2D u_atlas;
 uniform float u_spread;
 uniform float u_outline_px = 1.8;
+uniform vec3 u_tint = vec3(1.0);       // icons: multiplies the colours (e.g. a gold vehicle)
+uniform vec3 u_text_color = vec3(1.0);
 
 void main() {
     if (v_mode < 0.5) {
-        f_color = texture(u_icon, v_uv) * v_alpha;
+        vec4 c = texture(u_icon, v_uv);
+        f_color = vec4(c.rgb * u_tint, c.a) * v_alpha;
     } else if (v_mode < 1.5) {
         float d = texture(u_atlas, v_uv).r;
         float aa = max(fwidth(d), 1e-4) * 0.7;
         float outline = max(0.5 - u_outline_px / (2.0 * u_spread * max(v_scale, 1e-3)), 0.06);
         float text = smoothstep(0.5 - aa, 0.5 + aa, d);
         float halo = smoothstep(outline - aa, outline + aa, d);
-        vec3 c = mix(vec3(0.05), vec3(1.0), text);
+        vec3 c = mix(vec3(0.05), u_text_color, text);
         float a = halo * v_alpha;
         f_color = vec4(c * a, a);
     } else {

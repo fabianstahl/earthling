@@ -690,6 +690,11 @@ component fades over a wide range of pixel footprints: the water keeps its patte
 distance instead of turning flat a few hundred metres from the camera.
 → No visible edge where the waves stop.
 
+**19.18 Coloured vehicles with a caption**
+Per track group `marker_tint` multiplies the vehicle icon and `marker_label` writes a caption
+above it that moves with it (in a light version of the tint).
+→ A race of a gold "2025" runner against a silver "2024" one.
+
 ---
 
 ## 5. Risks & notes

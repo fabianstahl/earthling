@@ -571,7 +571,10 @@ class Renderer:
         ahead = path.position_at(min(head + 25.0, g.offset_m + g.length_m))
         if here is None or ahead is None or np.linalg.norm(ahead - here) < 1.0:
             ahead = here + (here - path.position_at(max(head - 25.0, g.offset_m)))
-        return VehicleMarker(s[pid], here, ahead, s[f"trackgroup.{g.track.group}.marker_size"])
+        p = f"trackgroup.{g.track.group}."
+        tint = s[p + "marker_tint"] if p + "marker_tint" in s.registry else (1.0, 1.0, 1.0)
+        label = s[p + "marker_label"] if p + "marker_label" in s.registry else ""
+        return VehicleMarker(s[pid], here, ahead, s[p + "marker_size"], tint, label)
 
     def track_time(self):
         """With ``sun.follow_track``: the (aware) GPX time at the head of the drawn track."""

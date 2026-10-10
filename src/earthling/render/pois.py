@@ -220,8 +220,26 @@ class PoiLayer:
             quad[:, 3:5] = corners @ np.array([[c, s], [-s, c]])
             quad[:, 5:7] = uvs
             quad[:, 7], quad[:, 8], quad[:, 9] = 1.0, 0.0, 1.0
-            self._draw(program, fbo, icon, atlas, quad.astype(np.float32), camera, view_proj,
-                       width, height, depth, depth_size, k)  # fmt: skip
+            parts = [quad]
+            if m.label:  # a caption above the vehicle, in its colour
+                atlas.ensure(m.label)
+                size = 0.42 * m.size_px * k
+                scale = size / BASE_PX
+                rects, glyph_uvs = atlas.quads(m.label)
+                if len(rects):
+                    q = rects * scale
+                    q[:, [0, 2]] += -atlas.width(m.label) * scale / 2.0
+                    q[:, [1, 3]] += -hh - 0.25 * size
+                    parts.append(_glyphs(quad[0, :3], q, glyph_uvs, 1.0, scale))
+            if "u_tint" in program:
+                program["u_tint"] = tuple(float(c) for c in m.tint)
+            if "u_text_color" in program:
+                program["u_text_color"] = tuple(0.35 + 0.65 * float(c) for c in m.tint)
+            self._draw(program, fbo, icon, atlas, np.concatenate(parts).astype(np.float32),
+                       camera, view_proj, width, height, depth, depth_size, k)  # fmt: skip
+            for name in ("u_tint", "u_text_color"):
+                if name in program:
+                    program[name] = (1.0, 1.0, 1.0)
 
     def _geometry(self, poi, icon, rel, store, since, pop, opacity, k, atlas) -> np.ndarray:
         p = f"poi.{poi.id}."
