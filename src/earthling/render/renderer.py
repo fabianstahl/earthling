@@ -369,8 +369,9 @@ class Renderer:
         self._atmosphere_uniforms = {
             **self.atmosphere.uniforms(),
             "u_ap_screen": (float(width), float(height)),
-            # cameras far up: the aerial perspective per pixel (see fog.glsl)
-            "u_ap_direct": min(max((h - 12e3) / 13e3, 0.0), 1.0),
+            # the aerial perspective per pixel (see fog.glsl), dense near the ground from above
+            "u_ap_direct": 1.0,
+            "u_ap_dense_end": bool(h > 3000.0),
         }
         self.terrain.lighting_uniforms = {
             **self.terrain.lighting_uniforms,

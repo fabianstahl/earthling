@@ -15,7 +15,7 @@ uniform sampler3D u_ap_inscatter;     // aerial perspective volume: (screen uv, 
 uniform sampler3D u_ap_transmittance;
 uniform vec2 u_ap_screen = vec2(1.0);  // render target size (froxels span the screen)
 uniform float u_ap_max_dist = 300e3;
-uniform float u_ap_direct = 0.0;  // 0 the volume .. 1 integrated per pixel (cameras far up)
+uniform float u_ap_direct = 1.0;  // 0 the froxel volume .. 1 integrated per pixel
 uniform float u_rain_haze = 0.0;      // rain: extinction per metre (reduced visibility)
 uniform float u_rain_haze_top = 1e9;  // ... below the rain clouds only (m above sea level)
 
@@ -37,26 +37,38 @@ float fog_optical_depth(vec3 dir, float dist) {
     return u_fog_density * dist * (exp(min(a0, 60.0)) - exp(min(a1, 60.0))) / k;
 }
 
+uniform bool u_ap_dense_end = false;  // the camera far above the ground
+
+void integrate_haze(vec3 origin, vec3 dir, vec3 sun, float dist, out vec3 inscatter,
+                    out vec3 trans) {
+    inscatter = integrate_scattering_dense(origin, u_atm_frame * dir, dist, u_atm_frame * sun,
+                                           24, u_ap_dense_end, trans) * u_sun_illuminance;
+}
+
 // Applies aerial perspective and height fog to radiance seen at distance `dist` along `dir`.
 vec3 apply_atmosphere(vec3 color, vec3 dir, float dist) {
     vec3 origin = vec3(0.0, 0.0, PLANET_RADIUS + max(u_camera_height, 1.0));
     vec3 sun = normalize(u_sun_dir);
     if (u_aerial_strength > 0.0) {
-        vec2 uv = gl_FragCoord.xy / u_ap_screen;
-        float w = sqrt(clamp(dist / u_ap_max_dist, 0.0, 1.0));
-        vec3 ap = vec3(uv, w);
-        float fade = clamp(w * 64.0, 0.0, 1.0);  // nothing at the camera (first slice at w=1/64)
-        vec3 inscatter = texture(u_ap_inscatter, ap).rgb * fade * u_sun_illuminance;
-        vec3 trans = mix(vec3(1.0), texture(u_ap_transmittance, ap).rgb, fade);
-        if (u_ap_direct > 0.0) {
-            // seen from far up all the haze lies in the last few kilometres above the ground,
-            // within one slice of the volume: integrated along this ray instead (the volume
-            // showed rings of its slices around the camera)
-            vec3 t_direct;
-            vec3 i_direct = integrate_scattering_dense(origin, u_atm_frame * dir, dist,
-                                                       u_atm_frame * sun, 32, true, t_direct);
-            inscatter = mix(inscatter, i_direct * u_sun_illuminance, u_ap_direct);
-            trans = mix(trans, t_direct, u_ap_direct);
+        vec3 inscatter, trans;
+        if (u_ap_direct >= 1.0) {
+            // integrated along this ray (the froxel volume drew rings of its slices around
+            // the camera, "waves" sweeping over the terrain while zooming): dense near the end
+            // seen from above (the air that matters is near the ground), else near the start
+            integrate_haze(origin, dir, sun, dist, inscatter, trans);
+        } else {
+            vec2 uv = gl_FragCoord.xy / u_ap_screen;
+            float w = sqrt(clamp(dist / u_ap_max_dist, 0.0, 1.0));
+            vec3 ap = vec3(uv, w);
+            float fade = clamp(w * 64.0, 0.0, 1.0);  // nothing at the camera (first slice)
+            inscatter = texture(u_ap_inscatter, ap).rgb * fade * u_sun_illuminance;
+            trans = mix(vec3(1.0), texture(u_ap_transmittance, ap).rgb, fade);
+            if (u_ap_direct > 0.0) {
+                vec3 i_d, t_d;
+                integrate_haze(origin, dir, sun, dist, i_d, t_d);
+                inscatter = mix(inscatter, i_d, u_ap_direct);
+                trans = mix(trans, t_d, u_ap_direct);
+            }
         }
         color = color * mix(vec3(1.0), trans, u_aerial_strength) + inscatter * u_aerial_strength;
     }

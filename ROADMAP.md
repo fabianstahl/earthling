@@ -666,6 +666,13 @@ horizon there, and the bounce light from the ground takes the sun's visibility a
 → "Mount Everest", "Lhotse", "Ama Dablam" instead of boxes; this year's line stays orange;
 a smooth monsoon sky over the Grand Canyon.
 
+**19.14 Aerial perspective per pixel**
+The aerial perspective is integrated along every view ray (24 steps, dense near the ground for
+cameras above 3 km) instead of being looked up in the 32-slice froxel volume, whose slices
+showed as rings around the camera sweeping over the terrain while zooming. (The volume stays
+as a fallback, `u_ap_direct` < 1.)
+→ Zooms without haze rings.
+
 ---
 
 ## 5. Risks & notes
