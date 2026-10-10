@@ -166,11 +166,16 @@ void main() {
                 ds *= 1.9;
             }
             float sun_t = exp(-tau) * (1.0 - exp(-2.0 * tau) * 0.5);  // Beer + powder
-            sun_t *= shadow_from_layers_above(rel, u_camera_enu, u_camera_height, sun);
+            // multiple scattering: light diffusing through the cloud from all sides keeps
+            // its inside and its shadowed parts from turning dark grey
+            float ms = 0.3 * exp(-0.25 * tau);
+            // (a layer above shades it, but its own lit clouds still scatter light down)
+            float above = shadow_from_layers_above(rel, u_camera_enu, u_camera_height, sun);
+            float scatter = sun_t * above * phase + ms * sqrt(above);
             vec3 albedo = layer_albedo(rel);
             vec3 ambient = mix(u_ground_ambient, u_sky_ambient, 0.35 + 0.65 * hf);
             ambient = mix(ambient, vec3(dot(ambient, vec3(0.3333))), 0.6);  // grey bases
-            vec3 light = u_sun_radiance * sun_t * phase + ambient * 0.8;
+            vec3 light = u_sun_radiance * scatter + ambient * 0.8;
             for (int f = 0; f < u_flash_count; ++f) {
                 float dist = length(rel - u_flash_pos[f].xyz);
                 light += u_flash_color[f] * exp(-dist / max(u_flash_pos[f].w, 1.0));

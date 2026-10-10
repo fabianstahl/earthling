@@ -298,6 +298,9 @@ void main() {
         vec2 wm = u_has_water ? texture(u_water, v_tile_uv).rg
                               : vec2(1.0 - smoothstep(0.5, 3.0, v_height));
         if (wm.r > 0.002) {
+            // open water in one even colour (the imagery's sea differs from tile to tile)
+            float even = u_water_body * wm.g * wm.r * water_layer;
+            color = mix(color, srgb_to_linear(u_water_body_color) * flat_light, even);
             vec3 shaded = water_shade(color, v_world, up_here, wm.g, sun_radiance * sun_vis);
             color = mix(color, shaded, wm.r * water_layer);
         }

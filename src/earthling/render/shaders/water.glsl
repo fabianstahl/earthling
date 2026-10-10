@@ -10,6 +10,8 @@ uniform float u_water_waves = 1.0;       // wave relief close up
 uniform float u_water_wind = 5.0;        // m/s: rougher water spreads the glint
 uniform float u_water_wind_dir = 60.0;   // degrees, the waves run towards it
 uniform float u_water_time = 0.0;        // seconds (timeline)
+uniform float u_water_body = 0.0;        // open water: imagery -> one even colour
+uniform vec3 u_water_body_color = vec3(0.05, 0.14, 0.22);  // sRGB
 uniform sampler2D u_skyview_lut;
 
 // Sky radiance seen in direction `dir` (frame ENU), from the camera's sky-view LUT.

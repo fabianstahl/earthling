@@ -32,15 +32,19 @@ float cloud_density_lod(int i, vec2 xy, float h, float lod, float detail_amount)
         hf = (hf - bottom) / max(top - bottom, 0.05);
         if (hf <= 0.0 || hf >= 1.0) return 0.0;
     }
-    float cover = texture(u_weather_map, p / (nz.x * 9.0)).r;
-    // clusters and gaps; no modulation at coverage 0 (clear) and 1 (overcast)
-    float spread = 1.1 * sqrt(max(4.0 * shape.z * (1.0 - shape.z), 0.0));
+    // clusters and gaps at two scales (fields of cloud and wide clear areas between them);
+    // no modulation at coverage 0 (clear) and 1 (overcast)
+    float cover = mix(texture(u_weather_map, p / (nz.x * 9.0)).r,
+                      texture(u_weather_map, p / (nz.x * 40.0) + 0.53).r, 0.6);
+    float spread = 1.9 * sqrt(max(4.0 * shape.z * (1.0 - shape.z), 0.0));
     float c = clamp(shape.z + (cover - 0.5) * spread, 0.0, 1.0);
     if (c <= 0.001) return 0.0;
     float profile = smoothstep(0.0, 0.25, hf) * smoothstep(1.0, 0.45, hf);
     vec3 uvw = vec3(p, h + u_weather_time * 0.3) / nz.x;
     vec4 n = textureLod(u_cloud_noise, uvw, max(lod, 0.0));
-    float base = n.r * profile;
+    // a coarser octave: big and small clouds side by side, not one size everywhere
+    float big = textureLod(u_cloud_noise, uvw * 0.37 + vec3(0.21, 0.63, 0.0), max(lod - 1.4, 0.0)).r;
+    float base = mix(n.r, big, 0.35) * profile;
     float d = clamp((base - (1.0 - c)) / max(c, 1e-3), 0.0, 1.0);
     if (d <= 0.0) return 0.0;
     if (detail_amount > 0.0) {

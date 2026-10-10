@@ -718,6 +718,16 @@ replies are no longer cached). The label fade-out distance now reaches 5000 km. 
 noise fades to its mean once a pixel covers its period (no speckles on distant slopes).
 → From a satellite's height viewers see which country and which city the train passes.
 
+**19.22 Livelier clouds, even open water**
+The cloud coverage varies at two scales (fields of cloud with wide clear areas between them),
+a coarser noise octave mixes big and small clouds, and a multiple-scattering term keeps the
+inside and the shadowed parts of clouds from turning dark grey (a closed deck above still
+shades them). From high up the layers stay visible up to three times the camera's height
+(before: 150 km), so they can fade in softly during a descent. `water.uniform` /
+`water.color`: open water away from the shore takes one even colour instead of the imagery,
+whose sea differed from tile to tile.
+→ Clouds look less like a uniform pattern; seen from 100 km the sea has no seams.
+
 ---
 
 ## 5. Risks & notes

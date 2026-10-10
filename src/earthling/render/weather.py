@@ -321,6 +321,9 @@ class WeatherSystem:
             "u_jitter": float(jitter),
             "u_pixel_angle": float(math.radians(camera.fov_y)) / max(height, 1),
         }
+        # from high up the layers are far away: they fade out beyond 150 km or three times
+        # the camera's height (no sudden appearance of the clouds when descending)
+        values["u_max_distance"] = max(150e3, 3.0 * float(values.get("u_camera_height", 0.0)))
         for name, value in values.items():
             if name in program:
                 program[name] = value

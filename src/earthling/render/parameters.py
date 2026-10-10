@@ -166,6 +166,10 @@ WATER = section(
         tooltip="Rougher water spreads the sun's glint"),
     flt("water.wind_dir", "Waves towards", 60.0, 0.0, 360.0, step=5.0, decimals=0, unit="°",
         uniform="u_water_wind_dir"),
+    flt("water.uniform", "Even open water", 0.0, 0.0, 1.0, uniform="u_water_body",
+        tooltip="Open water (away from the shore) takes the colour below instead of the "
+                "imagery: no seams between imagery tiles out at sea"),
+    color("water.color", "Open water colour", (0.05, 0.14, 0.22), uniform="u_water_body_color"),
 )  # fmt: skip
 
 SHADOWS = section(

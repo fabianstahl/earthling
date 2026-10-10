@@ -136,3 +136,8 @@ def test_water_surface_reflects_and_glints(gl_ctx):
     water = render(water__enabled=True)
     assert np.abs(water - plain).mean() > 2.0  # sky reflection on the (green) imagery
     assert np.abs(render(water__enabled=True, water__reflection=0.0) - plain).max() <= 1.0
+    # step 19.22: open water in one even colour instead of the imagery
+    even = render(water__enabled=True, water__reflection=0.0, water__uniform=1.0,
+                  water__color=(0.0, 0.0, 1.0))  # fmt: skip
+    rgb = even.reshape(-1, 3)
+    assert rgb[:, 2].mean() > rgb[:, 1].mean() + 5.0  # blue sea, not the green imagery
