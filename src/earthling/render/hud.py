@@ -184,6 +184,30 @@ def format_number(value: float, decimals: int = 0, lang: str = "en") -> str:
     return s.replace(",", " ")  # thin space as thousands separator
 
 
+def _segment(batch, pts, thickness, color, alpha) -> None:
+    _polyline(batch, pts, thickness, color, alpha)
+
+
+def _polyline(batch, pts, thickness, color, alpha) -> None:
+    """A line of quads through the points (pixels)."""
+    pts = np.asarray(pts, dtype=np.float64)
+    if len(pts) < 2:
+        return
+    d = np.diff(pts, axis=0)
+    length = np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-6)
+    n = np.column_stack([-d[:, 1], d[:, 0]]) / length[:, None] * thickness / 2.0
+    a0, a1 = pts[:-1] + n, pts[1:] + n
+    b0, b1 = pts[:-1] - n, pts[1:] - n
+    batch.triangles(np.stack([a0, a1, b1, a0, b1, b0], axis=1).reshape(-1, 2), color, alpha)
+
+
+def _disc(batch, centre, radius, color, alpha, n: int = 16) -> None:
+    a = np.linspace(0.0, 2.0 * math.pi, n + 1)
+    ring = np.column_stack([centre[0] + radius * np.cos(a), centre[1] + radius * np.sin(a)])
+    tris = np.stack([np.repeat([centre], n, axis=0), ring[:-1], ring[1:]], axis=1)
+    batch.triangles(tris.reshape(-1, 2), color, alpha)
+
+
 def _widest(text: str, lang: str = "en") -> str:
     """``text`` as wide as it can get while its numbers and the month change: digits as "8"
     (the font's digits are tabular), the month name as the longest one."""
@@ -282,6 +306,13 @@ class HudLayer:
         self.last_stats: StatsAt | None = None  # values shown in the last frame (tests)
         self.frame = None  # LocalFrame of the scene (time zone at the head position)
         self.gap_s: float | None = None  # clock mode: the second track's gap (seconds)
+        # the mini-map: set by the renderer every frame
+        self.map_path = None  # the whole journey (ProgressPath)
+        self.map_heads: list[float] = []  # global distances of the heads
+        self.map_colors: dict[int, tuple] = {}  # track index -> line colour (sRGB)
+        self.map_sources = (None, None)  # (WaterData, BorderData)
+        self._map_geometry = None
+        self._map_key = None
 
     def stats_for(self, path, timezone: str) -> HikeStats | None:
         if path is None or len(path.dist) == 0:
@@ -334,6 +365,8 @@ class HudLayer:
     def _build(self, width: int, height: int, store, path, head_m: float, timezone: str):
         batch = _Batch()
         k = pixel_scale(width, height)
+        if store["minimap.visible"] and store["minimap.opacity"] > 0.0:
+            self._draw_minimap(batch, width, height, k, store)
         attribution_h = 0.0
         if store["stats.attribution"] and self.attribution:
             attribution_h = self._draw_attribution(batch, width, height, k, store)
@@ -363,6 +396,72 @@ class HudLayer:
 
         lat, lon, _ = self.frame.enu_to_geodetic(np.asarray(position, dtype=np.float64))
         return t.astimezone(timezone_at(float(lon), float(lat)))
+
+    # --- mini-map --------------------------------------------------------------------------
+    def _minimap_geometry(self):
+        path = self.map_path
+        if path is None or not path.tracks or self.frame is None:
+            return None
+        key = (id(path), id(self.frame), path.total_m)
+        if key != self._map_key:
+            from earthling.render.minimap import build
+
+            water, borders = self.map_sources
+            try:
+                self._map_geometry = build(path, self.frame, water, borders)
+            except Exception:  # (network or data problems: a map without the background)
+                self._map_geometry = build(path, self.frame)
+            self._map_key = key
+        return self._map_geometry
+
+    def _draw_minimap(self, batch, width, height, k, store) -> None:
+        geo = self._minimap_geometry()
+        if geo is None:
+            return
+        s = k * store["minimap.scale"]
+        alpha = store["minimap.opacity"]
+        w = store["minimap.size"] * s
+        h = w * geo.aspect
+        margin = 28.0 * k
+        corner = store["minimap.position"]
+        x0 = margin if corner.endswith("left") else width - margin - w
+        y0 = margin if corner.startswith("top") else height - margin - h
+
+        def at(xy):
+            return np.column_stack([x0 + xy[..., 0].ravel() * w, y0 + xy[..., 1].ravel() * h])
+
+        frame_px = 1.5 * s
+        batch.quad(x0 - frame_px, y0 - frame_px, x0 + w + frame_px, y0 + h + frame_px,
+                   (0.95, 0.95, 0.95), 0.8 * alpha)  # fmt: skip
+        batch.quad(x0, y0, x0 + w, y0 + h, store["minimap.land_color"], alpha)
+        if len(geo.water):
+            batch.triangles(at(geo.water), store["minimap.water_color"], alpha)
+        for a, b in geo.borders:
+            _segment(batch, at(np.array([a, b])), 1.0 * s, (0.75, 0.78, 0.82), 0.7 * alpha)
+        heads = self.map_heads
+        for index, xy, dist in geo.routes:
+            color = self.map_colors.get(index)
+            if color is None:
+                continue
+            pts = at(xy)
+            head = max((hd for hd in heads if dist[0] - 1.0 <= hd), default=-1.0)
+            done = dist <= head
+            _polyline(batch, pts, 2.0 * s, (0.9, 0.9, 0.9), 0.3 * alpha)  # the whole route
+            if done.sum() >= 1:
+                n = int(done.sum())
+                line = pts[:n]
+                if n < len(pts):  # up to the head exactly
+                    f = (head - dist[n - 1]) / max(dist[n] - dist[n - 1], 1e-6)
+                    line = np.vstack([line, pts[n - 1] + (pts[n] - pts[n - 1]) * f])
+                _polyline(batch, line, 2.6 * s, color, alpha)
+        for hd in heads:  # the dots at the heads
+            for _index, xy, dist in geo.routes:
+                if dist[0] - 1.0 <= hd <= dist[-1] + 1.0:
+                    p = at(np.array([[np.interp(hd, dist, xy[:, 0]),
+                                      np.interp(hd, dist, xy[:, 1])]]))[0]  # fmt: skip
+                    _disc(batch, p, 5.5 * s, (0.05, 0.05, 0.05), alpha)
+                    _disc(batch, p, 4.0 * s, (1.0, 1.0, 1.0), alpha)
+                    break
 
     def _draw_attribution(self, batch, width, height, k, store) -> float:
         size = 11.0 * k
@@ -558,7 +657,8 @@ class HudLayer:
                 program, [(self._buffer, "2f 2f 4f 2f", "in_pos", "in_uv", "in_color", "in_params")]
             )
             self._vaos[program.glo] = vao
-        assert atlas.texture is not None
+        if atlas.texture is None:  # (shapes only, no text yet: the atlas still needs a texture)
+            atlas.ensure(" ")
         atlas.texture.use(0)
         for name, value in (
             ("u_atlas", 0),

@@ -701,6 +701,14 @@ visibility test reads it at the anchor, so a peak hidden in or behind clouds los
 instead of leaving it floating on the cloud.
 → "Mount Everest" only where Everest is seen.
 
+**19.20 Mini-map**
+`minimap.*`: the whole journey on a small north-up map in a corner of the picture: land and
+water from the OpenStreetMap water polygons (the vector tiles of 19.10, clipped per tile,
+simplified and triangulated), the country borders, the route faint and its drawn part in the
+track colours, a dot at the head (by clock one per track). The geometry is built once per
+path and only scaled per frame.
+→ Viewers see where on the map the ship or the camper is.
+
 ---
 
 ## 5. Risks & notes

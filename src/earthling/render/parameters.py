@@ -383,6 +383,21 @@ STATS = section(
 )  # fmt: skip
 
 
+MINIMAP = section(
+    "Mini-map",
+    boolean("minimap.visible", "Show the mini-map", False,
+            tooltip="The whole journey on a small map: the route, the drawn part, the head"),
+    enum("minimap.position", "Position", "top_right",
+         [("bottom_left", "Bottom left"), ("bottom_right", "Bottom right"),
+          ("top_left", "Top left"), ("top_right", "Top right")]),
+    flt("minimap.size", "Width", 300.0, 100.0, 1000.0, step=10.0, decimals=0, unit="px"),
+    flt("minimap.scale", "Size", 1.0, 0.4, 3.0, step=0.05),
+    flt("minimap.opacity", "Opacity", 0.9, 0.0, 1.0),
+    color("minimap.land_color", "Land colour", (0.25, 0.27, 0.24)),
+    color("minimap.water_color", "Water colour", (0.12, 0.22, 0.34)),
+)  # fmt: skip
+
+
 def build_registry() -> PropertyRegistry:
     from earthling.render.layers import layer_properties
 
@@ -405,6 +420,7 @@ def build_registry() -> PropertyRegistry:
         GLOW,
         LABELS,
         STATS,
+        MINIMAP,
     ):
         registry.extend(group)
     registry.extend(layer_properties())

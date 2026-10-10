@@ -248,3 +248,40 @@ def test_panel_keeps_its_width(gl_ctx):
         cols = np.flatnonzero(img.sum(axis=(0, 2)) > 0)
         widths.append(cols[-1] - cols[0])
     assert max(widths) - min(widths) <= 1
+
+
+def test_minimap(gl_ctx):
+    """Step 19.20: the route on a small map in a corner, the drawn part in colour."""
+    from types import SimpleNamespace
+
+    from earthling.core.geo import LocalFrame
+
+    frame = LocalFrame(46.0, 7.0, 0.0)
+    enu = np.column_stack([np.linspace(-5000, 5000, 50), np.linspace(-2000, 2000, 50),
+                           np.zeros(50)])  # fmt: skip
+    track = SimpleNamespace(enu=enu, dist=np.linspace(0.0, 10_770.0, 50), offset_m=0.0,
+                            index=0, length_m=10_770.0)  # fmt: skip
+    path = SimpleNamespace(tracks=[track], total_m=10_770.0)
+    store = Scene().store
+    store.set("minimap.visible", True)
+    store.set("minimap.opacity", 1.0)
+    atlas = FontAtlas(gl_ctx)
+    hud = HudLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    hud.frame = frame
+    hud.map_path = path
+    hud.map_colors = {0: (1.0, 0.0, 0.0)}
+    fbo = gl_ctx.simple_framebuffer((960, 540))
+
+    def draw(head):
+        hud.map_heads = [head]
+        fbo.use()
+        fbo.clear(0.0, 0.0, 0.0, 1.0)
+        hud.render(fbo, 960, 540, store, fake_path(), 0.0, "UTC")
+        return np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(540, 960, 3)[::-1]
+
+    start = draw(0.0).astype(int)
+    corner = start[:270, 480:]  # top right
+    assert (corner.sum(axis=2) > 30).mean() > 0.05  # the map box
+    red = lambda img: ((img[..., 0] > 150) & (img[..., 1] < 80)).sum()  # noqa: E731
+    half = draw(5_000.0).astype(int)
+    assert red(half[:270, 480:]) > red(corner) + 20  # the drawn part in the track colour

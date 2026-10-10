@@ -354,6 +354,7 @@ class Renderer:
             self.pois.render_vehicles(fbo, camera, view_proj, self.vehicles, *output,
                                       self.target.depth, (width, height))  # fmt: skip
         self.hud.frame = self.frame
+        self._minimap_inputs()
         hud_path, hud_head = self.tracks.path, self.tracks.head_m
         self.hud.gap_s = None
         if self.store is not None and self.store["progress.mode"] == "clock" and hud_path:
@@ -364,6 +365,25 @@ class Renderer:
         self.hud.render(fbo, *output, self.store, hud_path, hud_head,
                         self.timezone)  # fmt: skip
         self.reset_state()  # leave the context clean for Qt
+
+    def _minimap_inputs(self) -> None:
+        """The journey, its heads and line colours for the mini-map of the HUD."""
+        s, path, hud = self.store, self.tracks.path, self.hud
+        if s is None or path is None or not s["minimap.visible"]:
+            return
+        hud.map_path = path
+        if self.tracks.track_heads is not None:  # by clock: every track its own head
+            hud.map_heads = [h for h in self.tracks.track_heads.values() if h >= 0.0]
+        else:
+            hud.map_heads = [min(self.tracks.head_m, path.total_m)]
+        single = s["tracks.color_mode"] == "single"
+        hud.map_colors = {}
+        for g in path.tracks:
+            style = self.tracks._group_style(s, g, single)
+            if style is not None:
+                hud.map_colors[g.index] = style[0]
+        data = self.terrain.data
+        hud.map_sources = (getattr(data, "water", None), getattr(data, "borders", None))
 
     def _update_atmosphere(self, view_proj, width: int, height: int) -> None:
         """Sky-view LUT and aerial perspective volume of this frame (see sky_luts)."""
