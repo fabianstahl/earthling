@@ -1,9 +1,10 @@
 """Showcase 9: five days by canoe through the Boundary Waters (~32 s).
 
-The first morning: the camera skims low over a lake through the morning mist towards the canoe,
-then cranes straight up to 4 km while five days of paddling and portages draw (blue on the
-lakes, white dots over the portages, split by the water mask), a tent at every night camp.
-Autumn, late September; the country border (Canada / USA) glows across the lakes.
+Late afternoon: the camera skims low over a lake through a light haze towards the canoe, then
+rises with it, looking into the low sun so the lakes glint, while five days of paddling and
+portages draw (blue on the lakes, white dots over the portages, split by the water mask), a
+tent at every night camp; at the end the whole route. Autumn, late September; the country
+border (Canada / USA) glows across the lakes.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from sc_common import (
     key,
     key_shots,
     load_hike,
+    map_shots,
     new_scene,
     orbit_eye,
     poi,
@@ -43,8 +45,10 @@ def main() -> None:
     s.set("tracks.width", 4.5)
     s.set("tracks.casing", 2.0)
     s.set("water.enabled", True)
-    s.set("water.wind", 2.0)
+    s.set("water.wind", 4.0)  # (a breeze: a broader glint on the lakes)
     s.set("water.waves", 0.6)
+    s.set("post.exposure", 0.4)
+    s.set("light.ambient", 1.2)
     key(scene, "haze.aerial", 0.0, 0.8)
     key(scene, "haze.aerial", 8.0, 0.8)
     key(scene, "haze.aerial", 16.0, 0.3)
@@ -58,18 +62,17 @@ def main() -> None:
     s.set("stats.show_elevation", False)
     s.set("stats.profile", False)
     s.set("stats.day_style", "day")
-    # the morning: low sun, mist lying on the lakes, burning off
-    key(scene, "sun.datetime", 0.0, dt.datetime(2026, 9, 19, 8, 5), Interp.LINEAR)
-    key(scene, "sun.datetime", PADDLE[0], dt.datetime(2026, 9, 19, 8, 30), Interp.LINEAR)
-    key(scene, "sun.datetime", DURATION, dt.datetime(2026, 9, 19, 11, 0), Interp.LINEAR)
+    # late afternoon: the sun low in the south-west, the camera looking towards it (glint)
+    key(scene, "sun.datetime", 0.0, dt.datetime(2026, 9, 19, 16, 0), Interp.LINEAR)
+    key(scene, "sun.datetime", DURATION, dt.datetime(2026, 9, 19, 17, 30), Interp.LINEAR)
     s.set("weather.enabled", True)
     fog = "weather.layer1."
     for pid, value in (("enabled", True), ("base", 420.0), ("thickness", 60.0),
                        ("coverage", 0.55), ("scale", 700.0), ("wind_speed", 1.0),
                        ("detail", 0.8), ("brightness", 1.2)):  # fmt: skip
         s.set(fog + pid, value)
-    key(scene, fog + "density", 0.0, 0.7)
-    key(scene, fog + "density", 3.0, 0.5)
+    key(scene, fog + "density", 0.0, 0.35)
+    key(scene, fog + "density", 3.0, 0.25)
     key(scene, fog + "density", 9.0, 0.0)  # (burnt off before the crane rises above it)
 
     # the paddling: by distance, the night camps (day ends) as tents
@@ -91,22 +94,29 @@ def main() -> None:
         u = smoother(min(t / 6.0, 1.0))
         return a_from + (a_to - a_from) * u, start + np.array([0.0, 0.0, 2.0])
 
-    # B: the crane - straight up above the put-in, looking down onto the lake maze
-    # the whole route in the frame at the end: the centre of its bounds, high enough for them
+    # B: rising with the canoe, looking south-west into the sun: the canoe and the drawn
+    # route always in the picture (the camera zooms out as far as needed for them)
+    def distance_of(t: float) -> float:
+        u = smoother(min(max((t - 5.0) / 10.0, 0.0), 1.0))
+        return float(np.exp(np.log(600.0) + (np.log(9_000.0) - np.log(600.0)) * u))
+
+    def pitch_of(t: float) -> float:
+        return -30.0 - 22.0 * smoother(min(max((t - 5.0) / 10.0, 0.0), 1.0))
+
+    def head_of(t: float) -> float:
+        return path.total_m * float(scene.animation.curves["progress.head"].evaluate(t))
+
+    follow = map_shots(hike, times, head_of, distance_of=distance_of, pitch_of=pitch_of,
+                       heading_of=lambda t: 215.0, sigma_s=1.2, fit=0.3, clearance=60.0)  # fmt: skip
+    # C: the whole route at the end, from the same direction
     every = np.vstack([g.enu for g in path.tracks])
     lo, hi = every.min(axis=0), every.max(axis=0)
     centre = (lo + hi) / 2.0
     span = max(hi[0] - lo[0], (hi[1] - lo[1]) * 16.0 / 9.0)
-    top = 0.62 * span / np.tan(np.radians(s["view.fov"]) / 2.0) / (16.0 / 9.0)
-
-    def crane(t: float):
-        u = smoother(min(max((t - 6.0) / 12.0, 0.0), 1.0))
-        look = start + (centre - start) * u
-        height = 30.0 + (top - 30.0) * u ** 1.4
-        eye = orbit_eye(look, 20.0 - 20.0 * u, -12.0 - 76.0 * u, height)
-        return eye, look
-
-    shots = blend_shots([(t, *skim(t)) for t in times], [(t, *crane(t)) for t in times], 5.0, 8.0)
+    top = 0.75 * span / np.tan(np.radians(s["view.fov"]) / 2.0) / (16.0 / 9.0)
+    overview = [(t, orbit_eye(centre, 215.0, -60.0, top), centre) for t in times]
+    shots = blend_shots([(t, *skim(t)) for t in times], follow, 4.5, 7.5)
+    shots = blend_shots(shots, overview, PADDLE[1] - 2.0, PADDLE[1] + 2.0)
     key_shots(scene, shots)
 
     pois = []

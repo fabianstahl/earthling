@@ -1,7 +1,8 @@
 """Showcase 7: the Berlin marathon as a ghost race, in portrait (1080 x 1920, ~30 s).
 
-This year's run (2025, 3:41:20) against last year's (2024, 3:47:05), shifted to the same start
-(progress by clock): two heads on the course, the gap in the overlay. A helicopter view from
+This year's run (2025, 3:41:20, gold) against last year's (2024, 3:47:05, silver), shifted to the
+same start (progress by clock): two runners with their year on the course, the gap in the
+overlay. A helicopter view from
 above, slightly ahead of the leader, district names and kilometre flags; an overcast autumn
 morning turning to drizzle. The finish: low behind the Brandenburg Gate.
 """
@@ -41,18 +42,22 @@ def main() -> None:
     s.set("view.fov", 62.0)
     s.set("progress.mode", "clock")
     s.set("trackgroup.run2024.time_offset", SHIFT_H)
-    for group, color, glow in (("run2025", (1.0, 0.45, 0.1), 1.2),
-                               ("run2024", (0.62, 0.7, 0.8), 0.15)):
+    # gold for this year's run, silver for last year's: two runners with their year
+    for group, color, glow, tint in (("run2025", (1.0, 0.74, 0.18), 0.5, (1.0, 0.8, 0.3)),
+                                     ("run2024", (0.72, 0.76, 0.82), 0.1, (0.85, 0.88, 0.95))):  # fmt: skip
         p = f"trackgroup.{group}."
         s.set(p + "color_mode", "single")
         s.set(p + "color", color)
         s.set(p + "glow", glow)
-    s.set("trackgroup.run2024.opacity", 0.55)  # the ghost: wide and faint below this year's
+        s.set(p + "marker", "runner")
+        s.set(p + "marker_size", 58.0)
+        s.set(p + "marker_tint", tint)
+        s.set(p + "marker_label", group[3:])
+    # (the same course: last year's line is a wide silver ribbon below this year's gold one)
+    s.set("trackgroup.run2024.opacity", 0.8)
+    s.set("tracks.width", 4.0)
     s.set("trackgroup.run2024.width", 2.2)
-    s.set("trackgroup.run2025.marker", "runner")
-    s.set("trackgroup.run2025.marker_size", 52.0)
-    s.set("marker.size", 13.0)  # (the 2024 ghost: a glowing dot)
-    s.set("tracks.width", 5.0)
+    s.set("tracks.emissive", 0.35)
     s.set("tracks.casing", 2.0)
     s.set("progress.head_fade", 600.0)
     s.set("haze.aerial", 0.9)

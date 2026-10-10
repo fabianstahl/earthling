@@ -757,6 +757,46 @@ def geo_orbit_eye(hike: Hike, lat: float, lon: float, h: float, heading: float, 
     return eye, target
 
 
+def map_shots(hike: Hike, times, head_of, *, distance_of, heading_of=None, pitch_of=None,
+              sigma_s: float = 2.5, fit: float = 0.28, points_of=None, clearance: float = 300.0):
+    """Calm map camera: (time, eye, target) with a fixed (or slowly keyed) heading, north up by
+    default, looking down steeply at a heavily smoothed point near the head.
+
+    ``distance_of(t)``: the wished distance; it grows where the head (and the extra points of
+    ``points_of(t)``, e.g. the next POI) would leave the picture: all stay within ``fit`` x the
+    distance of the centre. No turns, no chasing: viewers can follow the route like on a map."""
+    times = np.asarray(times, dtype=np.float64)
+    step = sigma_s / float(times[1] - times[0])
+    heads = np.array([hike.path.position_at(head_of(t)) for t in times])
+    centres = gaussian(heads, step)
+    reach = np.linalg.norm((heads - centres)[:, :2], axis=1)
+    if points_of is not None:
+        for i, t in enumerate(times):
+            for q in points_of(t):
+                q = np.asarray(q, dtype=np.float64)
+                reach[i] = max(reach[i], float(np.linalg.norm((q - centres[i])[:2])))
+    wished = np.array([distance_of(t) for t in times])
+    dist = np.maximum(wished, reach / fit)
+    # (a running maximum over the smoothing window first: the zoom-out starts before it is
+    # needed, not when the head is already at the edge)
+    window = max(1, int(step))
+    padded = np.pad(dist, window, mode="edge")
+    dist = np.array([padded[i:i + 2 * window + 1].max() for i in range(len(dist))])
+    dist = np.exp(gaussian(np.log(dist), step))
+    shots = []
+    for t, c, d in zip(times, centres, dist, strict=True):
+        lat, lon, h = hike.frame.enu_to_geodetic(c)  # (h: the ENU z is not a height far away)
+        heading = heading_of(t) if heading_of is not None else 0.0
+        pitch = pitch_of(t) if pitch_of is not None else -60.0
+        eye, target = geo_orbit_eye(hike, float(lat), float(lon), float(h), heading, pitch,
+                                    float(d))  # fmt: skip
+        ground = hike.ground_z(eye)
+        if math.isfinite(ground):
+            eye[2] = max(eye[2], ground + clearance)
+        shots.append((float(t), eye, target))
+    return shots
+
+
 def blend_shots(first, second, t_a: float, t_b: float):
     """Shots of ``first`` until t_a, of ``second`` from t_b, smoothly mixed in between (both
     lists sampled at the same times)."""

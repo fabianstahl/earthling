@@ -45,13 +45,14 @@ def main() -> None:
     s.set("trackgroup.tracks.marker", "train")
     s.set("trackgroup.tracks.marker_size", 44.0)
     s.set("night.lights", 3.0)
-    s.set("haze.aerial", 0.5)
-    s.set("light.night_ambient", 2.5)
+    s.set("haze.aerial", 0.25)  # (the land shows through)
+    s.set("light.night_ambient", 6.0)
+    s.set("terrain.exaggeration", 3.0)  # (relief seen from 2000 km)
     # winter: snow on the land (the imagery is a summer mosaic)
-    s.set("snow.cover", 0.85)
+    s.set("snow.cover", 0.35)  # (a light cover: the land stays readable)
     s.set("snow.line", -100.0)
     s.set("snow.transition", 300.0)
-    s.set("snow.max_slope", 35.0)
+    s.set("snow.max_slope", 20.0)
     # the clock where the train is
     for pid, value in (("stats.visible", True), ("stats.show_time", True),
                        ("stats.timezone", "position"), ("stats.show_utc_offset", True),
@@ -59,10 +60,15 @@ def main() -> None:
                        ("stats.profile", False), ("stats.date_format", "long")):  # fmt: skip
         s.set(pid, value)
     s.set("labels.visible", True)
+    # countries and the large cities (Natural Earth): where on the continent the train is
     s.set("labels.peaks", False)
     s.set("labels.passes", False)
-    s.set("labels.max_count", 6)
-    s.set("labels.max_distance", 900.0)
+    s.set("labels.places", False)
+    s.set("labels.cities", True)
+    s.set("labels.countries", True)
+    s.set("labels.min_population", 1_000_000.0)
+    s.set("labels.max_count", 12)
+    s.set("labels.max_distance", 4000.0)
     s.set("labels.size", 17.0)
     # the border map first, then the imagery
     s.set("layers.a", "borders")
@@ -78,7 +84,7 @@ def main() -> None:
     key(scene, "layers.mix", 3.0, 0.0)
     key(scene, "layers.mix", 7.0, 1.0)
     key(scene, "borders.opacity", 0.0, 1.0)
-    key(scene, "borders.opacity", 7.0, 0.55)
+    key(scene, "borders.opacity", 7.0, 0.4)
 
     # the ride in the GPX time: a day every ~6 s (the nights included)
     key(scene, "progress.head", 0.0, 0.0, Interp.STEP)

@@ -4,8 +4,8 @@
    the curves of the flight up the valleys to Lukla.
 2. (9-26 s) Seven days up the Khumbu valley, drawn by distance (the nights left out), the
    great peaks labelled as they come into view.
-3. (26-34 s) Base Camp: snow starts to fall and settles above the snow line; the camera turns
-   from the tents up to the summit of Everest, high above the snow clouds.
+3. (26-34 s) Base Camp: snow starts to fall and settles above the snow line; the camera, above
+   Kala Patthar, turns from the tents up to Everest as the snow clouds clear.
 """
 
 from __future__ import annotations
@@ -75,8 +75,9 @@ def main() -> None:
         u = smoother((t - FLIGHT[0]) / (FLIGHT[1] - FLIGHT[0]))
         key(scene, "progress.head", round(float(t), 4),
             path.progress_for_distance(d0 + 1.0 + u * (d1 - d0 - 2.0), "time"), Interp.LINEAR)  # fmt: skip
-    for pid, value in (("follow.distance", 140.0), ("follow.height", 25.0), ("follow.lag", 0.0),
-                       ("follow.look_ahead", 2500.0), ("follow.bank", 0.6),
+    # (wide and calm: far enough behind that the valley and the plane's turns read from outside)
+    for pid, value in (("follow.distance", 1100.0), ("follow.height", 260.0), ("follow.lag", 1.5),
+                       ("follow.look_ahead", 3000.0), ("follow.bank", 0.2),
                        ("camera.transition", 2.5)):  # fmt: skip
         s.set(pid, value)
     key(scene, "camera.mode", 0.0, "follow", Interp.STEP)
@@ -113,7 +114,11 @@ def main() -> None:
     # --- Base Camp: from the tents up to the summit ---------------------------------------
     ebc = hike.end(len(path.tracks))
     summit = hike.enu(*SUMMIT, 8848.0)
-    eye = ebc + (ebc - summit) * np.array([0.12, 0.12, 0.0]) + np.array([0.0, 0.0, 450.0])
+    # above Kala Patthar: from the camp itself Nuptse hides the summit (and its label)
+    eye = hike.enu(27.9958, 86.8285, 5644.0)
+    # well clear of the ground: an eye close to it was pushed up by the renderer's ground
+    # clamp whenever finer terrain tiles arrived, and the picture bounced
+    eye[2] = max(eye[2] + 450.0, hike.ground_z(eye) + 450.0)
 
     def finale(t: float):
         u = smoother(min(max((t - 27.0) / 6.0, 0.0), 1.0))
@@ -130,17 +135,21 @@ def main() -> None:
 
     # --- snow at Base Camp: snowfall, fresh snow, the clouds below the summit ---------------
     # a broken deck high above the camp: the summit shows above it and through the gaps
-    for pid, value in (("rain.enabled", True), ("rain.type", "snow"), ("rain.cloud_base", 7700.0),
-                       ("rain.cloud_thickness", 700.0), ("rain.coverage", 0.5),
-                       ("rain.darkness", 0.3), ("rain.visibility_km", 12.0), ("rain.wind", 3.0),
+    for pid, value in (("rain.enabled", True), ("rain.type", "snow"), ("rain.cloud_base", 7100.0),
+                       ("rain.cloud_thickness", 600.0), ("rain.coverage", 0.5),
+                       ("rain.darkness", 0.3), ("rain.visibility_km", 25.0), ("rain.wind", 3.0),
                        ("snow.line", 4900.0), ("snow.transition", 250.0)):  # fmt: skip
         s.set(pid, value)
     key(scene, "rain.intensity", 0.0, 0.0)
     key(scene, "rain.intensity", 25.0, 0.0)
     key(scene, "rain.intensity", 28.0, 0.6)
+    key(scene, "rain.intensity", 30.5, 0.5)
+    key(scene, "rain.intensity", 33.0, 0.05)  # (the snowfall stops: the summit appears)
     key(scene, "rain.cloud_density", 0.0, 0.0)
     key(scene, "rain.cloud_density", 25.5, 0.0)
     key(scene, "rain.cloud_density", 28.0, 0.7)
+    key(scene, "rain.cloud_density", 30.0, 0.7)
+    key(scene, "rain.cloud_density", 32.5, 0.0)
     key(scene, "snow.cover", 0.0, 0.0)
     key(scene, "snow.cover", 25.0, 0.0)
     key(scene, "snow.cover", 33.0, 0.6)

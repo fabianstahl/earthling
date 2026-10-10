@@ -53,8 +53,8 @@ def main() -> None:
     s.set("weather.gust_period", 6.0)
     s.set("weather.layer1.enabled", False)
     for layer, base, thick, cover, dens, scale, wind in (
-        (2, 3100.0, 1100.0, 0.36, 0.5, 3500.0, 35.0),
-        (3, 6500.0, 1500.0, 0.3, 0.25, 9000.0, 55.0),
+        (2, 3100.0, 1100.0, 0.36, 0.35, 3500.0, 35.0),
+        (3, 6500.0, 1500.0, 0.2, 0.18, 9000.0, 55.0),
     ):
         p = f"weather.layer{layer}."
         s.set(p + "enabled", True)
@@ -65,6 +65,7 @@ def main() -> None:
         s.set(p + "scale", scale)
         s.set(p + "wind_speed", wind)
         s.set(p + "wind_dir", 75.0)  # the westerlies blow towards the east
+        s.set(p + "variation", 0.85)  # (bases and tops at many heights)
     s.set("labels.visible", True)
     s.set("labels.places", False)
     s.set("labels.passes", False)
@@ -110,10 +111,10 @@ def main() -> None:
     # the aerial perspective is milky from far up: less of it in the first half
     for t, v in ((0.0, 0.35), (7.0, 0.4), (11.0, 0.8)):
         key(scene, "haze.aerial", t, v)
-    # the clouds only below ~40 km: from far up their noise would alias into speckles
-    for layer, density in ((2, 0.5), (3, 0.25)):
+    # the clouds fade in slowly during the descent (from about 150 km up to 10 km)
+    for layer, density in ((2, 0.35), (3, 0.18)):
         key(scene, f"weather.layer{layer}.density", 0.0, 0.0, Interp.LINEAR)
-        key(scene, f"weather.layer{layer}.density", 8.4, 0.0, Interp.EASE_IN_OUT)
+        key(scene, f"weather.layer{layer}.density", 6.5, 0.0, Interp.EASE_IN_OUT)
         key(scene, f"weather.layer{layer}.density", 10.0, density, Interp.LINEAR)
     # the track draws from the hotel towards the towers while the camera arrives
     key(scene, "progress.head", 0.0, 0.0, Interp.STEP)
