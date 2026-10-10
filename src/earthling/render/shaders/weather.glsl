@@ -46,9 +46,14 @@ float cloud_density_lod(int i, vec2 xy, float h, float lod, float detail_amount)
     float profile = smoothstep(0.0, 0.25, hf) * smoothstep(1.0, 0.45, hf);
     vec3 uvw = vec3(p, h + u_weather_time * 0.3) / nz.x;
     vec4 n = textureLod(u_cloud_noise, uvw, max(lod, 0.0));
+    // the same noise turned by 37 degrees and scaled by 1.31: the texture repeats every
+    // scale, and at a low coverage only its peaks show - a regular grid of clouds from afar
+    const mat2 TURN = mat2(0.7986, 0.6018, -0.6018, 0.7986) * 1.31;
+    float turned = textureLod(u_cloud_noise, vec3(TURN * uvw.xy + 0.47, uvw.z * 1.31),
+                              max(lod + 0.39, 0.0)).r;
     // a coarser octave: big and small clouds side by side, not one size everywhere
     float big = textureLod(u_cloud_noise, uvw * 0.37 + vec3(0.21, 0.63, 0.0), max(lod - 1.4, 0.0)).r;
-    float base = mix(n.r, big, 0.35) * profile;
+    float base = mix(mix(n.r, turned, 0.45), big, 0.35) * profile;
     float d = clamp((base - (1.0 - c)) / max(c, 1e-3), 0.0, 1.0);
     if (d <= 0.0) return 0.0;
     if (detail_amount > 0.0) {

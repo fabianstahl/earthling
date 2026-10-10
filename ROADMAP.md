@@ -733,7 +733,9 @@ The cloud clusters of 19.22 shifted the local coverage up and down and clamped i
 which raised the mean: 5 % coverage looked like 30 %. The local coverage is now up to three
 times the set one inside the cloud fields and zero in the gaps (mirrored for a mostly covered
 sky), so the mean stays the set coverage and the fields stay clustered at any coverage. The
-drawn route on the mini-map is thicker, with a dark outline.
+drawn route on the mini-map is thicker, with a dark outline. A second sample of the cloud noise, turned by 37° and
+scaled by 1.31, hides the noise texture's period: sparse clouds seen from 100 km no longer line
+up in a regular grid.
 → Sparse fair-weather cumulus seen from 100 km really is sparse; the route on the mini-map
 reads on any land colour.
 
