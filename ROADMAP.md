@@ -684,6 +684,12 @@ coverage-map lookups), so they no longer all start at one flat height; a slow do
 the pattern breaks up rows of similar round blobs, and the vertical profile is softer.
 → Cloud fields that look grown, not stamped.
 
+**19.17 Waves into the distance**
+The wave spectrum reaches from 300 m swell down to 1.3 m ripples (22 components), and every
+component fades over a wide range of pixel footprints: the water keeps its pattern into the
+distance instead of turning flat a few hundred metres from the camera.
+→ No visible edge where the waves stop.
+
 ---
 
 ## 5. Risks & notes

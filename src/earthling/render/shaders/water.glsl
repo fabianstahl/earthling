@@ -34,20 +34,23 @@ vec3 water_waves(vec2 xy, float footprint) {
     vec2 slope = vec2(0.0);
     float lost = 0.0;
     float base = radians(u_water_wind_dir);
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 22; ++i) {
         float fi = float(i);
         float h1 = fract(sin(fi * 12.9898 + 1.3) * 43758.5453);
         float h2 = fract(sin(fi * 78.233 + 4.1) * 43758.5453);
-        float wavelength = 26.0 * pow(0.8, fi) * (0.8 + 0.4 * h2);     // 26 m .. 1 m
+        // 300 m swell .. 1.3 m ripples: the longer waves carry the pattern into the distance
+        float wavelength = 300.0 * pow(0.78, fi) * (0.8 + 0.4 * h2);
         float angle = base + (h1 - 0.5) * 2.6;                         // +-75 degrees
         vec2 dir = vec2(sin(angle), cos(angle));
         float k = 6.2831853 / wavelength;
-        float s = 0.032 * u_water_waves * (0.5 + h2);                 // slope amplitude
+        // slope amplitude (long swell is flatter)
+        float s = 0.032 * u_water_waves * (0.5 + h2) * mix(0.45, 1.0, smoothstep(80.0, 20.0, wavelength));
         float omega = sqrt(G * k);
         float phase = k * dot(dir, xy) - omega * u_water_time + h1 * 6.2831853;
         // waves under ~20 pixels per wavelength alias (shimmer, and rings around the camera
         // where one component after the other fades): their slopes become roughness
-        float keep = 1.0 - smoothstep(0.02, 0.05, footprint / wavelength);
+        // (a wide fade: components leave one after the other, no visible edge)
+        float keep = 1.0 - smoothstep(0.012, 0.07, footprint / wavelength);
         slope += dir * s * cos(phase) * keep;
         lost += 0.5 * s * s * (1.0 - keep);
     }
