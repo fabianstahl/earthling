@@ -8,6 +8,8 @@ uniform sampler2D u_depth;
 uniform vec2 u_depth_size;
 uniform float u_log_depth_coef;
 uniform float u_count;
+uniform sampler2D u_veil;     // cloud transmittance of the scene (1 = clear view)
+uniform bool u_has_veil = false;
 
 out float v_visible;
 
@@ -35,6 +37,9 @@ void main() {
             }
         }
         visible /= taps;
+        if (u_has_veil) {  // only where the landscape is seen: not in or behind clouds
+            visible *= smoothstep(0.3, 0.75, texture(u_veil, uv).r);
+        }
     }
     v_visible = visible;
     gl_Position = vec4((float(gl_VertexID) + 0.5) / u_count * 2.0 - 1.0, 0.0, 0.0, 1.0);

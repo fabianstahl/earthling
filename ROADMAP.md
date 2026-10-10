@@ -695,6 +695,12 @@ Per track group `marker_tint` multiplies the vehicle icon and `marker_label` wri
 above it that moves with it (in a light version of the tint).
 → A race of a gold "2025" runner against a silver "2024" one.
 
+**19.19 No labels in the clouds**
+The cloud pass also writes its transmittance into a second target (the "veil"); the labels'
+visibility test reads it at the anchor, so a peak hidden in or behind clouds loses its label
+instead of leaving it floating on the cloud.
+→ "Mount Everest" only where Everest is seen.
+
 ---
 
 ## 5. Risks & notes

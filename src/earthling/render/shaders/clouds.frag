@@ -5,7 +5,8 @@
 #include "weather.glsl"
 in vec2 v_uv;
 in vec2 v_ndc;
-out vec4 f_color;
+layout(location = 0) out vec4 f_color;
+layout(location = 1) out vec4 f_veil;  // the transmittance again (x dst: the labels' veil)
 
 uniform mat4 u_inv_view_proj;        // camera-relative
 uniform sampler2D u_depth;           // scene log depth
@@ -92,6 +93,7 @@ float total_density(vec3 rel, out float hf_out) {
 void main() {
     if (u_layer_count == 0) {
         f_color = vec4(0.0, 0.0, 0.0, 1.0);
+        f_veil = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
     // a point on the near plane: the far plane is numerically unstable for huge far / near
@@ -191,4 +193,5 @@ void main() {
         radiance = radiance * through + inscatter * (1.0 - transmittance);
     }
     f_color = vec4(radiance, transmittance);
+    f_veil = vec4(0.0, 0.0, 0.0, transmittance);
 }

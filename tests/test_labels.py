@@ -208,3 +208,14 @@ def test_names_the_font_can_draw():
     assert display_name({"name": "सगरमाथा", "name:en": "Mount Everest"}) == "Mount Everest"
     assert display_name({"name": "珠穆朗玛峰", "int_name": "Qomolangma"}) == "Qomolangma"
     assert display_name({"name": "ดอยสุเทพ"}) is None  # nothing drawable: no label
+
+
+def test_labels_hidden_in_clouds(gl_ctx, tmp_path):
+    """Step 19.19: a peak behind a closed cloud deck keeps no label."""
+    renderer, _ = render_labels(gl_ctx, tmp_path, [peak("Visible")])
+    assert renderer.labels.last_drawn == 1
+    deck = {"weather__enabled": True, "weather__layer1__base": 6000.0,
+            "weather__layer1__thickness": 1500.0, "weather__layer1__coverage": 1.0,
+            "weather__layer1__density": 3.0, "weather__layer1__variation": 0.0}  # fmt: skip
+    renderer, _ = render_labels(gl_ctx, tmp_path, [peak("Hidden")], **deck)
+    assert renderer.labels.last_drawn == 0

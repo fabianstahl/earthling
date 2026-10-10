@@ -361,6 +361,12 @@ class LabelLayer:
         depth.compare_func = ""  # plain depth values
         depth.use(0)
         program["u_depth"] = 0
+        if "u_veil" in program:  # labels in or behind clouds are hidden
+            veil = getattr(self, "veil", None)
+            program["u_has_veil"] = veil is not None
+            if veil is not None:
+                veil.use(1)
+                program["u_veil"] = 1
         self._vis_fbo.use()
         self.ctx.viewport = (0, 0, MAX_LABELS, 1)
         self._vis_fbo.clear(0.0, 0.0, 0.0, 0.0)

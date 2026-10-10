@@ -80,6 +80,9 @@ class SceneTarget:
         self.glow_fbo: moderngl.Framebuffer | None = None  # emissive objects, shares depth
         self.glow_clear_fbo: moderngl.Framebuffer | None = None
         self.color_fbo: moderngl.Framebuffer | None = None
+        self.veil: moderngl.Texture | None = None  # cloud transmittance (1 = clear view)
+        self.veil_fbo: moderngl.Framebuffer | None = None
+        self.cloud_fbo: moderngl.Framebuffer | None = None  # colour + veil
 
     def ensure(self, width: int, height: int) -> moderngl.Framebuffer:
         size = (max(1, width), max(1, height))
@@ -96,6 +99,9 @@ class SceneTarget:
             self.glow_fbo = self.ctx.framebuffer([self.glow], self.depth)
             # colour only: passes that sample the depth texture while drawing (clouds)
             self.color_fbo = self.ctx.framebuffer([self.color])
+            self.veil = self.ctx.texture(size, 1, dtype="f2")
+            self.veil_fbo = self.ctx.framebuffer([self.veil])
+            self.cloud_fbo = self.ctx.framebuffer([self.color, self.veil])
             self.glow_clear_fbo = self.ctx.framebuffer([self.glow])
             self.size = size
         return self.fbo
@@ -111,6 +117,9 @@ class SceneTarget:
 
     def release(self) -> None:
         for obj in (
+            self.cloud_fbo,
+            self.veil_fbo,
+            self.veil,
             self.color_fbo,
             self.glow_clear_fbo,
             self.glow_fbo,
@@ -123,6 +132,7 @@ class SceneTarget:
                 obj.release()
         self.fbo = self.color = self.depth = self.glow = self.glow_fbo = None
         self.glow_clear_fbo = self.color_fbo = None
+        self.veil = self.veil_fbo = self.cloud_fbo = None
 
 
 GL_DEPTH_CLAMP = 0x864F
@@ -311,6 +321,8 @@ class Renderer:
         target.use()
         self.ctx.viewport = (0, 0, width, height)
         target.clear(*self.clear_color, depth=1.0)
+        self.target.veil_fbo.clear(1.0, 1.0, 1.0, 1.0)
+        target.use()
         self._render_sky(camera, view_proj, height)
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.optical_depth.use(OPTICAL_DEPTH_UNIT)
@@ -330,6 +342,7 @@ class Renderer:
         self.camera_path.render(camera, view_proj)
         bloom = self._render_glow(camera, view_proj, width, height)
         self._tonemap(fbo, *output, bloom)
+        self.labels.veil = self.target.veil
         self.labels.render(fbo, camera, view_proj, self.frame, self.terrain.exaggeration,
                            *output, self.target.depth, (width, height), self.store)  # fmt: skip
         self.pois.render(fbo, camera, view_proj, self.frame, self.terrain.data,
@@ -434,7 +447,7 @@ class Renderer:
             **self.weather.rain_uniforms(self.store),  # clouds fade into the rain haze
             "u_camera_enu": tuple(float(v) for v in camera.position),
         }
-        self.weather.render_clouds(self.target.color_fbo, self.target.depth, camera, view_proj,
+        self.weather.render_clouds(self.target.cloud_fbo, self.target.depth, camera, view_proj,
                                    uniforms, width, height, jitter=self.jitter_index)  # fmt: skip
         self.weather.render_rain(self.target.color_fbo, self.target.depth, camera, view_proj,
                                  self.lighting, self.store, width, height,
