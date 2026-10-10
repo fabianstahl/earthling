@@ -7,15 +7,15 @@ OpenStreetMap, plausible times from simple speed models, a heart rate for the bi
 | Scene | Where | Moves by | Weather / light | Shows |
 |---|---|---|---|---|
 | `s01_patagonia` | Torres del Paine | on foot | wind, gusting clouds | a dive from space into the valley, the globe |
-| `s02_hurtigruten` | Bergen – Kirkenes | ship | drizzle, midnight sun | the water surface, a ship marker, knots |
+| `s02_hurtigruten` | Bergen – Kirkenes | ship | drizzle, midnight sun | a calm north-up map view with a mini-map, the water surface, a ship marker, knots |
 | `s03_stelvio` | Stelvio pass | road bike | valley fog | speed, gradient, heart rate, colour by gradient, a hairpin counter |
 | `s04_grand_canyon` | rim to rim | on foot | monsoon storm, lightning | texture layers, a locked-off time-lapse |
 | `s05_kilimanjaro` | summit night | on foot | sea of clouds, night to sunrise | the sun from the GPX time, a glowing track |
-| `s06_iceland` | ring road | car + hikes | four seasons a day, a rainbow | several track groups, fast weather changes |
-| `s07_berlin` | marathon | running | overcast, drizzle | two runs at once (by clock), 9:16 portrait |
-| `s08_everest` | Lukla – Base Camp | plane + on foot | snowfall | a banking first-person flight, snow cover, peak labels |
-| `s09_boundary_waters` | lakes of Minnesota | canoe | morning mist | paddling and portages split by the water mask |
-| `s10_trans_siberian` | Moscow – Beijing | train | winter | day and night side, city lights, time zones, border map |
+| `s06_iceland` | ring road | car + hikes | cloud changing by the day | several track groups, a map view with pauses at every change, a mini-map |
+| `s07_berlin` | marathon | running | overcast, drizzle | two runs at once (by clock): gold and silver runners with their year, 9:16 portrait |
+| `s08_everest` | Lukla – Base Camp | plane + on foot | snowfall, clearing | a follow-mode flight, snow cover, peak labels (Everest from Kala Patthar) |
+| `s09_boundary_waters` | lakes of Minnesota | canoe | late afternoon sun | paddling and portages split by the water mask, glint on the lakes |
+| `s10_trans_siberian` | Moscow – Beijing | train | winter | day and night side, city lights, time zones, border map, country and city labels |
 
 ## Running
 
@@ -29,5 +29,5 @@ uv run python examples/showcase/tools/stills.py s03_stelvio/scenes/s03_stelvio.j
 bash examples/showcase/tools/render_all.sh s03_stelvio          # 1080p60 video + QA into renders/showcase
 ```
 
-`tools/sc_common.py` holds the camera helpers shared by the scene scripts (smooth chase and
-orbit shots, holds, POIs), `tools/qa_video.py` makes a contact sheet and finds jumps in a video.
+`tools/sc_common.py` holds the camera helpers shared by the scene scripts (smooth chase,
+orbit and calm map shots, holds, POIs), `tools/qa_video.py` makes a contact sheet and finds jumps in a video.
