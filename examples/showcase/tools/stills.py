@@ -79,7 +79,7 @@ def main() -> int:
         path = out_dir / f"{scene_path.stem}{args.tag}_{t:06.2f}.png"
         save_png(image, path)
         paths.append(path)
-        print(f"{path.name}  {time.monotonic() - started:.1f} s")
+        print(f"{path.name}  {time.monotonic() - started:.1f} s  labels {renderer.labels.last_drawn}/{len(renderer.labels.features)}")
     renderer.terrain.shutdown()
     if len(paths) > 1:  # contact sheet
         images = [Image.open(p) for p in paths]

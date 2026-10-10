@@ -1,4 +1,4 @@
-"""3D-anchored labels for peaks, passes, places and huts.
+"""3D-anchored labels for peaks, passes, places, huts, cities and countries.
 
 Per frame: filter the features (keyframeable properties), project the anchors, fade with
 distance, test the anchors against the scene depth on the GPU (one texel per label, read
@@ -30,13 +30,18 @@ ATLAS_WIDTH = 1024
 LIFT_M = 12.0  # anchors float a little above the ground
 MAX_LABELS = 1024  # candidates per frame for the occlusion test
 MAX_DECLUTTER = 400  # visible candidates considered for placement (by priority)
-KIND_PRIORITY = {"place": 2.0, "peak": 2.0, "pass": 1.2, "hut": 0.8}
+KIND_PRIORITY = {"place": 2.0, "peak": 2.0, "pass": 1.2, "hut": 0.8, "city": 2.5,
+                 "country": 7.0}  # fmt: skip
 KIND_PROPERTIES = {
     "peak": "labels.peaks",
     "pass": "labels.passes",
     "place": "labels.places",
     "hut": "labels.huts",
+    "city": "labels.cities",
+    "country": "labels.countries",
 }
+WITH_ELEVATION = ("peak", "pass", "hut")
+COUNTRY_SCALE = 1.3  # country names: larger, in capitals, centred on the point, no leader
 
 
 # --- signed distance field font atlas --------------------------------------------------------
@@ -166,10 +171,13 @@ def smoothstep(e0: float, e1: float, x):
     return t * t * (3.0 - 2.0 * t)
 
 
-def label_texts(feature: LabelFeature, show_elevation: bool) -> tuple[str, str]:
-    if show_elevation and feature.kind != "place" and feature.ele is not None:
-        return feature.name, f"{feature.ele:.0f} m"
-    return feature.name, ""
+def label_texts(feature: LabelFeature, show_elevation: bool, lang: str = "en") -> tuple[str, str]:
+    name = feature.display(lang)
+    if feature.kind == "country":
+        return name.upper(), ""
+    if show_elevation and feature.kind in WITH_ELEVATION and feature.ele is not None:
+        return name, f"{feature.ele:.0f} m"
+    return name, ""
 
 
 def static_priority(features: list[LabelFeature]) -> np.ndarray:
@@ -178,6 +186,8 @@ def static_priority(features: list[LabelFeature]) -> np.ndarray:
         p = KIND_PRIORITY.get(f.kind, 1.0)
         if f.kind == "place":
             p += f.rank * 0.8
+        if f.kind == "city":
+            p += 0.8 * math.log10(max(f.population, 1e5) / 1e5)
         if f.kind == "peak":
             p += min((f.prominence or 0.0) / 400.0, 3.0) + (f.ele or 0.0) / 4000.0
         if f.kind in ("pass", "hut"):
@@ -286,14 +296,17 @@ class LabelLayer:
         min_ele = store["labels.min_elevation"]
         min_prom = store["labels.min_prominence"]
         max_track = store["labels.max_track_distance"] * 1000.0
+        min_pop = store["labels.min_population"]
         for i, f in enumerate(self.features):
             if f.kind not in enabled:
                 continue
-            if f.kind != "place" and (f.ele or 0.0) < min_ele:
+            if f.kind in WITH_ELEVATION and (f.ele or 0.0) < min_ele:
                 continue
             if f.kind == "peak" and (f.prominence if f.prominence is not None else 0.0) < min_prom:
                 continue
-            if max_track > 0 and f.track_distance_m > max_track:
+            if f.kind == "city" and f.population < min_pop:
+                continue
+            if max_track > 0 and f.kind != "country" and f.track_distance_m > max_track:
                 continue
             keep[i] = True
         return keep
@@ -388,18 +401,20 @@ class LabelLayer:
             self._layouts[text] = layout
         return layout
 
-    def _text_metrics(self, show_elevation: bool):
+    def _text_metrics(self, show_elevation: bool, lang: str = "en"):
         """Per feature: texts and their widths at base size (cached)."""
-        key = (self._version, show_elevation, self.atlas.generation if self.atlas else -1)
+        generation = self.atlas.generation if self.atlas else -1
+        key = (self._version, show_elevation, lang, generation)
         if self._metrics_key != key:
             assert self.atlas is not None
-            texts = [label_texts(f, show_elevation) for f in self.features]
+            texts = [label_texts(f, show_elevation, lang) for f in self.features]
             self.atlas.ensure("".join(n + e for n, e in texts))
             self._texts = texts
             self._name_w = np.array([self.atlas.width(n) for n, _ in texts])
             self._ele_w = np.array([self.atlas.width(e) for _, e in texts])
-            self._is_place = np.array([f.kind == "place" for f in self.features])
-            self._metrics_key = (self._version, show_elevation, self.atlas.generation)
+            self._is_place = np.array([f.kind in ("place", "city") for f in self.features])
+            self._is_country = np.array([f.kind == "country" for f in self.features])
+            self._metrics_key = (self._version, show_elevation, lang, self.atlas.generation)
         return self._texts, self._name_w, self._ele_w, self._is_place
 
     def _draw(self, fbo, idx, ndc, alpha0, width, height, store) -> None:
@@ -409,9 +424,9 @@ class LabelLayer:
         size = store["labels.size"] * k
         leader = store["labels.leader"] * k
         max_count = store["labels.max_count"]
-        name_scale = size / BASE_PX
-        ele_scale = 0.72 * name_scale
-        texts, name_w_all, ele_w_all, is_place = self._text_metrics(store["labels.elevations"])
+        lang = store["stats.language"]
+        texts, name_w_all, ele_w_all, is_place = self._text_metrics(store["labels.elevations"],
+                                                                    lang)  # fmt: skip
         ascent, descent = self.atlas.ascent, self.atlas.descent
         alpha0 = alpha0 * store["labels.opacity"]
         live = np.flatnonzero(alpha0 >= 0.02)[:MAX_DECLUTTER]
@@ -421,9 +436,14 @@ class LabelLayer:
         # layout of every candidate (y down, pixels)
         x = (ndc[live, 0] * 0.5 + 0.5) * width
         y = (0.5 - ndc[live, 1] * 0.5) * height
+        country = self._is_country[idx]
+        name_scale = size / BASE_PX * np.where(country, COUNTRY_SCALE, 1.0)
+        ele_scale = 0.72 * name_scale
         has_ele = ele_w_all[idx] > 0
         name_w, ele_w = name_w_all[idx] * name_scale, ele_w_all[idx] * ele_scale
         bottom = y - np.where(is_place[idx], 0.35, 1.0) * leader
+        # countries: the name centred on the point
+        bottom = np.where(country, y + 0.5 * (ascent + descent) * name_scale, bottom)
         ele_base = bottom - descent * ele_scale
         name_base = np.where(has_ele, ele_base - ascent * ele_scale, bottom) - descent * name_scale
         top = name_base - ascent * name_scale
@@ -449,8 +469,8 @@ class LabelLayer:
                 blocked = np.maximum(blocked, conflicts[:, i])
             name, ele_text = texts[idx[i]]
             verts.append(self._label_vertices(
-                x[i], y[i], bottom[i], name, name_base[i], name_scale, name_w[i],
-                ele_text, ele_base[i], ele_scale, ele_w[i], a, k,
+                x[i], y[i], bottom[i], name, name_base[i], name_scale[i], name_w[i],
+                ele_text, ele_base[i], ele_scale[i], ele_w[i], a, k, dot=not country[i],
             ))  # fmt: skip
             if len(verts) >= max_count:
                 break
@@ -476,14 +496,16 @@ class LabelLayer:
         ele_w,
         alpha,
         k,
+        dot: bool = True,
     ) -> np.ndarray:
         parts = []
         # leader line and anchor dot: dark underlay, light core
         if bottom < y - 1.0:
             parts.append(_rect(x - 1.6 * k, bottom, x + 1.6 * k, y, alpha, 2.0))
             parts.append(_rect(x - 0.7 * k, bottom, x + 0.7 * k, y, alpha, 1.0))
-        parts.append(_rect(x - 3.2 * k, y - 3.2 * k, x + 3.2 * k, y + 3.2 * k, alpha, 2.0))
-        parts.append(_rect(x - 1.8 * k, y - 1.8 * k, x + 1.8 * k, y + 1.8 * k, alpha, 1.0))
+        if dot:
+            parts.append(_rect(x - 3.2 * k, y - 3.2 * k, x + 3.2 * k, y + 3.2 * k, alpha, 2.0))
+            parts.append(_rect(x - 1.8 * k, y - 1.8 * k, x + 1.8 * k, y + 1.8 * k, alpha, 1.0))
         for text, base, scale, w in (
             (name, name_base, name_scale, name_w),
             (ele_text, ele_base, ele_scale, ele_w),

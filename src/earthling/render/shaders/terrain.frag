@@ -165,7 +165,11 @@ float snow_noise(vec2 p) {  // value noise, 0..1
 float snow_amount(float height, float slope) {
     if (u_snow_cover <= 0.0) return 0.0;
     vec2 xy = (v_world + u_camera_enu).xy;
-    float n = snow_noise(xy / 90.0) * 0.65 + snow_noise(xy / 23.0) * 0.35;
+    // every octave fades to its mean once a pixel covers its period (no speckles from afar)
+    float fp = max(fwidth(xy).x, fwidth(xy).y);
+    float n90 = mix(snow_noise(xy / 90.0), 0.5, smoothstep(15.0, 60.0, fp));
+    float n23 = mix(snow_noise(xy / 23.0), 0.5, smoothstep(4.0, 15.0, fp));
+    float n = n90 * 0.65 + n23 * 0.35;
     float h = height + (n - 0.5) * u_snow_transition * 1.2;
     float above = smoothstep(u_snow_line - u_snow_transition, u_snow_line + u_snow_transition, h);
     float flat_enough = 1.0 - smoothstep(u_snow_max_slope - 8.0, u_snow_max_slope + 4.0, slope);

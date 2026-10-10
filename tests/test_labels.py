@@ -100,6 +100,7 @@ def test_label_data_from_cache_and_download(tmp_path):
     assert missing.load() is None and not missing.ready
     path.write_text("not json", encoding="utf-8")
     broken = LabelData(cache, bounds)
+    broken.allow_download = False
     assert broken.load() is None and broken.error
 
 
@@ -219,3 +220,67 @@ def test_labels_hidden_in_clouds(gl_ctx, tmp_path):
             "weather__layer1__density": 3.0, "weather__layer1__variation": 0.0}  # fmt: skip
     renderer, _ = render_labels(gl_ctx, tmp_path, [peak("Hidden")], **deck)
     assert renderer.labels.last_drawn == 0
+
+
+NE_COUNTRIES = {"features": [
+    {"properties": {"NAME": "Mongolia", "NAME_EN": "Mongolia", "NAME_DE": "Mongolei",
+                    "LABEL_X": 104.1, "LABEL_Y": 45.9, "POP_EST": 3.2e6, "ADM0_A3": "MNG"}},
+    {"properties": {"NAME": "Chile", "NAME_EN": "Chile", "LABEL_X": -72.3, "LABEL_Y": -38.2}},
+]}  # fmt: skip
+NE_CITIES = {"features": [
+    {"properties": {"name": "Ulaanbaatar", "nameascii": "Ulaanbaatar", "longitude": 106.9,
+                    "latitude": 47.9, "pop_max": 1.5e6, "ne_id": 1}},
+    {"properties": {"name": "Darkhan", "longitude": 105.9, "latitude": 49.5, "pop_max": 7.5e4}},
+]}  # fmt: skip
+
+
+def test_natural_earth_countries_and_cities(tmp_path):
+    """Step 19.21: country names and large cities at any scale, no Overpass for huge areas."""
+    from earthling.data.labels import is_large, ne_path
+
+    cache = TileCache(tmp_path)
+    for name, data in (("countries", NE_COUNTRIES), ("cities", NE_CITIES)):
+        ne_path(cache, name).parent.mkdir(parents=True, exist_ok=True)
+        ne_path(cache, name).write_text(json.dumps(data), encoding="utf-8")
+    bounds = (37.0, 39.0, 117.0, 56.0)  # Moscow - Beijing: no Overpass query
+    assert is_large(bounds) and not is_large((6.8, 45.8, 7.2, 46.1))
+    data = LabelData(cache, bounds)
+    data.allow_download = False
+    features = data.load()
+    by_name = {f.name: f for f in features}
+    assert set(by_name) == {"Mongolia", "Ulaanbaatar"}  # Chile far away, Darkhan too small
+    mongolia = by_name["Mongolia"]
+    assert mongolia.kind == "country" and mongolia.display("de") == "Mongolei"
+    assert by_name["Ulaanbaatar"].kind == "city" and by_name["Ulaanbaatar"].rank == 4
+    from earthling.render.labels import label_texts
+
+    assert label_texts(mongolia, True, "de") == ("MONGOLEI", "")
+
+
+def test_overpass_timeout_is_not_cached(tmp_path):
+    from earthling.data.labels import cache_path
+
+    cache = TileCache(tmp_path)
+    bounds = (6.8, 45.8, 7.2, 46.1)
+    timeout = {"elements": [], "remark": "runtime error: Query timed out in query"}
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json=timeout))
+    )
+    with pytest.raises(RuntimeError):
+        download_labels(cache, bounds, client=client)
+    assert not cache_path(cache, bounds).exists()
+
+
+def test_city_and_country_labels_are_drawn(gl_ctx, tmp_path):
+    city = LabelFeature("c", "city", "Town", 7.0, 46.0, ele=3500.0, ground=3500.0,
+                        population=2e6, rank=4)  # fmt: skip
+    country = LabelFeature("n", "country", "Land", 7.0, 46.0, ele=3500.0, ground=3500.0)
+    renderer, _ = render_labels(gl_ctx, tmp_path, [city])
+    assert renderer.labels.last_drawn == 0  # off by default
+    renderer, _ = render_labels(gl_ctx, tmp_path, [city], labels__cities=True)
+    assert renderer.labels.last_drawn == 1
+    renderer, _ = render_labels(gl_ctx, tmp_path, [city], labels__cities=True,
+                                labels__min_population=5e6)  # fmt: skip
+    assert renderer.labels.last_drawn == 0
+    renderer, img = render_labels(gl_ctx, tmp_path, [country], labels__countries=True)
+    assert renderer.labels.last_drawn == 1 and white_pixels(img) > 30

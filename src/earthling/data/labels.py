@@ -1,6 +1,9 @@
-"""Named features for 3D labels: peaks, passes, places and huts from OpenStreetMap.
+"""Named features for 3D labels: peaks, passes, places and huts from OpenStreetMap, countries
+and large cities from Natural Earth.
 
-Fetched once per area of interest through the Overpass API and cached as JSON. ``enrich`` adds
+The OSM features are fetched once per area of interest through the Overpass API and cached as
+JSON (not for very large areas: a continent's villages time out, and at that scale the Natural
+Earth countries and cities are the labels that matter). ``enrich`` adds
 what OSM rarely has: an elevation for every feature (DEM), a prominence estimate for peaks
 and the distance to the tracks, which the label filters and the decluttering use.
 """
@@ -26,7 +29,11 @@ log = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 ATTRIBUTION = "Labels: © OpenStreetMap contributors (ODbL)"
-KINDS = ("peak", "pass", "place", "hut")
+KINDS = ("peak", "pass", "place", "hut", "city", "country")
+NE_BASE_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
+NE_DATASETS = {"countries": "ne_50m_admin_0_countries", "cities": "ne_10m_populated_places_simple"}
+NE_MIN_POPULATION = 100_000  # smaller towns come from OpenStreetMap
+LARGE_AREA_DEG2 = 40.0  # no Overpass query beyond (about 600 x 400 km in central Europe)
 PLACE_RANK = {"city": 4, "town": 3, "village": 2, "hamlet": 1}
 _ELE = re.compile(r"^\s*(-?\d+(?:[.,]\d+)?)\s*(m|ft)?\s*$")
 
@@ -34,7 +41,7 @@ _ELE = re.compile(r"^\s*(-?\d+(?:[.,]\d+)?)\s*(m|ft)?\s*$")
 @dataclass
 class LabelFeature:
     osm_id: str
-    kind: str  # "peak" | "pass" | "place" | "hut"
+    kind: str  # "peak" | "pass" | "place" | "hut" | "city" | "country"
     name: str
     lon: float
     lat: float
@@ -43,6 +50,11 @@ class LabelFeature:
     prominence: float | None = None  # peaks: estimate in metres
     track_distance_m: float = math.inf
     ground: float | None = None  # DEM height at the point (label anchor)
+    population: float = 0.0  # cities and countries (Natural Earth)
+    names: dict[str, str] | None = None  # by language ("en", "de"), where known
+
+    def display(self, lang: str = "en") -> str:
+        return (self.names or {}).get(lang) or self.name
 
     @property
     def anchor_height(self) -> float | None:
@@ -152,8 +164,106 @@ def download_labels(cache: TileCache, bounds, client=None) -> Path:
     finally:
         if own:
             client.close()
+    if "runtime error" in str(data.get("remark", "")):  # (a timeout: not an empty area)
+        raise RuntimeError(f"Overpass: {data['remark']}")
     write_atomic(path, json.dumps(data).encode("utf-8"))
     return path
+
+
+def is_large(bounds) -> bool:
+    west, south, east, north = bounds
+    return (east - west) * (north - south) > LARGE_AREA_DEG2
+
+
+# --- Natural Earth: countries and cities -----------------------------------------------------
+def ne_path(cache: TileCache, name: str) -> Path:
+    return cache.root / "_vector" / "naturalearth" / f"{NE_DATASETS[name]}.geojson"
+
+
+def _ne_dataset(cache: TileCache, name: str, allow_download: bool) -> dict | None:
+    path = ne_path(cache, name)
+    if not path.exists():
+        if not allow_download:
+            return None
+        try:
+            with http_client() as client:
+                response = client.get(f"{NE_BASE_URL}/{NE_DATASETS[name]}.geojson", timeout=120.0)
+                response.raise_for_status()
+            write_atomic(path, response.content)
+        except Exception as exc:  # offline: no country and city labels
+            log.warning("cannot download %s: %s", name, exc)
+            return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def parse_countries(data: dict, bounds) -> list[LabelFeature]:
+    """Country label points (Natural Earth's LABEL_X/Y) in ``bounds`` and a margin around."""
+    west, south, east, north = bounds
+    mx, my = max(1.0, 0.1 * (east - west)), max(1.0, 0.1 * (north - south))
+    out = []
+    for feature in data.get("features", []):
+        p = feature.get("properties", {})
+        lon, lat = p.get("LABEL_X"), p.get("LABEL_Y")
+        name = p.get("NAME_EN") or p.get("NAME")
+        if lon is None or lat is None or not name:
+            continue
+        if not (west - mx <= lon <= east + mx and south - my <= lat <= north + my):
+            continue
+        names = {lang: p[key] for lang, key in (("en", "NAME_EN"), ("de", "NAME_DE")) if p.get(key)}
+        out.append(
+            LabelFeature(
+                osm_id=f"ne/country/{p.get('ADM0_A3', name)}",
+                kind="country",
+                name=name,
+                lon=float(lon),
+                lat=float(lat),
+                population=float(p.get("POP_EST") or 0.0),
+                names=names,
+            )
+        )
+    return out
+
+
+def parse_cities(data: dict, bounds, min_population: float = NE_MIN_POPULATION):
+    west, south, east, north = bounds
+    out = []
+    for feature in data.get("features", []):
+        p = feature.get("properties", {})
+        lon, lat = p.get("longitude"), p.get("latitude")
+        population = float(p.get("pop_max") or 0.0)
+        if lon is None or lat is None or population < min_population:
+            continue
+        if not (west <= lon <= east and south <= lat <= north):
+            continue
+        name = display_name({"name": p.get("name"), "name:en": p.get("nameascii")})
+        if not name:
+            continue
+        out.append(
+            LabelFeature(
+                osm_id=f"ne/city/{p.get('ne_id', name)}",
+                kind="city",
+                name=name,
+                lon=float(lon),
+                lat=float(lat),
+                rank=4 if population >= 1e6 else 3,
+                population=population,
+            )
+        )
+    return out
+
+
+def natural_earth_features(cache: TileCache, bounds, allow_download: bool = True):
+    out = []
+    countries = _ne_dataset(cache, "countries", allow_download)
+    if countries is not None:
+        out += parse_countries(countries, bounds)
+    cities = _ne_dataset(cache, "cities", allow_download)
+    if cities is not None:
+        out += parse_cities(cities, bounds)
+    return out
 
 
 # --- enrichment ------------------------------------------------------------------------------
@@ -246,9 +356,9 @@ class LabelData:
     def ready(self) -> bool:
         return self.features is not None
 
-    def load(self, enricher=None) -> list[LabelFeature] | None:
-        """Synchronous: read the cache (downloading first if allowed); ``enricher(features)``
-        runs before the features become visible (e.g. DEM heights, see LabelLayer)."""
+    def _load_osm(self) -> list[LabelFeature] | None:
+        if is_large(self.bounds):
+            return []
         path = self.path
         if not path.exists():
             if not self.allow_download:
@@ -260,10 +370,19 @@ class LabelData:
                 log.warning("cannot download labels: %s", self.error)
                 return None
         try:
-            features = parse_overpass(json.loads(path.read_text(encoding="utf-8")))
+            return parse_overpass(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, ValueError) as exc:
             self.error = str(exc)
             return None
+
+    def load(self, enricher=None) -> list[LabelFeature] | None:
+        """Synchronous: read the cache (downloading first if allowed); ``enricher(features)``
+        runs before the features become visible (e.g. DEM heights, see LabelLayer)."""
+        osm = self._load_osm()
+        ne = natural_earth_features(self.cache, self.bounds, self.allow_download)
+        if osm is None and not ne:
+            return None
+        features = (osm or []) + ne
         if enricher is not None:
             try:
                 enricher(features)

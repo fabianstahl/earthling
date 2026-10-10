@@ -709,6 +709,15 @@ track colours, a dot at the head (by clock one per track). The geometry is built
 path and only scaled per frame.
 → Viewers see where on the map the ship or the camper is.
 
+**19.21 Country and city labels**
+`labels.countries`, `labels.cities`, `labels.min_population`: country names (in capitals,
+larger, centred on Natural Earth's label point, English or German by `stats.language`) and the
+large cities (Natural Earth populated places) at any scale. Very large areas skip the Overpass
+query (it timed out for Moscow – Beijing, and the timeout reply was cached as an empty area: such
+replies are no longer cached). The label fade-out distance now reaches 5000 km. The snow cover's
+noise fades to its mean once a pixel covers its period (no speckles on distant slopes).
+→ From a satellite's height viewers see which country and which city the train passes.
+
 ---
 
 ## 5. Risks & notes
