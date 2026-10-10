@@ -20,17 +20,21 @@ timeline and export 4K video.
   (for example "walked" and "official route"). Vehicles at the head (a ship, a plane, a
   cyclist ...), lines coloured by gradient, speed or heart rate, and several heads at once
   (a race against last year's run).
-- **Overlays:** peak, pass and place labels (OpenStreetMap), a stats panel with distance,
-  ascent, speed or pace, gradient, heart rate, the gap in a race, elevation profile and time
-  of day (in English or German), and data attribution.
+- **Overlays:** peak, pass and place labels (OpenStreetMap), country names and large cities
+  (Natural Earth) for journeys across a continent, a stats panel with distance, ascent, speed
+  or pace, gradient, heart rate, the gap in a race, elevation profile and time of day (in
+  English or German), a mini-map of the whole journey with the head on it, and data
+  attribution.
 - **Points of interest:** icons (PNG, animated GIF or APNG, sprite sheets) with captions,
   pop-in animations and effects.
-- **Weather:** volumetric fog and cloud layers with shadows and gusting wind, rain with wet
+- **Weather:** volumetric fog and cloud layers (fields of cloud with clear gaps, bases and tops
+  at varying heights) with shadows and gusting wind, rain with wet
   ground and reduced visibility, rainbows, snowfall and fresh snow above a snow line, and
   thunderstorms with lightning.
 - **Water:** sea and lakes from the OpenStreetMap water areas reflect the sky and glint in the
-  sun, with waves close up; tracks can switch style on water (a canoe trip: paddling and
-  portages).
+  sun, with waves from the near swell to ripples in the distance; open water can take one even
+  colour (no imagery tile seams at sea); tracks can switch style on water (a canoe trip:
+  paddling and portages).
 - **The whole globe:** views from space with the day and night side, the city lights at night
   (NASA Black Marble), and the local time of the place a journey passes.
 - **Texture layers:** satellite, topographic map, a border map with glowing country borders,
@@ -112,7 +116,7 @@ uv run earthling check-source <project> ign_bdortho --out contact-sheet/   # tes
 |---|---|---|
 | Imagery | Esri World Imagery, EOX Sentinel-2 cloudless | IGN BD ORTHO (France), swisstopo SWISSIMAGE (Switzerland) |
 | Elevation | Copernicus DEM GLO-30, AWS Terrain Tiles | IGN RGE ALTI (France), swisstopo swissALTI3D (Switzerland) |
-| Maps and labels | OpenTopoMap, OpenStreetMap (Overpass), Natural Earth borders | |
+| Maps and labels | OpenTopoMap, OpenStreetMap (Overpass, water areas via OpenFreeMap), Natural Earth borders, countries and cities | |
 
 Imagery services often mix mosaics per zoom range, which shows as colour rectangles from high
 up. `colour_reference = "eox_s2cloudless_2024"` in `[sources]` matches the imagery's large-scale
