@@ -54,6 +54,7 @@ def main() -> None:
     s.set("haze.aerial", 0.35)  # (from 100 km the island turned blue)
     s.set("water.enabled", True)
     s.set("water.wind", 9.0)
+    s.set("water.uniform", 0.85)  # (seams between the imagery tiles at sea)
     s.set("stats.visible", True)
     s.set("stats.show_ascent", False)
     s.set("stats.show_elevation", False)

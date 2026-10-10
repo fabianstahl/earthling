@@ -1,7 +1,6 @@
 """Showcase 8: the Lukla flight and the trek to Everest Base Camp (~34 s).
 
-1. (0-9 s) First person: the camera sits just behind the plane (follow mode) and banks into
-   the curves of the flight up the valleys to Lukla.
+1. (0-9 s) The flight up the valleys to Lukla: a calm camera 9 km away, always looking east.
 2. (9-26 s) Seven days up the Khumbu valley, drawn by distance (the nights left out), the
    great peaks labelled as they come into view.
 3. (26-34 s) Base Camp: snow starts to fall and settles above the snow line; the camera, above
@@ -19,8 +18,8 @@ from sc_common import (
     key,
     key_shots,
     load_hike,
+    map_shots,
     new_scene,
-    orbit_eye,
     poi,
     save,
     show,
@@ -75,13 +74,11 @@ def main() -> None:
         u = smoother((t - FLIGHT[0]) / (FLIGHT[1] - FLIGHT[0]))
         key(scene, "progress.head", round(float(t), 4),
             path.progress_for_distance(d0 + 1.0 + u * (d1 - d0 - 2.0), "time"), Interp.LINEAR)  # fmt: skip
-    # (wide and calm: far enough behind that the valley and the plane's turns read from outside)
-    for pid, value in (("follow.distance", 1100.0), ("follow.height", 260.0), ("follow.lag", 1.5),
-                       ("follow.look_ahead", 3000.0), ("follow.bank", 0.2),
-                       ("camera.transition", 2.5)):  # fmt: skip
-        s.set(pid, value)
-    key(scene, "camera.mode", 0.0, "follow", Interp.STEP)
-    key(scene, "camera.mode", FLIGHT[1] + 0.3, "keys", Interp.STEP)
+
+    def flight_head(t: float) -> float:
+        u = smoother(min(max((t - FLIGHT[0]) / (FLIGHT[1] - FLIGHT[0]), 0.0), 1.0))
+        return d0 + 1.0 + u * (d1 - d0 - 2.0)
+
     s.set("view.fov", 60.0)
     key(scene, "view.fov", FLIGHT[1], 60.0)
     key(scene, "view.fov", FLIGHT[1] + 2.0, 48.0)
@@ -127,10 +124,13 @@ def main() -> None:
 
     final = [(t, *finale(t)) for t in times]
     shots = blend_shots(chase, final, TREK[1] - 1.0, TREK[1] + 1.5)
-    # the keyed camera only matters from the end of the flight (follow mode before)
-    start_view = orbit_eye(path.position_at(d1), 30.0, -20.0, 6000.0)
-    shots = [(t, start_view, path.position_at(d1)) if t < FLIGHT[1] else (t, e, g)
-             for t, e, g in shots]  # fmt: skip
+    # the flight: a calm camera from the south-west, 9 km away, always looking east-north-east
+    # (the follow mode's camera, 1.1 km behind, ended up inside the slope at the landing, and
+    # a chase lost the plane behind the ridges)
+    flying = map_shots(hike, times, lambda t: flight_head(min(t, FLIGHT[1])),
+                       distance_of=lambda t: 9_000.0, heading_of=lambda t: 70.0,
+                       pitch_of=lambda t: -24.0, sigma_s=1.0, fit=0.3, clearance=400.0)  # fmt: skip
+    shots = blend_shots(flying, shots, FLIGHT[1] - 0.5, TREK[0] + 1.0)
     key_shots(scene, shots)
 
     # --- snow at Base Camp: snowfall, fresh snow, the clouds below the summit ---------------
