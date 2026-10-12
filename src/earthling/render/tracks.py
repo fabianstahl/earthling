@@ -442,6 +442,7 @@ class TrackLayer:
         self.head_m = float("inf")  # global distance of the visible end (progress)
         self.tail_m = 0.0  # global distance of the visible start
         self.track_heads: dict[int, float] | None = None  # clock mode: head per track (id)
+        self._viewport = (1, 1)
 
     def set_tracks(self, tracks: list[Track], frame: LocalFrame) -> None:
         self.tracks = tracks
@@ -571,15 +572,17 @@ class TrackLayer:
         fbo.depth_mask = False
         casing = store is not None and store["tracks.casing"] > 0.0
         parts = (0, 1) if casing and not glow_pass else (1,)
+        self._viewport = (width, height)
+        view_m = np.array(view_proj.to_list(), dtype=np.float64).T  # row-major
         for part in parts:
             _set(program, "u_part", part)
-            self._draw_tracks(program, camera, store)
+            self._draw_tracks(program, camera, store, view_m)
         fbo.depth_mask = True
         self.ctx.blend_equation = moderngl.FUNC_ADD
         self.ctx.disable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 
-    def _draw_tracks(self, program, camera: Camera, store) -> None:
+    def _draw_tracks(self, program, camera: Camera, store, view_m=None) -> None:
         single = store is not None and store["tracks.color_mode"] == "single"
         base = {
             "opacity": store["tracks.opacity"] if store is not None else 1.0,
@@ -654,6 +657,15 @@ class TrackLayer:
                 head = self.track_heads.get(id(g), -1.0)
             _set(program, "u_head_m", min(head, 1e12) if walked else 1e12)
             _set(program, "u_tail_m", self.tail_m if walked else 0.0)
+            spaced = dash > 0.0 or (water_style and store[p + "water_dash"] > 0.0)
+            mpp = 0.0
+            if spaced and view_m is not None:
+                lo, hi = -np.inf, np.inf
+                if walked:  # only the drawn part
+                    lo, hi = self.tail_m - g.offset_m, head - g.offset_m
+                mpp = line_m_per_px(g.enu, g.dist, camera.position, view_m, *self._viewport,
+                                    lo, hi)  # fmt: skip
+            _set(program, "u_line_mpp", mpp)
             vao.render(moderngl.TRIANGLE_STRIP)
 
     @staticmethod
@@ -692,6 +704,39 @@ class TrackLayer:
             g.vbo.release()
             g.ibo.release()
         self._gpu = []
+
+
+def line_m_per_px(enu: np.ndarray, dist: np.ndarray, camera_position, m: np.ndarray, width: int,
+                  height: int, lo: float = -np.inf, hi: float = np.inf) -> float:  # fmt: skip
+    """Metres per pixel along the on-screen part of a line (0 when none of it is visible).
+
+    The dashes and dots of a line take their spacing from this one value per frame (see
+    track.frag): chosen per pixel, the switch to the next spacing ran along a tilted line as a
+    wave while the camera moved, as if the line was drawn again. ``m``: the view-projection
+    matrix (row-major); ``lo`` / ``hi``: the drawn range of ``dist``."""
+    n = len(enu)
+    if n < 2:
+        return 0.0
+    idx = np.unique(np.r_[np.arange(0, n, max(1, n // 512)), n - 1])
+    rel = enu[idx] - np.asarray(camera_position, dtype=np.float64)
+    clip = np.c_[rel, np.ones(len(rel))] @ m.T
+    w = clip[:, 3]
+    front = w > 1e-3
+    ndc = clip[:, :2] / np.where(front, w, 1.0)[:, None]
+    px = ndc * (0.5 * width, 0.5 * height)
+    d = dist[idx]
+    ls = np.linalg.norm(np.diff(px, axis=0), axis=1)
+    dd = np.diff(d)
+    mid_d = 0.5 * (d[1:] + d[:-1])
+    edge = np.abs(0.5 * (ndc[1:] + ndc[:-1])).max(axis=1)
+    inside = 1.0 - np.clip((edge - 1.0) / 0.3, 0.0, 1.0)  # fades out beyond the screen edges
+    ok = front[1:] & front[:-1] & (mid_d >= lo) & (mid_d <= hi) & (ls > 1e-3) & (dd > 0.0)
+    weight = np.where(ok, ls * inside, 0.0)
+    if weight.sum() < 1.0:
+        return 0.0
+    log_mpp = np.log2(np.where(ok, dd, 1.0) / np.where(ok, ls, 1.0))
+    # x 4/pi: the per-pixel scale (fwidth) of a line in an average direction on screen
+    return float(2.0 ** (np.sum(weight * log_mpp) / weight.sum()) * 4.0 / np.pi)
 
 
 def _start_time(g: _GpuTrack) -> float:

@@ -10,6 +10,7 @@ from earthling.render.tracks import (
     TrackGeometryOptions,
     TrackSegmentGeometry,
     build_track_positions,
+    line_m_per_px,
     resample,
     ribbon_vertices,
     smooth,
@@ -445,3 +446,41 @@ def test_smoothing_keeps_the_end_points():
     assert out == pytest.approx(x)  # a straight line stays straight
     bumpy = np.array([0.0, 4.0, 0.0, 4.0, 0.0, 4.0, 0.0])
     assert smooth(bumpy, 5)[3] == pytest.approx(2.4)  # (4 + 0 + 4 + 0 + 4) / 5
+
+
+def _view(camera, width, height):
+    vp = camera.view_projection(width / height)
+    return np.array(vp.to_list(), dtype=np.float64).T
+
+
+def test_line_scale_is_one_value_for_the_whole_visible_line():
+    from earthling.render.camera import Camera
+
+    # a line on the ground seen from straight above: the scale of the screen at that distance
+    cam = Camera(np.array([0.0, 0.0, 2000.0]), heading=0.0, pitch=-90.0, fov_y=50.0)
+    x = np.linspace(-500.0, 500.0, 101)
+    enu = np.c_[x, np.zeros_like(x), np.zeros_like(x)]
+    dist = x + 500.0
+    mpp = line_m_per_px(enu, dist, cam.position, _view(cam, 1920, 1080), 1920, 1080)
+    expected = 2.0 * 2000.0 * np.tan(np.radians(25.0)) / 1080 * 4.0 / np.pi
+    assert mpp == pytest.approx(expected, rel=1e-3)
+    # only the drawn part counts, and a line behind the camera has no scale
+    part = line_m_per_px(enu, dist, cam.position, _view(cam, 1920, 1080), 1920, 1080, 0.0, 300.0)
+    assert part == pytest.approx(expected, rel=1e-3)
+    behind = enu + (0.0, 0.0, 5000.0)
+    assert line_m_per_px(behind, dist, cam.position, _view(cam, 1920, 1080), 1920, 1080) == 0.0
+
+
+def test_line_scale_changes_smoothly_while_the_camera_moves():
+    from earthling.render.camera import Camera
+
+    # a long line running away from a tilted camera that flies along it (fast: 100 m per frame
+    # at 1500 m), its start leaving the screen: the scale follows without jumps
+    y = np.linspace(0.0, 40000.0, 801)
+    enu = np.c_[np.zeros_like(y), y, np.zeros_like(y)]
+    values = []
+    for k in range(60):
+        cam = Camera(np.array([0.0, -3000.0 + 100.0 * k, 1500.0]), heading=0.0, pitch=-35.0)
+        values.append(line_m_per_px(enu, y, cam.position, _view(cam, 960, 540), 960, 540))
+    steps = np.abs(np.diff(np.log2(values)))
+    assert steps.max() < 0.15

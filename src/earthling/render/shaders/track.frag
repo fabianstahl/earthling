@@ -39,12 +39,19 @@ uniform int u_water_split = 0;       // the parts on water in their own style:
 uniform vec3 u_water_color = vec3(0.1, 0.5, 1.0);  // linear
 uniform float u_water_dash_px = 0.0;
 uniform int u_water_dots = 0;
+uniform float u_line_mpp = 0.0;      // metres per pixel of the whole line (0 = per pixel)
 
 // Dashes of about u_dash_px on screen at any zoom: the period snaps to powers of two metres
-// and crossfades between neighbouring octaves, so dashes neither crawl nor pop.
+// and crossfades between neighbouring octaves, so dashes neither crawl nor pop. The octave
+// comes from one scale per line and frame (u_line_mpp): chosen per pixel, the crossfade ran
+// along a tilted line as a wave while the camera moved.
+float spacing_mpp(float m_per_px) {
+    return u_line_mpp > 0.0 ? u_line_mpp : m_per_px;
+}
+
 float dash_mask(float dist, float dash_px) {
     float m_per_px = max(fwidth(dist), 1e-5);
-    float level = log2(dash_px * 2.0 * m_per_px);
+    float level = log2(dash_px * 2.0 * spacing_mpp(m_per_px));
     float l0 = floor(level);
     float f = level - l0;
     float on0 = 1.0 - step(0.5, fract(dist / exp2(l0)));
@@ -58,7 +65,7 @@ float dash_mask(float dist, float dash_px) {
 // Returns the coverage and (in .y) the distance from the dot centre in pixels.
 vec2 dot_mask(float dist, float px, float radius, float dash_px) {
     float m_per_px = max(fwidth(dist), 1e-5);
-    float level = log2(dash_px * m_per_px);
+    float level = log2(dash_px * spacing_mpp(m_per_px));
     float l0 = floor(level);
     float p0 = exp2(l0);
     float a0 = (fract(dist / p0 + 0.5) - 0.5) * p0 / m_per_px;
