@@ -2,7 +2,7 @@ import moderngl
 import numpy as np
 import pytest
 
-from earthling.core.geo import LocalFrame, lonlat_to_tile
+from earthling.core.geo import LocalFrame, lonlat_to_tile, tile_to_lonlat
 from earthling.data.dem import HEIGHTMAP_SAMPLES
 from earthling.data.terrain_data import HeightmapRef
 from earthling.render import lod
@@ -401,3 +401,59 @@ def test_nodes_without_dem_pass_through_to_their_children(gl_ctx):
     )
     assert renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 100, timeout_s=10)
     assert sorted(renderer.terrain.last_selection.draw) == sorted(kids)  # far away, still drawn
+
+
+def test_eviction_keeps_nodes_of_the_previous_frame(gl_ctx):
+    """Over the memory budget, only nodes unused for more than one frame are evicted: the shadow
+    casters loaded for an export frame (not in the camera selection) must survive the eviction
+    in that frame's own update (step 19.27)."""
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    x, y = int(tx), int(ty)
+    children = [(2 * x + i, 2 * y + j) for i in (0, 1) for j in (0, 1)]
+    renderer.set_terrain_source(FakeTerrainData(), lod.NodeSet({10: [(x, y)], 11: children}))
+    terrain = renderer.terrain
+    camera = Camera(position=np.array([0.0, -150000.0, 150000.0]), pitch=-45.0)  # parent only
+    vp = camera.view_projection(1.0)
+    terrain.finish_loading(camera, vp, 256)
+    for key in [(11, cx, cy) for cx, cy in children]:  # e.g. shadow casters loaded just now
+        terrain._submit(key)
+    for future in list(terrain._in_flight.values()):
+        future.result(timeout=30)
+    terrain._collect(None)
+    terrain.memory_budget_mb = 0  # everything is over the budget
+    terrain.update(camera, vp, 256)
+    assert not any((11, cx, cy) in terrain.last_selection.draw for cx, cy in children)  # far
+    assert all((11, cx, cy) in terrain._resident for cx, cy in children)  # loaded last frame
+    for _ in range(3):  # unused for a few frames: now they may go
+        terrain.update(camera, vp, 256)
+    sel = set(terrain.last_selection.draw)
+    keys = [(11, cx, cy) for cx, cy in children]
+    assert all(k in sel or k not in terrain._resident for k in keys)
+
+
+def test_eviction_keeps_siblings_needed_for_refinement(gl_ctx):
+    """A node is only refined when all four children are resident, also children outside the
+    frustum that are never drawn. Evicting such a sibling makes the selection fall back to the
+    coarse parent (the dark shadow flash of step 19.27)."""
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    x, y = int(tx), int(ty)
+    children = [(2 * x + i, 2 * y + j) for i in (0, 1) for j in (0, 1)]
+    renderer.set_terrain_source(FakeTerrainData(), lod.NodeSet({10: [(x, y)], 11: children}))
+    terrain = renderer.terrain
+    # close above one child, looking down at it: the other children are outside the frustum
+    lon, lat = tile_to_lonlat(2 * x + 0.5, 2 * y + 0.5, 11)
+    camera = Camera(position=np.asarray(FRAME.geodetic_to_enu(lat, lon, 2500.0)), pitch=-89.0,
+                    fov_y=20.0)  # fmt: skip
+    vp = camera.view_projection(1.0)
+    terrain.finish_loading(camera, vp, 512)
+    draw = terrain.last_selection.draw
+    assert draw and all(k[0] == 11 for k in draw)  # refined
+    assert len(draw) < 4  # not all children visible
+    terrain.memory_budget_mb = 0  # everything over the budget
+    for _ in range(4):  # every frame refined: the hidden siblings were never evicted
+        sel = terrain.update(camera, vp, 512)
+        assert sel.draw and all(k[0] == 11 for k in sel.draw)

@@ -489,6 +489,35 @@ class TerrainLayer:
                     hm.release()
                     del self._heightmaps[node.heightmap_key]
 
+    def _touch(self, keys) -> None:
+        """Mark nodes, their ancestors and the ancestors' children as used in this frame. The
+        selection only refines a node when all four children are resident - also children
+        outside the frustum, which are never drawn - so evicting any of them makes the whole
+        subtree fall back to one coarse node. For the shadow casters, selected after the
+        eviction, that was a dark flash in one frame."""
+        frame = self._frame_no
+        expanded: set[TileKey] = set()
+        for key in keys:
+            node = self._resident.get(key)
+            if node is not None:
+                node.last_used = max(node.last_used, frame)
+            z, x, y = key
+            while z > 0:
+                parent = (z - 1, x >> 1, y >> 1)
+                if parent in expanded:
+                    break  # the rest of this branch is marked already
+                expanded.add(parent)
+                pz, px, py = parent
+                for i in (0, 1):
+                    for j in (0, 1):
+                        child = self._resident.get((z, 2 * px + i, 2 * py + j))
+                        if child is not None:
+                            child.last_used = max(child.last_used, frame)
+                node = self._resident.get(parent)
+                if node is not None:
+                    node.last_used = max(node.last_used, frame)
+                z, x, y = parent
+
     def _evict(self, protected: set[TileKey]) -> None:
         if self.nodes is None:
             return
@@ -497,10 +526,15 @@ class TerrainLayer:
         if used <= budget:
             return
         min_zoom = self.nodes.min_zoom
+        # nodes used in the previous frame (or loaded since) stay: the shadow casters are
+        # selected after this eviction, and an export frame loads them just before it - evicting
+        # them made the shadow map fall back to coarse terrain for one frame (a dark flash)
+        recent = self._frame_no - 1
         candidates = sorted(
-            (n for k, n in self._resident.items() if k not in protected and k[0] > min_zoom),
+            (n for k, n in self._resident.items()
+             if k not in protected and k[0] > min_zoom and n.last_used < recent),
             key=lambda n: n.last_used,
-        )
+        )  # fmt: skip
         for node in candidates:
             if used <= budget:
                 break
@@ -557,10 +591,13 @@ class TerrainLayer:
             self._submit(key)
         for key in sel.draw:
             node = self._resident.get(key)
-            if node is not None:
-                node.last_used = self._frame_no
-                if self._needs_refresh(node) and len(self._in_flight) < max_in_flight:
-                    self._submit(key, refresh=True)  # e.g. a layer needs another texture
+            if (
+                node is not None
+                and self._needs_refresh(node)
+                and (len(self._in_flight) < max_in_flight)
+            ):
+                self._submit(key, refresh=True)  # e.g. a layer needs another texture
+        self._touch(sel.draw)
         self._evict(set(sel.draw))
         self.last_selection = sel
         return sel
@@ -592,6 +629,7 @@ class TerrainLayer:
             sel = self._select(camera, view_proj, viewport_height, coarse)
             if not coarse:
                 self.last_selection = sel
+            self._touch(sel.draw)  # needed for the coming frame: not evictable in its update
             stale = [
                 k
                 for k in sel.draw
@@ -755,10 +793,7 @@ class TerrainLayer:
             if len(self._in_flight) >= self._workers * 3:
                 break
             self._submit(key)
-        for key in sel.draw:
-            node = self._resident.get(key)
-            if node is not None:
-                node.last_used = self._frame_no
+        self._touch(sel.draw)
         self.shadow_morph = sel.morph
         return sel.draw
 

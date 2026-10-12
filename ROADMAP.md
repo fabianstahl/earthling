@@ -758,6 +758,17 @@ second at the start or end of a shot) the spline still swung out and back, steer
 neighbouring keys. Two identical neighbouring camera keys now hold the pose exactly.
 → No small camera glitch in still seconds.
 
+**19.27 No dark flashes when GPU memory is full**
+Over the memory budget, every frame evicted the least recently used terrain nodes except the
+ones drawn by the camera. But the selection only refines a node when all four children are
+resident, and the children outside the frustum are never drawn. The shadow casters are
+selected after that eviction, so losing one such hidden child (or an intermediate ancestor)
+made a whole region fall back to one coarse caster node for a frame: coarse terrain above
+the real ground threw a shadow over the land (a dark flash in long 4K exports). Drawn nodes now
+mark their ancestors and the ancestors' children as used, the nodes a frame loads are marked
+before its own eviction, and only nodes unused for more than one frame are evicted.
+→ Long exports at the memory limit stay free of flashes.
+
 ---
 
 ## 5. Risks & notes
