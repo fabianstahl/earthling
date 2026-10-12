@@ -470,6 +470,10 @@ class Curve:
         if k0.interp is Interp.STEP or _is_stepped(self.definition.type):
             return k0.value
         if self.definition.type is PType.CAMERA:
+            if tuple(k0.value) == tuple(k1.value):
+                # a hold: the spline through the neighbouring keys would swing out and back
+                # between two identical poses (a small glitch in "still" seconds)
+                return k0.value
             return self._evaluate_camera(time, i, f)
         return self.definition.coerce(_blend(self.definition, k0.value, k1.value, f))
 

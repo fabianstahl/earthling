@@ -111,3 +111,15 @@ def test_window_camera_keys_and_animated_view(qtbot):
     window.timeline.set_time(0.0)
     assert vp.camera.position[0] != 0.0  # the free camera no longer follows
     window.undo_stack.setClean()
+
+
+def test_identical_keys_hold_the_camera_still():
+    """A still second (two equal keys) must not swing out and back with the spline through the
+    neighbouring keys (step 19.26)."""
+    curve = Curve(PropertyDef("camera.pose", "Camera", PType.CAMERA, (0, 0, 0, 0, 0, 0)))
+    hold = (0.0, 0.0, 1000.0, 0.0, -30.0, 0.0)
+    curve.set_key(0.0, hold, Interp.LINEAR)
+    curve.set_key(1.0, hold, Interp.LINEAR)
+    curve.set_key(2.0, (5000.0, 3000.0, 1500.0, 40.0, -20.0, 0.0), Interp.LINEAR)
+    for t in np.linspace(0.0, 1.0, 21):
+        assert curve.evaluate(float(t)) == pytest.approx(hold)

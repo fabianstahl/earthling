@@ -752,6 +752,12 @@ the middle of the sea. The windows now shrink towards the ends: the first and th
 stay exactly where they are.
 → Ferries run from pier to pier, flights from airport to airport.
 
+**19.26 Still cameras stay still**
+Camera keys run through a centripetal Catmull-Rom spline; between two identical keys (a still
+second at the start or end of a shot) the spline still swung out and back, steered by the
+neighbouring keys. Two identical neighbouring camera keys now hold the pose exactly.
+→ No small camera glitch in still seconds.
+
 ---
 
 ## 5. Risks & notes
