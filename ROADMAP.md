@@ -744,6 +744,14 @@ A coach from above joins the vehicle markers (a red body, the windscreen at the 
 with the direction of travel).
 → Bus rides between hikes show a bus at the head of the line.
 
+**19.25 Lines end where their points end**
+The track smoothing averaged with windows padded by the end values, which pulled both ends of
+a line inwards. On hiking tracks (a point every few metres) that was invisible; a flight or a
+ferry crossing with a point every 5-10 km lost kilometres at both ends and seemed to float in
+the middle of the sea. The windows now shrink towards the ends: the first and the last point
+stay exactly where they are.
+→ Ferries run from pier to pier, flights from airport to airport.
+
 ---
 
 ## 5. Risks & notes

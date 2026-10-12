@@ -435,3 +435,13 @@ def test_tracks_split_by_water(gl_ctx):
     red = (column[..., 0] > column[..., 2] + 60).any(axis=1)
     # the track runs from row ~61 (north, water) to ~139 (south, land)
     assert blue[65:95].mean() > 0.8 and red[105:135].mean() > 0.8
+
+
+def test_smoothing_keeps_the_end_points():
+    """A sparse line (a flight, a ferry) must start and end exactly at its points (step 19.25)."""
+    x = np.array([0.0, 10.0, 20.0, 30.0])
+    out = smooth(x, 5)
+    assert out[0] == 0.0 and out[-1] == 30.0
+    assert out == pytest.approx(x)  # a straight line stays straight
+    bumpy = np.array([0.0, 4.0, 0.0, 4.0, 0.0, 4.0, 0.0])
+    assert smooth(bumpy, 5)[3] == pytest.approx(2.4)  # (4 + 0 + 4 + 0 + 4) / 5

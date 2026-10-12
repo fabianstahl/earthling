@@ -65,13 +65,18 @@ def resample_indices(lat: np.ndarray, lon: np.ndarray, spacing_m: float) -> np.n
 
 
 def smooth(values: np.ndarray, window: int) -> np.ndarray:
-    """Centred moving average with shrinking windows at the ends (NaN-free input)."""
-    if window <= 1 or len(values) < 3:
+    """Centred moving average with shrinking windows at the ends (NaN-free input): point i
+    averages the min(half, i, n - 1 - i) points on either side, so the first and the last point
+    stay where they are. (Padding with the end values pulled both ends inwards, by kilometres
+    on sparse lines such as a flight with a point every 10 km.)"""
+    n = len(values)
+    if window <= 1 or n < 3:
         return values
     half = window // 2
-    padded = np.pad(values, (half, half), mode="edge")
-    kernel = np.ones(2 * half + 1) / (2 * half + 1)
-    return np.convolve(padded, kernel, mode="valid")
+    r = np.minimum(half, np.minimum(np.arange(n), n - 1 - np.arange(n)))
+    cum = np.concatenate([[0.0], np.cumsum(np.asarray(values, dtype=np.float64))])
+    i = np.arange(n)
+    return (cum[i + r + 1] - cum[i - r]) / (2 * r + 1)
 
 
 GRADIENT_WINDOW_M = 60.0  # gradient over +- this distance (DEM noise at hairpins)
