@@ -739,6 +739,11 @@ up in a regular grid.
 → Sparse fair-weather cumulus seen from 100 km really is sparse; the route on the mini-map
 reads on any land colour.
 
+**19.24 A bus marker**
+A coach from above joins the vehicle markers (a red body, the windscreen at the front, turned
+with the direction of travel).
+→ Bus rides between hikes show a bus at the head of the line.
+
 ---
 
 ## 5. Risks & notes

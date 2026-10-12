@@ -424,6 +424,16 @@ def draw_vehicle_car() -> Image.Image:
                     ("polygon", screen, (40, 50, 70, 255))])  # fmt: skip
 
 
+def draw_vehicle_bus() -> Image.Image:
+    """A coach from above, front up."""
+    body = [(0.39, 0.08), (0.61, 0.08), (0.63, 0.12), (0.63, 0.92), (0.37, 0.92),
+            (0.37, 0.12)]  # fmt: skip
+    screen = [(0.4, 0.12), (0.6, 0.12), (0.6, 0.19), (0.4, 0.19)]
+    roof = [(0.42, 0.25), (0.58, 0.25), (0.58, 0.86), (0.42, 0.86)]
+    return vehicle([("polygon", body, (205, 55, 60, 255)), ("polygon", screen, (40, 50, 70, 255)),
+                    ("polygon", roof, VEHICLE_FILL)])  # fmt: skip
+
+
 def draw_vehicle_canoe() -> Image.Image:
     """A canoe with two paddlers from above, bow up."""
     hull = [(0.5, 0.05), (0.56, 0.2), (0.58, 0.5), (0.56, 0.8), (0.5, 0.95), (0.44, 0.8),
@@ -481,7 +491,7 @@ def draw_vehicle_hiker() -> Image.Image:
 def save_vehicles() -> None:
     folder = OUT / "vehicles"
     folder.mkdir(parents=True, exist_ok=True)
-    for name in ("ship", "plane", "train", "car", "canoe", "bike", "runner", "hiker"):
+    for name in ("ship", "plane", "train", "car", "bus", "canoe", "bike", "runner", "hiker"):
         globals()[f"draw_vehicle_{name}"]().save(folder / f"{name}.png")
 
 

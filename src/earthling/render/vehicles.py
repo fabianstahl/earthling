@@ -1,7 +1,7 @@
 """Vehicle markers: an icon at the head of the drawn track instead of the glowing dot (a ship
 on the ferry crossing, a plane on the flight, a cyclist on the ride).
 
-Top views (ship, plane, train, car, canoe) point in the direction of travel on screen; side
+Top views (ship, plane, train, car, bus, canoe) point in the direction of travel on screen; side
 views (bike, runner, hiker) face right and are mirrored when the track runs to the left.
 """
 
@@ -15,7 +15,8 @@ import numpy as np
 
 VEHICLE_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons" / "vehicles"
 VEHICLES = {"ship": "rotate", "plane": "rotate", "train": "rotate", "car": "rotate",
-            "canoe": "rotate", "bike": "flip", "runner": "flip", "hiker": "flip"}  # fmt: skip
+            "bus": "rotate", "canoe": "rotate", "bike": "flip", "runner": "flip",
+            "hiker": "flip"}  # fmt: skip
 MARKER_OPTIONS = [("dot", "Glowing dot")] + [(name, name.title()) for name in VEHICLES]
 
 
