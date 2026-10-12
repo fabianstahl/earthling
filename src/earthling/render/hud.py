@@ -55,6 +55,7 @@ class StatsAt:
     speed_kmh: float | None = None  # at the head (None without times)
     gradient: float | None = None  # % (None without elevations)
     heart_rate: float | None = None  # bpm (None without heart rate data)
+    track: int = 0  # index of the track at the head
 
 
 def _fill_nan(values: np.ndarray) -> np.ndarray:
@@ -108,6 +109,12 @@ class HikeStats:
         _, first_index = np.unique(self.day, return_index=True)
         start_of = dict(zip(self.day[first_index], first_index, strict=True))
         self.day_start = np.array([start_of[d] for d in self.day]) if n else np.zeros(0, int)
+        # ... and of each point's track
+        self.track = np.asarray(path.track_index, dtype=int)
+        _, first_index = np.unique(self.track, return_index=True)
+        start_of = dict(zip(self.track[first_index], first_index, strict=True))
+        self.track_start = (np.array([start_of[t] for t in self.track]) if n
+                            else np.zeros(0, int))  # fmt: skip
 
     def _local_dates(self, seconds: np.ndarray) -> list[date]:
         # the UTC offset only changes a few times a year: compute it per hour
@@ -123,7 +130,9 @@ class HikeStats:
             out.append(datetime.fromtimestamp(s + offset, tz=UTC).date())
         return out
 
-    def at(self, distance: float) -> StatsAt | None:
+    def at(self, distance: float, by_track: bool = False) -> StatsAt | None:
+        """The values at ``distance``; the day_* totals count from the start of the day, or
+        with ``by_track`` from the start of the track."""
         n = len(self.dist)
         if n == 0:
             return None
@@ -142,7 +151,7 @@ class HikeStats:
                 return None
             return float(a + (b - a) * f)
 
-        s = int(self.day_start[i])
+        s = int(self.track_start[i] if by_track else self.day_start[i])
         time = None
         if self.has_time:
             time = datetime.fromtimestamp(lerp(self.time), tz=UTC).astimezone(self.tz)
@@ -159,11 +168,22 @@ class HikeStats:
             speed_kmh=value(2),
             gradient=value(1) if self.has_elevation else None,
             heart_rate=value(3),
+            track=int(self.track[i]),
         )
 
-    def profile(self, day: int | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """(walked metres, elevation, progress distance) of the hike or of one day."""
-        sel = slice(None) if day is None else self.day == day
+    def part(self, v: StatsAt, scope: str):
+        """Selection of the points of the whole hike, of v's day or of v's track."""
+        if scope == "day":
+            return self.day == v.day
+        if scope == "track":
+            return self.track == v.track
+        return slice(None)
+
+    def profile(self, day: int | None = None, sel=None):
+        """(walked metres, elevation, progress distance) arrays of the hike, of one day or of
+        the points ``sel``."""
+        if sel is None:
+            sel = slice(None) if day is None else self.day == day
         return self.ground[sel], self.ele[sel], self.dist[sel]
 
 
@@ -375,7 +395,7 @@ class HudLayer:
             stats = self.stats_for(path, timezone)
             if stats is not None:
                 head = head_m if math.isfinite(head_m) else float(stats.dist[-1])
-                values = stats.at(head)
+                values = stats.at(head, by_track=store["stats.scope"] == "track")
                 if values is not None and values.time is not None:
                     values.time = self._local_time(values.time, store, path, head)
                 self.last_stats = values
@@ -477,7 +497,7 @@ class HudLayer:
         color = store["stats.text_color"]
         accent = store["stats.accent_color"]
         pad, gap = 16.0 * s, 26.0 * s
-        day_scope = store["stats.scope"] == "day"
+        day_scope = store["stats.scope"] in ("day", "track")  # the day_* values
         # --- content sizes
         lang = store["stats.language"]
         day_word = "days" if store["stats.day_style"] == "count" else "day"
@@ -574,13 +594,15 @@ class HudLayer:
                                0.6 * alpha)  # fmt: skip
                     cx += w + gap
             else:
+                scope = store["stats.scope"]
                 self._draw_profile(batch, stats, v, head_m, x, y + 3.0 * s, inner_w, profile_h,
-                                   accent, color, alpha, s, day_scope, store)  # fmt: skip
+                                   accent, color, alpha, s, scope, store)  # fmt: skip
             y += row_h + 10.0 * s
 
-    def _draw_profile(self, batch, stats, v, head_m, x, y, w, h, accent, color, alpha, s, day,
+    def _draw_profile(self, batch, stats, v, head_m, x, y, w, h, accent, color, alpha, s, scope,
                       store=None):  # fmt: skip
-        ground, ele, prog = stats.profile(v.day if day else None)
+        sel = stats.part(v, scope)
+        ground, ele, prog = stats.profile(sel=sel)
         if len(ground) < 2 or ground[-1] <= ground[0]:
             return
         n = max(8, int(w / 2))
@@ -606,8 +628,7 @@ class HudLayer:
             from earthling.render.tracks import VALUE_KINDS
 
             column = stats.values[:, VALUE_KINDS.index(color_by)]
-            if day:
-                column = column[stats.day == v.day]
+            column = column[sel]
             values = np.interp(gx[1:], ground, np.nan_to_num(column))
             lo, hi = store["tracks.color_min"], store["tracks.color_max"]
             rgb = colormap(store["tracks.color_ramp"], (values - lo) / max(hi - lo, 1e-6))

@@ -769,6 +769,21 @@ mark their ancestors and the ancestors' children as used, the nodes a frame load
 before its own eviction, and only nodes unused for more than one frame are evicted.
 → Long exports at the memory limit stay free of flashes.
 
+**19.28 Dotted lines keep their pattern while the camera moves**
+Dashes and dots snap their spacing to powers of two metres and crossfade between two spacings.
+The spacing was chosen per pixel, so on a tilted line the crossfade sat at a different place
+along the line and ran along it as a wave while the camera zoomed (at an arrival it looked as
+if the line was drawn a second time, backwards). Each line now gets one scale per frame - the
+metres per pixel along its visible part, averaged over its on-screen length - and the whole
+line changes its spacing at once; the dot shapes still use the local pixel size.
+→ Bus, ferry and flight lines stay calm while the camera flies in or out.
+
+**19.29 Stats of the current track**
+The stats overlay counts distance and ascent and draws the profile for the whole hike or the
+current day. A third scope, "Current track", counts from the start of the track at the head
+(e.g. a race on a day that also has the walk to the start and an evening walk).
+→ Distance, ascent, pulse and profile of one activity.
+
 ---
 
 ## 5. Risks & notes

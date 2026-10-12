@@ -351,7 +351,7 @@ STATS = section(
           ("top_left", "Top left"), ("top_right", "Top right")]),
     flt("stats.scale", "Size", 1.0, 0.4, 3.0, step=0.05),
     enum("stats.scope", "Totals and profile", "hike",
-         [("hike", "Whole hike"), ("day", "Current day")]),
+         [("hike", "Whole hike"), ("day", "Current day"), ("track", "Current track")]),
     boolean("stats.show_day", "Day number", True),
     enum("stats.day_style", "Day as", "day", [("day", "Day 5"), ("count", "5 days")],
          tooltip="The current day, or the number of days so far (e.g. for a summary)"),

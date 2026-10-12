@@ -54,6 +54,21 @@ def test_hike_stats_by_day():
     assert len(ground) == 11 and ground[0] == 11_000.0
 
 
+def test_hike_stats_by_track():
+    # two tracks on the same day (e.g. the way to a race and the race): the track scope counts
+    # and profiles only the track at the head
+    path = fake_path()
+    path.time = path.time[0] + np.arange(22) * 600.0  # all on 1 July
+    stats = HikeStats(path, "UTC")
+    v = stats.at(2.0 * 16_000.0, by_track=True)
+    assert v.day == 1 and v.track == 1
+    assert v.day_distance_m == pytest.approx(5000.0) and v.day_descent_m == pytest.approx(250.0)
+    assert stats.at(2.0 * 16_000.0).day_distance_m == pytest.approx(16_000.0)  # the day
+    ground, _, _ = stats.profile(sel=stats.part(v, "track"))
+    assert len(ground) == 11 and ground[0] == 11_000.0
+    assert len(stats.profile(sel=stats.part(v, "day"))[0]) == 22
+
+
 def test_hike_stats_without_times_counts_tracks():
     stats = HikeStats(fake_path(with_time=False))
     assert stats.at(0.0).time is None
