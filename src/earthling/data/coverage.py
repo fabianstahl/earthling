@@ -11,6 +11,7 @@ Coverage files are GeoJSON files in ``earthling/data/coverage`` (see
 from __future__ import annotations
 
 import math
+import threading
 from functools import cache
 from pathlib import Path
 
@@ -49,23 +50,27 @@ class Coverage:
         self.boundary = self.merc.boundary
         for geom in (self.merc, self.inner, self.boundary):
             shapely.prepare(geom)
+        # GEOS predicates on one prepared geometry are not thread-safe (the terrain workers
+        # and the label enrichment classify at the same time): one at a time
+        self._lock = threading.Lock()
 
     # --- classification ---------------------------------------------------------------
     def classify(self, bounds_merc: tuple[float, float, float, float]) -> str:
         """'none', 'partial' or 'full' (weight 1 everywhere) for a mercator box."""
         box = shapely.box(*bounds_merc)
-        if not self.merc.intersects(box):
-            return "none"
-        if self.inner.contains(box):
-            return "full"
-        return "partial"
+        with self._lock:
+            if not self.merc.intersects(box):
+                return "none"
+            return "full" if self.inner.contains(box) else "partial"
 
     def classify_boxes(self, boxes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """(touches, full) boolean arrays for an array of shapely boxes (mercator)."""
-        return shapely.intersects(self.merc, boxes), shapely.contains(self.inner, boxes)
+        with self._lock:
+            return shapely.intersects(self.merc, boxes), shapely.contains(self.inner, boxes)
 
     def contains_lonlat(self, lon: float, lat: float) -> bool:
-        return bool(shapely.contains_xy(self.lonlat, lon, lat))
+        with self._lock:
+            return bool(shapely.contains_xy(self.lonlat, lon, lat))
 
     # --- weights ----------------------------------------------------------------------
     def weights(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
@@ -74,8 +79,9 @@ class Coverage:
         cx, cy = min(nx, COARSE_SAMPLES), min(ny, COARSE_SAMPLES)
         gx, gy = np.meshgrid(np.linspace(xs[0], xs[-1], cx), np.linspace(ys[0], ys[-1], cy))
         points = shapely.points(gx.ravel(), gy.ravel())
-        distance = shapely.distance(self.boundary, points).reshape(gx.shape)
-        inside = shapely.contains_xy(self.merc, gx.ravel(), gy.ravel()).reshape(gx.shape)
+        with self._lock:
+            distance = shapely.distance(self.boundary, points).reshape(gx.shape)
+            inside = shapely.contains_xy(self.merc, gx.ravel(), gy.ravel()).reshape(gx.shape)
         _, lat = mercator_to_lonlat(gx, gy)
         metres = np.where(inside, distance, -distance) * np.cos(np.radians(lat))
         if (cx, cy) != (nx, ny):
