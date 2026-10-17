@@ -17,6 +17,7 @@ import moderngl
 import numpy as np
 
 from earthling.core.gpx import cumulative_ascent_descent
+from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
 from earthling.render.labels import BASE_PX, SPREAD, FontAtlas
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
@@ -317,8 +318,7 @@ class HudLayer:
         self.attribution = ""  # e.g. "Imagery: … · Elevation: …"
         self._stats: HikeStats | None = None
         self._stats_key: tuple | None = None
-        self._buffer: moderngl.Buffer | None = None
-        self._vaos: dict[int, moderngl.VertexArray] = {}
+        self._stream = DynamicBuffer(ctx, "2f 2f 4f 2f", "in_pos", "in_uv", "in_color", "in_params")
         self.last_stats: StatsAt | None = None  # values shown in the last frame (tests)
         self.frame = None  # LocalFrame of the scene (time zone at the head position)
         self.gap_s: float | None = None  # clock mode: the second track's gap (seconds)
@@ -665,44 +665,18 @@ class HudLayer:
     def _submit(self, fbo, vertices: np.ndarray, width: int, height: int, store, k) -> None:
         atlas: FontAtlas = self.atlas_provider()
         program = self.shaders.get("hud")
-        data = vertices.tobytes()
-        if self._buffer is None or self._buffer.size < len(data):
-            if self._buffer is not None:
-                self._buffer.release()
-                for vao in self._vaos.values():
-                    vao.release()
-                self._vaos.clear()
-            self._buffer = self.ctx.buffer(reserve=max(len(data), 1 << 16) * 2)
-        self._buffer.write(data)
-        vao = self._vaos.get(program.glo)
-        if vao is None:
-            vao = self.ctx.vertex_array(
-                program, [(self._buffer, "2f 2f 4f 2f", "in_pos", "in_uv", "in_color", "in_params")]
-            )
-            self._vaos[program.glo] = vao
+        vao = self._stream.vertex_array(program, vertices.tobytes())
         if atlas.texture is None:  # (shapes only, no text yet: the atlas still needs a texture)
             atlas.ensure(" ")
         atlas.texture.use(0)
-        for name, value in (
+        set_uniforms(program, (
             ("u_atlas", 0),
             ("u_viewport", (float(width), float(height))),
             ("u_spread", float(SPREAD)),
             ("u_outline_px", float(1.6 * k * store["stats.scale"])),
             ("u_outline_alpha", float(store["stats.outline"])),
-        ):
-            if name in program:
-                program[name] = value
-        fbo.use()
-        self.ctx.viewport = (0, 0, width, height)
-        self.ctx.disable(moderngl.DEPTH_TEST)
-        self.ctx.enable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
-        vao.render(moderngl.TRIANGLES, vertices=len(vertices))
-        self.ctx.disable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        ))  # fmt: skip
+        draw_overlay(self.ctx, fbo, vao, len(vertices), width, height)
 
     def release(self) -> None:
-        if self._buffer is not None:
-            self._buffer.release()
-        for vao in self._vaos.values():
-            vao.release()
+        self._stream.release()

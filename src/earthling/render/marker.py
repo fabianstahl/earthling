@@ -6,6 +6,7 @@ import moderngl
 import numpy as np
 
 from earthling.render.camera import Camera
+from earthling.render.gl_util import set_uniform
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
@@ -40,15 +41,17 @@ class MarkerLayer:
             vao = self.ctx.vertex_array(program, [])
             self._vaos[program.glo] = vao
         program["u_view_proj"].write(view_proj)
-        _set(program, "u_viewport", (float(width), float(height)))
-        _set(program, "u_log_depth_coef", camera.log_depth_coef)
-        _set(program, "u_time", float(time_s))
+        set_uniform(program, "u_viewport", (float(width), float(height)))
+        set_uniform(program, "u_log_depth_coef", camera.log_depth_coef)
+        set_uniform(program, "u_time", float(time_s))
         if store is not None:
             from earthling.core.properties import bind_uniforms
 
             bind_uniforms(program, store)
             # given for 1080p, scales with the image height (like the tracks)
-            _set(program, "u_marker_size", float(store["marker.size"]) * pixel_scale(width, height))
+            set_uniform(
+                program, "u_marker_size", float(store["marker.size"]) * pixel_scale(width, height)
+            )
         self.ctx.enable(moderngl.BLEND)
         if glow_pass:
             self.ctx.blend_func = moderngl.ONE, moderngl.ONE
@@ -59,14 +62,9 @@ class MarkerLayer:
         fbo = self.ctx.fbo
         fbo.depth_mask = False
         for position, color in heads:
-            _set(program, "u_center", camera.relative(position))
-            _set(program, "u_color", tuple(c**2.2 for c in color))
+            set_uniform(program, "u_center", camera.relative(position))
+            set_uniform(program, "u_color", tuple(c**2.2 for c in color))
             vao.render(moderngl.TRIANGLE_STRIP, vertices=4)
         fbo.depth_mask = True
         self.ctx.disable(moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-
-
-def _set(program: moderngl.Program, name: str, value) -> None:
-    if name in program:
-        program[name] = value

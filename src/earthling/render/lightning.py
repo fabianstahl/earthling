@@ -17,6 +17,7 @@ import moderngl
 import numpy as np
 
 from earthling.core.properties import boolean, color, flt, integer, section
+from earthling.render.gl_util import DynamicBuffer, set_uniforms
 from earthling.render.scale import pixel_scale
 
 SLOT_S = 0.05
@@ -137,8 +138,8 @@ class LightningLayer:
         self.ctx = ctx
         self.shaders = shaders
         self.active: list[tuple[Strike, float, np.ndarray, list]] = []  # strike, flash, top, paths
-        self._buffer: moderngl.Buffer | None = None
-        self._vaos: dict[int, moderngl.VertexArray] = {}
+        self._stream = DynamicBuffer(ctx, "3f 3f 1f 1f 1f", "in_a", "in_b", "in_end", "in_side",
+                                     "in_strength")  # fmt: skip
         self._vertices: np.ndarray | None = None
 
     def update(self, store, animation, time: float, camera, frame, terrain_data) -> None:
@@ -257,41 +258,14 @@ class LightningLayer:
         if not len(vertices):
             return
         program = self.shaders.get("bolt", defines={"GLOW_PASS": 1} if glow else None)
-        data = vertices.tobytes()
-        if self._buffer is None or self._buffer.size < len(data):
-            if self._buffer is not None:
-                self._buffer.release()
-                for vao in self._vaos.values():
-                    vao.release()
-                self._vaos.clear()
-            self._buffer = self.ctx.buffer(reserve=max(len(data), 1 << 16) * 2)
-        self._buffer.write(data)
-        vao = self._vaos.get(program.glo)
-        if vao is None:
-            vao = self.ctx.vertex_array(
-                program,
-                [
-                    (
-                        self._buffer,
-                        "3f 3f 1f 1f 1f",
-                        "in_a",
-                        "in_b",
-                        "in_end",
-                        "in_side",
-                        "in_strength",
-                    )
-                ],  # fmt: skip
-            )
-            self._vaos[program.glo] = vao
+        vao = self._stream.vertex_array(program, vertices.tobytes())
         color = np.array(store["lightning.color"]) ** 2.2 * store["lightning.intensity"]
-        for name, value in (
+        set_uniforms(program, (
             ("u_viewport", (float(width), float(height))),
             ("u_log_depth_coef", camera.log_depth_coef),
             ("u_width_px", 2.2 * pixel_scale(width, height)),
             ("u_color", tuple(float(c) for c in color)),
-        ):
-            if name in program:
-                program[name] = value
+        ))  # fmt: skip
         program["u_view_proj"].write(view_proj)
         self.ctx.enable(moderngl.BLEND | moderngl.DEPTH_TEST)
         # depth test only: clouds and rain use the scene depth (the depth mask is a
@@ -305,10 +279,7 @@ class LightningLayer:
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
 
     def release(self) -> None:
-        if self._buffer is not None:
-            self._buffer.release()
-        for vao in self._vaos.values():
-            vao.release()
+        self._stream.release()
 
 
 def _animated(animation) -> bool:

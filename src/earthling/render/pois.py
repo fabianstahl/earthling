@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image
 
 from earthling.core.pois import Poi, visibility_state
+from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
 from earthling.render.labels import BASE_PX, SPREAD, FontAtlas
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
@@ -105,8 +106,8 @@ class PoiLayer:
         self.base_dir: Path | None = None
         self._icons: dict[tuple, _GpuIcon | None] = {}
         self._anchors: dict[tuple, np.ndarray] = {}
-        self._buffer: moderngl.Buffer | None = None
-        self._vaos: dict[int, moderngl.VertexArray] = {}
+        self._stream = DynamicBuffer(ctx, "3f 2f 2f 3f", "in_anchor", "in_offset", "in_uv",
+                                     "in_params", min_bytes=1 << 14)  # fmt: skip
         self.last_drawn: list[str] = []  # ids drawn in the last frame (tests)
 
     def set_pois(self, pois: list[Poi], base_dir: Path | None = None) -> None:
@@ -311,46 +312,22 @@ class PoiLayer:
 
     def _draw(self, program, fbo, icon, atlas, vertices, camera, view_proj, width, height,
               depth, depth_size, k) -> None:  # fmt: skip
-        data = vertices.tobytes()
-        if self._buffer is None or self._buffer.size < len(data):
-            if self._buffer is not None:
-                self._buffer.release()
-                for vao in self._vaos.values():
-                    vao.release()
-                self._vaos.clear()
-            self._buffer = self.ctx.buffer(reserve=max(len(data), 1 << 14) * 2)
-        self._buffer.write(data)
-        vao = self._vaos.get(program.glo)
-        if vao is None:
-            vao = self.ctx.vertex_array(
-                program,
-                [(self._buffer, "3f 2f 2f 3f", "in_anchor", "in_offset", "in_uv", "in_params")],
-            )
-            self._vaos[program.glo] = vao
+        vao = self._stream.vertex_array(program, vertices.tobytes())
         icon.texture.use(0)
         if atlas.texture is not None:
             atlas.texture.use(1)
         previous = depth.compare_func
         depth.compare_func = ""
         depth.use(2)
-        for name, value in (
+        set_uniforms(program, (
             ("u_icon", 0), ("u_atlas", 1), ("u_depth", 2),
             ("u_viewport", (float(width), float(height))),
             ("u_depth_size", (float(depth_size[0]), float(depth_size[1]))),
             ("u_log_depth_coef", camera.log_depth_coef), ("u_spread", float(SPREAD)),
             ("u_outline_px", float(1.8 * k)),
-        ):  # fmt: skip
-            if name in program:
-                program[name] = value
+        ))  # fmt: skip
         program["u_view_proj"].write(view_proj)
-        fbo.use()
-        self.ctx.viewport = (0, 0, width, height)
-        self.ctx.disable(moderngl.DEPTH_TEST)
-        self.ctx.enable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
-        vao.render(moderngl.TRIANGLES, vertices=len(vertices))
-        self.ctx.disable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        draw_overlay(self.ctx, fbo, vao, len(vertices), width, height)
         depth.compare_func = previous
 
     def release(self) -> None:
@@ -358,10 +335,7 @@ class PoiLayer:
             if icon is not None:
                 icon.texture.release()
         self._icons.clear()
-        if self._buffer is not None:
-            self._buffer.release()
-        for vao in self._vaos.values():
-            vao.release()
+        self._stream.release()
 
 
 def _quad(rel, x0, y0, x1, y1, alpha, mode) -> np.ndarray:

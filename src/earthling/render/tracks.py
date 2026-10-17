@@ -21,6 +21,7 @@ import numpy as np
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track, haversine_m
 from earthling.render.camera import Camera
+from earthling.render.gl_util import set_uniform
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
@@ -596,10 +597,10 @@ class TrackLayer:
         else:
             program = self.shaders.get("track")
         program["u_view_proj"].write(view_proj)
-        _set(program, "u_log_depth_coef", camera.log_depth_coef)
-        _set(program, "u_viewport", (float(width), float(height)))
+        set_uniform(program, "u_log_depth_coef", camera.log_depth_coef)
+        set_uniform(program, "u_viewport", (float(width), float(height)))
         focal = height / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
-        _set(program, "u_focal_px", float(focal))
+        set_uniform(program, "u_focal_px", float(focal))
         if store is not None:
             from earthling.core.properties import bind_uniforms
 
@@ -610,9 +611,9 @@ class TrackLayer:
             for name, pid in (("u_track_min_px", "tracks.min_px"),
                               ("u_track_outline", "tracks.outline"),
                               ("u_track_casing", "tracks.casing")):  # fmt: skip
-                _set(program, name, float(store[pid]) * self.pixel_scale)
+                set_uniform(program, name, float(store[pid]) * self.pixel_scale)
         for name, value in self.uniforms.items():
-            _set(program, name, value)
+            set_uniform(program, name, value)
         self.ctx.enable(moderngl.BLEND)
         if glow_pass:
             # emission composited "over" in draw order (premultiplied): a track overlapping
@@ -630,7 +631,7 @@ class TrackLayer:
         self._viewport = (width, height)
         view_m = np.array(view_proj.to_list(), dtype=np.float64).T  # row-major
         for part in parts:
-            _set(program, "u_part", part)
+            set_uniform(program, "u_part", part)
             self._draw_tracks(program, camera, store, view_m)
         fbo.depth_mask = True
         self.ctx.blend_equation = moderngl.FUNC_ADD
@@ -677,40 +678,42 @@ class TrackLayer:
                     skip_errors=True,  # attributes a shader variant does not use
                 )
                 g.vaos[program.glo] = vao
-            _set(program, "u_offset", camera.relative(g.origin))
+            set_uniform(program, "u_offset", camera.relative(g.origin))
             color, opacity, width, glow, dash, dots = style
-            _set(program, "u_color", tuple(c**2.2 for c in color))
-            _set(program, "u_track_opacity", base["opacity"] * opacity)
+            set_uniform(program, "u_color", tuple(c**2.2 for c in color))
+            set_uniform(program, "u_track_opacity", base["opacity"] * opacity)
             px = store is None or store["tracks.width_mode"] == "pixels"
             scale = self.pixel_scale if px else 1.0
-            _set(program, "u_track_width", base["width"] * width * scale)
-            _set(program, "u_track_glow", base["glow"] * glow)
-            _set(program, "u_dash_px", dash * self.pixel_scale)
-            _set(program, "u_dots", int(dots and dash > 0.0))
+            set_uniform(program, "u_track_width", base["width"] * width * scale)
+            set_uniform(program, "u_track_glow", base["glow"] * glow)
+            set_uniform(program, "u_dash_px", dash * self.pixel_scale)
+            set_uniform(program, "u_dots", int(dots and dash > 0.0))
             p = f"trackgroup.{g.track.group}."
             water_style = (
                 store is not None and g.track.split_water and p + "water_color" in store.registry
             )
-            _set(program, "u_water_split", int(bool(water_style)))
+            set_uniform(program, "u_water_split", int(bool(water_style)))
             if water_style:
-                _set(program, "u_water_color", tuple(c**2.2 for c in store[p + "water_color"]))
-                _set(program, "u_water_dash_px", store[p + "water_dash"] * self.pixel_scale)
-                _set(program, "u_water_dots", int(store[p + "water_dots"]))
-            _set(program, "u_track_offset", g.offset_m)
+                set_uniform(
+                    program, "u_water_color", tuple(c**2.2 for c in store[p + "water_color"])
+                )
+                set_uniform(program, "u_water_dash_px", store[p + "water_dash"] * self.pixel_scale)
+                set_uniform(program, "u_water_dots", int(store[p + "water_dots"]))
+            set_uniform(program, "u_track_offset", g.offset_m)
             walked = g.track.role == "walked"  # planned routes are always drawn in full
             color_by = store["tracks.color_by"] if store is not None and walked else "none"
             kind = 0 if color_by == "none" else VALUE_KINDS.index(color_by) + 1
-            _set(program, "u_color_by", kind)
+            set_uniform(program, "u_color_by", kind)
             if color_by != "none":
-                _set(program, "u_color_min", float(store["tracks.color_min"]))
-                _set(program, "u_color_max", float(store["tracks.color_max"]))
+                set_uniform(program, "u_color_min", float(store["tracks.color_min"]))
+                set_uniform(program, "u_color_max", float(store["tracks.color_max"]))
                 ramps = [v for v, _ in store.registry["tracks.color_ramp"].options]
-                _set(program, "u_color_ramp", ramps.index(store["tracks.color_ramp"]))
+                set_uniform(program, "u_color_ramp", ramps.index(store["tracks.color_ramp"]))
             head = self.head_m
             if walked and self.track_heads is not None:  # clock mode: every track its own
                 head = self.track_heads.get(id(g), -1.0)
-            _set(program, "u_head_m", min(head, 1e12) if walked else 1e12)
-            _set(program, "u_tail_m", self.tail_m if walked else 0.0)
+            set_uniform(program, "u_head_m", min(head, 1e12) if walked else 1e12)
+            set_uniform(program, "u_tail_m", self.tail_m if walked else 0.0)
             spaced = dash > 0.0 or (water_style and store[p + "water_dash"] > 0.0)
             mpp = 0.0
             if spaced and view_m is not None:
@@ -719,7 +722,7 @@ class TrackLayer:
                     lo, hi = self.tail_m - g.offset_m, head - g.offset_m
                 mpp = line_m_per_px(g.enu, g.dist, camera.position, view_m, *self._viewport,
                                     lo, hi)  # fmt: skip
-            _set(program, "u_line_mpp", mpp)
+            set_uniform(program, "u_line_mpp", mpp)
             vao.render(moderngl.TRIANGLE_STRIP)
 
     @staticmethod
@@ -797,8 +800,3 @@ def _start_time(g: _GpuTrack) -> float:
     """First timestamp of a built track (tracks without time keep their order, at the end)."""
     t = g.time[np.isfinite(g.time)] if g.time is not None else ()
     return float(t[0]) if len(t) else float("inf")
-
-
-def _set(program: moderngl.Program, name: str, value) -> None:
-    if name in program:
-        program[name] = value

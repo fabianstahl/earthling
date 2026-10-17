@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import moderngl
 
+from earthling.render.gl_util import set_uniforms
+
 TRANSMITTANCE_UNIT = 7
 MULTISCATTER_UNIT = 8
 SKYVIEW_UNIT = 9
@@ -73,9 +75,7 @@ class AtmosphereLuts:
 
     def _pass(self, name: str, uniforms: dict[str, object]) -> None:
         program = self.passes(f"atm_{name}")
-        for key, value in {**self.uniforms(), **uniforms}.items():
-            if key in program:
-                program[key] = value
+        set_uniforms(program, {**self.uniforms(), **uniforms})
         fbo = self._fbos[name]
         fbo.use()
         self.ctx.viewport = (0, 0, *fbo.size)
@@ -99,9 +99,7 @@ class AtmosphereLuts:
                 "u_atm_frame": tuple(float(v) for v in atm_frame)}  # fmt: skip
         self._pass("skyview", view)
         program = self.shaders.compute("atm_aerial")
-        for name, value in {**self.uniforms(), **view}.items():
-            if name in program:
-                program[name] = value
+        set_uniforms(program, {**self.uniforms(), **view})
         program["u_inv_view_proj"].write(inv_view_proj)
         self.ap_inscatter.bind_to_image(0, read=False, write=True)
         self.ap_transmittance.bind_to_image(1, read=False, write=True)

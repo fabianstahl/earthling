@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from earthling.core.photos import Photo
+from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
@@ -48,8 +49,7 @@ class PhotoLayer:
         self.photos: list[Photo] = []
         self.base_dir: Path | None = None
         self._textures: dict[tuple, tuple[moderngl.Texture, float] | None] = {}
-        self._buffer: moderngl.Buffer | None = None
-        self._vaos: dict[int, moderngl.VertexArray] = {}
+        self._stream = DynamicBuffer(ctx, "2f", "in_local", min_bytes=0)
         self.last_drawn: list[str] = []  # ids drawn in the last frame (tests)
 
     def set_photos(self, photos: list[Photo], base_dir: Path | None = None) -> None:
@@ -117,36 +117,15 @@ class PhotoLayer:
             self.last_drawn.append(photo.id)
 
     def _draw(self, program, fbo, texture, quad, width, height, uniforms) -> None:
-        data = quad.tobytes()
-        if self._buffer is None:
-            self._buffer = self.ctx.buffer(reserve=len(data))
-        self._buffer.write(data)
-        vao = self._vaos.get(program.glo)
-        if vao is None:
-            vao = self.ctx.vertex_array(program, [(self._buffer, "2f", "in_local")])
-            self._vaos[program.glo] = vao
+        vao = self._stream.vertex_array(program, quad.tobytes())
         texture.use(0)
-        for name, value in {"u_image": 0, "u_viewport": (float(width), float(height)),
-                            **uniforms}.items():  # fmt: skip
-            if name in program:
-                program[name] = value
-        fbo.use()
-        self.ctx.viewport = (0, 0, width, height)
-        self.ctx.disable(moderngl.DEPTH_TEST)
-        self.ctx.enable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
-        vao.render(moderngl.TRIANGLES, vertices=len(quad))
-        self.ctx.disable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        set_uniforms(program, {"u_image": 0, "u_viewport": (float(width), float(height)),
+                               **uniforms})  # fmt: skip
+        draw_overlay(self.ctx, fbo, vao, len(quad), width, height)
 
     def release(self) -> None:
         for entry in self._textures.values():
             if entry is not None:
                 entry[0].release()
         self._textures.clear()
-        if self._buffer is not None:
-            self._buffer.release()
-            self._buffer = None
-        for vao in self._vaos.values():
-            vao.release()
-        self._vaos.clear()
+        self._stream.release()

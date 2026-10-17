@@ -14,6 +14,7 @@ import moderngl
 import numpy as np
 
 from earthling.core.properties import boolean, enum, flt, section
+from earthling.render.gl_util import set_uniforms
 from earthling.render.shader_library import ShaderLibrary
 
 CLOUD_NOISE_UNIT = 12
@@ -255,24 +256,25 @@ class WeatherSystem:
         light = tuple(1.6 * c + 0.12 * s for c, s in zip(sky, lighting.sun_radiance, strict=True))
         gust = gust_factor(time, store["weather.gusts"], store["weather.gust_period"])
         wx, wy = wind_vector(store["rain.wind"] * gust, store["rain.wind_dir"])
-        for name, value in {
-            "u_depth": 0,
-            "u_log_depth_coef": camera.log_depth_coef,
-            "u_cam_forward": tuple(float(v) for v in camera.forward),
-            "u_camera_height": float(lighting.camera_height),
-            "u_time": float(time),
-            "u_rain_intensity": float(store["rain.intensity"]),
-            "u_rain_base": float(store["rain.cloud_base"]),
-            "u_rain_wind": (wx, wy),
-            "u_rain_light": light,
-            "u_pixel_angle": float(math.radians(camera.fov_y)) / max(height, 1),
-            "u_snow": int(store["rain.type"] == "snow"),
-            "u_rainbow": float(store["rain.rainbow"]),
-            "u_rainbow_sun": tuple(float(v) for v in lighting.sun_direction),
-            "u_rainbow_light": tuple(float(v) for v in lighting.sun_radiance),
-        }.items():
-            if name in program:
-                program[name] = value
+        set_uniforms(
+            program,
+            {
+                "u_depth": 0,
+                "u_log_depth_coef": camera.log_depth_coef,
+                "u_cam_forward": tuple(float(v) for v in camera.forward),
+                "u_camera_height": float(lighting.camera_height),
+                "u_time": float(time),
+                "u_rain_intensity": float(store["rain.intensity"]),
+                "u_rain_base": float(store["rain.cloud_base"]),
+                "u_rain_wind": (wx, wy),
+                "u_rain_light": light,
+                "u_pixel_angle": float(math.radians(camera.fov_y)) / max(height, 1),
+                "u_snow": int(store["rain.type"] == "snow"),
+                "u_rainbow": float(store["rain.rainbow"]),
+                "u_rainbow_sun": tuple(float(v) for v in lighting.sun_direction),
+                "u_rainbow_light": tuple(float(v) for v in lighting.sun_radiance),
+            },
+        )
         program["u_inv_view_proj"].write(glm.inverse(view_proj))
         previous = depth.compare_func
         depth.compare_func = ""
@@ -325,9 +327,7 @@ class WeatherSystem:
         # from high up the layers are far away: they fade out beyond 150 km or three times
         # the camera's height (no sudden appearance of the clouds when descending)
         values["u_max_distance"] = max(150e3, 3.0 * float(values.get("u_camera_height", 0.0)))
-        for name, value in values.items():
-            if name in program:
-                program[name] = value
+        set_uniforms(program, values)
         program["u_inv_view_proj"].write(glm.inverse(view_proj))
         previous = depth.compare_func
         depth.compare_func = ""

@@ -33,6 +33,7 @@ from earthling.data.dem import GRID_INTERVALS, HEIGHTMAP_SAMPLES
 from earthling.data.terrain_data import TerrainData
 from earthling.render import lod
 from earthling.render.camera import Camera
+from earthling.render.gl_util import set_uniform
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
@@ -121,12 +122,6 @@ def tile_geometry(frame: LocalFrame, z: int, x: int, y: int, n: int = MESH_GRID)
     ups = np.vstack([ups, ups[per]])
     width = (max_x - min_x) * np.cos(np.radians(float(lat[centre])))
     return TileGeometry(origin, positions, ups, np.array([east_c, north_c, up_c]), float(width))
-
-
-def _set(program: moderngl.Program, name: str, value) -> None:
-    """Set a uniform if the compiled program uses it (variants optimise some away)."""
-    if name in program:
-        program[name] = value
 
 
 def skirt_depth(node, exaggeration: float) -> float:
@@ -687,54 +682,54 @@ class TerrainLayer:
             program = self.shaders.get("terrain")
         self._check_program(program, "shadow" if shadow_pass else "main")
         program["u_view_proj"].write(view_proj)
-        _set(program, "u_exaggeration", self.exaggeration)
-        _set(program, "u_heightmap", 0)
-        _set(program, "u_parent_heightmap", PARENT_HEIGHTMAP_UNIT)
-        _set(program, "u_parent_imagery", PARENT_IMAGERY_UNIT)
+        set_uniform(program, "u_exaggeration", self.exaggeration)
+        set_uniform(program, "u_heightmap", 0)
+        set_uniform(program, "u_parent_heightmap", PARENT_HEIGHTMAP_UNIT)
+        set_uniform(program, "u_parent_imagery", PARENT_IMAGERY_UNIT)
         morph = morph if morph is not None and self.geomorph else {}
         if not shadow_pass:
-            _set(program, "u_log_depth_coef", camera.log_depth_coef)
+            set_uniform(program, "u_log_depth_coef", camera.log_depth_coef)
             for name, unit in TEXTURE_UNITS.items():
-                _set(program, f"u_{name}", unit)
-            _set(program, "u_debug_lod", self.debug_lod)
+                set_uniform(program, f"u_{name}", unit)
+            set_uniform(program, "u_debug_lod", self.debug_lod)
             if self.store is not None:
                 bind_uniforms(program, self.store)
                 scale = getattr(self, "pixel_scale", 1.0)
                 for name, pid in PIXEL_UNIFORMS:
-                    _set(program, name, float(self.store[pid]) * scale)
+                    set_uniform(program, name, float(self.store[pid]) * scale)
             for name, value in {**self.lighting_uniforms, **(extra_uniforms or {})}.items():
                 if name == "_matrices":
                     # to_list() yields columns -> column-major (bytes(mat) is row-major!)
                     data = np.array([m.to_list() for m in value], dtype="f4").tobytes()  # type: ignore[union-attr]
                     program["u_shadow_matrix"].write(data)
                 else:
-                    _set(program, name, value)
+                    set_uniform(program, name, value)
         for key in keys:
             node = self._resident.get(key)
             if node is None or node.heightmap_key is None:
                 continue
             vao = self._vao(node, program)
             geo = node.geometry
-            _set(program, "u_offset", camera.relative(geo.origin))
-            _set(program, "u_hm_scale", node.hm_scale)
-            _set(program, "u_hm_offset", node.hm_offset)
-            _set(program, "u_skirt_depth", skirt_depth(node, self.exaggeration))
+            set_uniform(program, "u_offset", camera.relative(geo.origin))
+            set_uniform(program, "u_hm_scale", node.hm_scale)
+            set_uniform(program, "u_hm_offset", node.hm_offset)
+            set_uniform(program, "u_skirt_depth", skirt_depth(node, self.exaggeration))
             self._heightmaps[node.heightmap_key].texture.use(0)
             self._bind_parent(program, key, node, morph.get(key, 1.0))
             if not shadow_pass:
-                _set(program, "u_sample_spacing", node.sample_spacing_m)
+                set_uniform(program, "u_sample_spacing", node.sample_spacing_m)
                 # GLSL mat3 is column-major: columns = east, north, up
                 if "u_tangent" in program:
                     program["u_tangent"].write(geo.tangent.astype("f4").tobytes())
                 if "u_polar_axis" in program and self.frame is not None:
                     axis = self.frame.rotation @ np.array([0.0, 0.0, 1.0])  # ECEF z in ENU
                     program["u_polar_axis"] = tuple(float(v) for v in axis)
-                _set(program, "u_zoom", key[0])
+                set_uniform(program, "u_zoom", key[0])
                 for name, unit in TEXTURE_UNITS.items():
                     tex = node.textures.get(name)
                     if tex is not None:
                         tex.use(unit)
-                    _set(program, f"u_has_{name}", tex is not None)
+                    set_uniform(program, f"u_has_{name}", tex is not None)
             vao.render(moderngl.TRIANGLES)
 
     def _bind_parent(self, program, key: TileKey, node, factor: float) -> None:
@@ -747,18 +742,18 @@ class TerrainLayer:
             or parent.heightmap_key is None
             or parent.heightmap_key not in self._heightmaps
         ):
-            _set(program, "u_morph", 1.0)
-            _set(program, "u_has_parent_imagery", False)
+            set_uniform(program, "u_morph", 1.0)
+            set_uniform(program, "u_has_parent_imagery", False)
             return
-        _set(program, "u_morph", float(factor))
+        set_uniform(program, "u_morph", float(factor))
         parent_imagery = parent.textures.get("imagery")
-        _set(program, "u_has_parent_imagery", parent_imagery is not None)
+        set_uniform(program, "u_has_parent_imagery", parent_imagery is not None)
         if parent_imagery is not None:
             parent_imagery.use(PARENT_IMAGERY_UNIT)
-        _set(program, "u_parent_uv_offset", (0.5 * (x & 1), 0.5 * (y & 1)))
-        _set(program, "u_parent_hm_scale", parent.hm_scale)
-        _set(program, "u_parent_hm_offset", parent.hm_offset)
-        _set(program, "u_parent_sample_spacing", parent.sample_spacing_m)
+        set_uniform(program, "u_parent_uv_offset", (0.5 * (x & 1), 0.5 * (y & 1)))
+        set_uniform(program, "u_parent_hm_scale", parent.hm_scale)
+        set_uniform(program, "u_parent_hm_offset", parent.hm_offset)
+        set_uniform(program, "u_parent_sample_spacing", parent.sample_spacing_m)
         self._heightmaps[parent.heightmap_key].texture.use(PARENT_HEIGHTMAP_UNIT)
 
     # --- shadows ------------------------------------------------------------------------

@@ -24,6 +24,7 @@ from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.core.sun import enu_to_celestial
 from earthling.render.bloom import Bloom
 from earthling.render.camera import Camera, far_for_height
+from earthling.render.gl_util import set_uniform, set_uniforms
 from earthling.render.hud import HudLayer
 from earthling.render.labels import LabelLayer
 from earthling.render.layers import generate_glsl, required_tile_sources
@@ -643,17 +644,16 @@ class Renderer:
             return
         program = self.fullscreen("sky")
         program["u_inv_view_proj"].write(glm.inverse(view_proj))
-        for name, value in {
-            **lighting_uniforms(self.lighting),
-            **self._atmosphere_uniforms,
-            **self.weather.rain_uniforms(self.store),
-        }.items():
-            if name in program:
-                program[name] = value
+        set_uniforms(
+            program,
+            {
+                **lighting_uniforms(self.lighting),
+                **self._atmosphere_uniforms,
+                **self.weather.rain_uniforms(self.store),
+            },
+        )
         program["u_night"] = self.lighting.night
-        for name, value in self._flash_sky_uniforms(camera).items():
-            if name in program:
-                program[name] = value
+        set_uniforms(program, self._flash_sky_uniforms(camera))
         program["u_pixel_angle"] = float(np.radians(camera.fov_y)) / max(1, height)
         if "u_enu_to_ecef" in program:  # (rows E, N, U in ECEF: written as columns)
             lat, lon = self._camera_latlon
@@ -701,14 +701,9 @@ class Renderer:
         program["u_hdr"] = 0
         if bloom is not None:
             bloom.use(1)
-        _set(program, "u_bloom", 1)
-        _set(program, "u_has_bloom", bloom is not None)
+        set_uniform(program, "u_bloom", 1)
+        set_uniform(program, "u_has_bloom", bloom is not None)
         if self.store is not None:
             bind_uniforms(program, self.store)
             program["u_exposure"] = 2.0 ** self.store["post.exposure"]
         self.fullscreen.draw("tonemap")
-
-
-def _set(program: moderngl.Program, name: str, value) -> None:
-    if name in program:
-        program[name] = value

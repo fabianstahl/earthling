@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw, ImageFont
 from earthling.core.easing import smoothstep, smoothstep_array
 from earthling.data.labels import LabelData, LabelFeature, enrich
 from earthling.render.camera import Camera
+from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
@@ -214,8 +215,7 @@ class LabelLayer:
         self._vis_fbo = ctx.framebuffer([self._vis_tex])
         self._vis_buffer = ctx.buffer(reserve=MAX_LABELS * 16)
         self._vis_vao: moderngl.VertexArray | None = None
-        self._buffer: moderngl.Buffer | None = None
-        self._vaos: dict[int, moderngl.VertexArray] = {}
+        self._stream = DynamicBuffer(ctx, "2f 2f 3f", "in_pos", "in_uv", "in_params")
         self.enricher = None  # callable(features) run once after loading (DEM, tracks)
         # the drawn track (labels.follow_progress): set by the renderer every frame
         self.path = None  # ProgressPath of the walked tracks
@@ -551,50 +551,25 @@ class LabelLayer:
 
     def _submit(self, fbo, vertices: np.ndarray, width: int, height: int, store) -> None:
         program = self.shaders.get("label")
-        data = vertices.tobytes()
-        if self._buffer is None or self._buffer.size < len(data):
-            if self._buffer is not None:
-                self._buffer.release()
-                for vao in self._vaos.values():
-                    vao.release()
-                self._vaos.clear()
-            self._buffer = self.ctx.buffer(reserve=max(len(data), 1 << 16) * 2)
-        self._buffer.write(data)
-        vao = self._vaos.get(program.glo)
-        if vao is None:
-            vao = self.ctx.vertex_array(
-                program, [(self._buffer, "2f 2f 3f", "in_pos", "in_uv", "in_params")]
-            )
-            self._vaos[program.glo] = vao
+        vao = self._stream.vertex_array(program, vertices.tobytes())
         assert self.atlas is not None and self.atlas.texture is not None
         self.atlas.texture.use(0)
         program["u_atlas"] = 0
         program["u_viewport"] = (float(width), float(height))
-        if "u_spread" in program:
-            program["u_spread"] = float(SPREAD)
         # display colours: labels are drawn after tone mapping (no linearisation)
-        for name, value in (
+        set_uniforms(program, (
+            ("u_spread", float(SPREAD)),
             ("u_label_color", tuple(store["labels.color"])),
             ("u_label_outline_color", tuple(store["labels.outline_color"])),
             ("u_label_outline", float(store["labels.outline"] * pixel_scale(width, height))),
-        ):
-            if name in program:
-                program[name] = value
-        fbo.use()
-        self.ctx.viewport = (0, 0, width, height)
-        self.ctx.disable(moderngl.DEPTH_TEST)
-        self.ctx.enable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
-        vao.render(moderngl.TRIANGLES, vertices=len(vertices))
-        self.ctx.disable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        ))  # fmt: skip
+        draw_overlay(self.ctx, fbo, vao, len(vertices), width, height)
 
     def release(self) -> None:
-        for obj in (self._vis_fbo, self._vis_tex, self._vis_buffer, self._buffer):
+        for obj in (self._vis_fbo, self._vis_tex, self._vis_buffer):
             if obj is not None:
                 obj.release()
-        for vao in self._vaos.values():
-            vao.release()
+        self._stream.release()
         if self._vis_vao is not None:
             self._vis_vao.release()
         if self.atlas is not None:
