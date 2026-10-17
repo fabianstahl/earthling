@@ -23,6 +23,7 @@ import numpy as np
 
 from earthling.core.geo import (
     LocalFrame,
+    TileKey,
     geodetic_to_ecef,
     mercator_to_lonlat,
     tile_bounds_mercator,
@@ -50,8 +51,6 @@ TEXTURE_UNITS = {"imagery": 1, "topo": 4, "borders": 5, "water": 15, "night": 16
 PARENT_HEIGHTMAP_UNIT = 6  # geomorphing: the parent node's heightmap
 PARENT_IMAGERY_UNIT = 14  # ... and its imagery (no sharpness / colour pop when refining)
 DEFAULT_MIN_H, DEFAULT_MAX_H = -100.0, 4900.0
-
-TileKey = tuple[int, int, int]
 
 
 # --- geometry ----------------------------------------------------------------------------

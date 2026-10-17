@@ -10,9 +10,7 @@ import shapely
 
 from earthling.core.session import Session
 from earthling.data.dem import SOURCE_DETAIL_FACTOR, DemBaker, download_sources
-from earthling.data.downloader import DownloadProgress, TileDownloader
-
-ProgressCallback = Callable[[DownloadProgress], None]
+from earthling.data.downloader import DownloadProgress, ProgressCallback, TileDownloader
 
 
 @dataclass

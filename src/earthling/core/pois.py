@@ -12,6 +12,8 @@ import re
 from dataclasses import asdict, dataclass, fields
 from typing import Any
 
+from earthling.core.easing import smooth01
+
 EFFECTS = [
     ("none", "None"),
     ("bounce", "Bounce"),
@@ -113,11 +115,6 @@ def visibility_state(animation, poi_id: str, time: float, visible: bool) -> tupl
             return 1.0 - smooth01((time - off_at) / POP_OUT_S), since_on + (time - off_at)
         return 0.0, 0.0
     return (1.0 if visible else 0.0), since
-
-
-def smooth01(x: float) -> float:
-    x = min(max(x, 0.0), 1.0)
-    return x * x * (3.0 - 2.0 * x)
 
 
 def pop_in(since: float) -> float:

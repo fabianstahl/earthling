@@ -17,16 +17,12 @@ from pathlib import Path
 import numpy as np
 import shapely
 
+from earthling.core.easing import smooth01_array
 from earthling.core.geo import MERCATOR_HALF, lonlat_to_mercator, mercator_to_lonlat
 
 COVERAGE_DIR = Path(__file__).parent / "coverage"
 _REGISTERED: dict[str, Coverage] = {}
 COARSE_SAMPLES = 33  # distance evaluations per axis and tile; bilinear in between
-
-
-def _smoothstep(x: np.ndarray) -> np.ndarray:
-    x = np.clip(x, 0.0, 1.0)
-    return x * x * (3.0 - 2.0 * x)
 
 
 def _upsample(coarse: np.ndarray, ny: int, nx: int) -> np.ndarray:
@@ -84,7 +80,7 @@ class Coverage:
         metres = np.where(inside, distance, -distance) * np.cos(np.radians(lat))
         if (cx, cy) != (nx, ny):
             metres = _upsample(metres, ny, nx)
-        return _smoothstep(metres / self.feather_m).astype(np.float32)
+        return smooth01_array(metres / self.feather_m).astype(np.float32)
 
     def pixel_weights(self, bounds_merc, width: int, height: int) -> np.ndarray:
         """Weights at the pixel centres of an image covering ``bounds_merc``."""

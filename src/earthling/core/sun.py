@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+import numpy as np
+
+from earthling.core.geo import LocalFrame
+
 
 @dataclass(frozen=True)
 class SunPosition:
@@ -18,7 +22,7 @@ class SunPosition:
         return (math.sin(az) * math.cos(el), math.cos(az) * math.cos(el), math.sin(el))
 
 
-def _julian_day(t: datetime) -> float:
+def julian_day(t: datetime) -> float:
     t = t.astimezone(UTC)
     return t.timestamp() / 86400.0 + 2440587.5
 
@@ -43,7 +47,7 @@ def solar_position(when: datetime, lat: float, lon: float) -> SunPosition:
     """Sun position for an aware datetime (naive datetimes are treated as UTC)."""
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
-    jd = _julian_day(when)
+    jd = julian_day(when)
     jc = (jd - 2451545.0) / 36525.0
 
     geom_mean_long = (280.46646 + jc * (36000.76983 + jc * 0.0003032)) % 360.0
@@ -101,3 +105,19 @@ def solar_position(when: datetime, lat: float, lon: float) -> SunPosition:
 
 def local_to_aware(local: datetime, timezone: str) -> datetime:
     return local.replace(tzinfo=ZoneInfo(timezone))
+
+
+def greenwich_sidereal_angle(when: datetime) -> float:
+    """Greenwich mean sidereal time as an angle in radians."""
+    d = julian_day(when) - 2451545.0
+    gmst_deg = (280.46061837 + 360.98564736629 * d) % 360.0
+    return math.radians(gmst_deg)
+
+
+def enu_to_celestial(when: datetime, lat: float, lon: float) -> np.ndarray:
+    """3x3 matrix mapping ENU directions at (lat, lon) to the Earth-centred equatorial frame
+    (for the star field)."""
+    enu_to_ecef = LocalFrame(lat, lon).rotation.T  # columns: E, N, U in ECEF
+    g = greenwich_sidereal_angle(when)
+    rot = np.array([[math.cos(g), -math.sin(g), 0], [math.sin(g), math.cos(g), 0], [0, 0, 1]])
+    return rot @ enu_to_ecef

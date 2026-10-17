@@ -7,7 +7,11 @@ Tiles known to be unavailable (HTTP 404, placeholder images) are recorded as emp
 from __future__ import annotations
 
 import os
+import threading
+from collections import OrderedDict
+from collections.abc import Hashable
 from pathlib import Path
+from typing import Any
 
 
 class TileCache:
@@ -46,6 +50,36 @@ class TileCache:
         path = self.missing_path(provider_id, z, x, y)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
+
+
+class LruCache:
+    """Thread-safe in-memory cache that drops the least recently used entries beyond ``limit``
+    (``None`` is a valid cached value: "known to be unavailable")."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self._items: OrderedDict[Hashable, Any] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def lookup(self, key: Hashable) -> tuple[bool, Any]:
+        """(True, value) for a cached key (now the most recent one), else (False, None)."""
+        with self._lock:
+            if key in self._items:
+                self._items.move_to_end(key)
+                return True, self._items[key]
+        return False, None
+
+    def put(self, key: Hashable, value: Any) -> Any:
+        """Store ``value`` as the most recent entry and return it."""
+        with self._lock:
+            self._items[key] = value
+            self._items.move_to_end(key)
+            while len(self._items) > self.limit:
+                self._items.popitem(last=False)
+        return value
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 
 def write_atomic(path: Path, data: bytes) -> None:

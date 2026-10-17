@@ -18,9 +18,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from pyglm import glm
 
-from earthling.core.geo import MERCATOR_HALF, LocalFrame, geodetic_to_ecef, tile_to_lonlat
+from earthling.core.geo import MERCATOR_HALF, LocalFrame, TileKey, geodetic_to_ecef, tile_to_lonlat
 
-TileKey = tuple[int, int, int]
 TEXELS_PER_NODE = 1024  # imagery texture edge length per node
 
 

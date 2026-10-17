@@ -8,10 +8,11 @@ import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 
-from earthling.data.cache import TileCache
+from earthling.data.cache import TileCache, write_atomic
 from earthling.data.providers import USER_AGENT, TileProvider
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,9 @@ class DownloadProgress:
     @property
     def finished(self) -> bool:
         return self.done >= self.total
+
+
+ProgressCallback = Callable[[DownloadProgress], None]
 
 
 def http_client(transport: httpx.BaseTransport | None = None, **kwargs) -> httpx.Client:
@@ -175,3 +179,35 @@ class TileDownloader:
             delay = min(delay * 2, 30.0)
         log.warning("giving up on tile %s", last_error)
         return "failed", 0, last_error
+
+
+# --- Natural Earth (borders, countries, cities): one GeoJSON file per dataset ------------------
+NATURAL_EARTH_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
+
+
+def natural_earth_path(cache: TileCache, dataset: str) -> Path:
+    """Cache file of a Natural Earth dataset (e.g. ``ne_50m_admin_0_countries``)."""
+    return cache.root / "_vector" / "naturalearth" / f"{dataset}.geojson"
+
+
+def ensure_natural_earth(
+    cache: TileCache, dataset: str, allow_download: bool = True
+) -> Path | None:
+    """The cached dataset file, downloaded first when missing; None when offline or when
+    downloads are not allowed (the data is optional)."""
+    path = natural_earth_path(cache, dataset)
+    if path.exists():
+        return path
+    if not allow_download:
+        return None
+    url = f"{NATURAL_EARTH_URL}/{dataset}.geojson"
+    log.info("downloading %s", url)
+    try:
+        with http_client() as client:
+            response = client.get(url, timeout=120.0)
+            response.raise_for_status()
+        write_atomic(path, response.content)
+    except Exception as exc:  # offline etc.
+        log.warning("cannot download %s: %s", url, exc)
+        return None
+    return path

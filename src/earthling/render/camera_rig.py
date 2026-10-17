@@ -13,6 +13,7 @@ import numpy as np
 
 from earthling.core.animation import Animation
 from earthling.core.camera_path import orientation_to_quat, quat_to_orientation, slerp
+from earthling.core.easing import smooth01
 from earthling.core.properties import PropertyStore
 
 Pose = tuple[float, float, float, float, float, float]
@@ -36,11 +37,6 @@ def blend_poses(a: Pose, b: Pose, f: float) -> Pose:
     q = slerp(orientation_to_quat(*a[3:]), orientation_to_quat(*b[3:]), f)
     h, pitch, roll = quat_to_orientation(q)
     return (float(p[0]), float(p[1]), float(p[2]), h, pitch, roll)
-
-
-def smoothstep(x: float) -> float:
-    x = min(max(x, 0.0), 1.0)
-    return x * x * (3 - 2 * x)
 
 
 class CameraRig:
@@ -114,7 +110,7 @@ class CameraRig:
                 previous_mode, switch_time = k0.value, k1.time
         if previous_mode is None or time - switch_time >= transition:
             return current
-        f = smoothstep((time - switch_time) / transition)
+        f = smooth01((time - switch_time) / transition)
         return blend_poses(self.pose_for_mode(previous_mode, time), current, f)
 
 

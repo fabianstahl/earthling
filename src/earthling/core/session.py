@@ -64,6 +64,25 @@ def load_group_tracks(path: Path) -> tuple[list[Track], list[str]]:
     return tracks, errors
 
 
+def _lookup(key: str, get, ids) -> list:
+    """Registered providers / DEM sources by id (a ConfigError names the unknown one)."""
+    try:
+        return [get(i) for i in ids]
+    except KeyError as exc:
+        raise ConfigError(f"sources.{key}: {exc.args[0]}") from exc
+
+
+def _union(aois: list[AreaOfInterest]) -> AreaOfInterest | None:
+    """One area of interest covering all of ``aois`` (None for none)."""
+    if len(aois) <= 1:
+        return aois[0] if aois else None
+    return AreaOfInterest(
+        aoi=shapely.union_all([a.aoi for a in aois]),
+        zones=[shapely.union_all([a.zones[0] for a in aois])],
+        tracks=shapely.union_all([a.tracks for a in aois]),
+    )
+
+
 class Session:
     def __init__(self, project: Project) -> None:
         self.project = project
@@ -75,34 +94,23 @@ class Session:
         self.all_tracks: list[Track] = [t for g in self.groups for t in g.tracks]
         # "the hike": the walked tracks (progress, marker, stats, labels follow them)
         self.tracks: list[Track] = [t for t in self.all_tracks if t.role == "walked"]
-        try:
-            self.imagery_providers: list[TileProvider] = [
-                get_provider(pid) for pid in self.config.sources.imagery
-            ]
-        except KeyError as exc:
-            raise ConfigError(f"sources.imagery: {exc.args[0]}") from exc
-        if not self.imagery_providers:
-            raise ConfigError("sources.imagery must name at least one provider")
-        try:
-            self.topo_providers: list[TileProvider] = [
-                get_provider(pid) for pid in self.config.sources.topo
-            ]
-        except KeyError as exc:
-            raise ConfigError(f"sources.topo: {exc.args[0]}") from exc
         from earthling.data.dem import DemSource, get_dem_source
 
-        try:
-            self.dem_sources: list[DemSource] = [get_dem_source(d) for d in self.config.sources.dem]
-        except KeyError as exc:
-            raise ConfigError(f"sources.dem: {exc.args[0]}") from exc
+        sources = self.config.sources
+        self.imagery_providers: list[TileProvider] = _lookup(
+            "imagery", get_provider, sources.imagery
+        )
+        if not self.imagery_providers:
+            raise ConfigError("sources.imagery must name at least one provider")
+        self.topo_providers: list[TileProvider] = _lookup("topo", get_provider, sources.topo)
+        self.dem_sources: list[DemSource] = _lookup("dem", get_dem_source, sources.dem)
         if not self.dem_sources:
             raise ConfigError("sources.dem must name at least one source")
         self.colour_reference: TileProvider | None = None
-        if self.config.sources.colour_reference:
-            try:
-                self.colour_reference = get_provider(self.config.sources.colour_reference)
-            except KeyError as exc:
-                raise ConfigError(f"sources.colour_reference: {exc.args[0]}") from exc
+        if sources.colour_reference:
+            [self.colour_reference] = _lookup(
+                "colour_reference", get_provider, [sources.colour_reference]
+            )
         self.cache = TileCache(project.cache_dir)
 
     def _load_groups(self) -> list[TrackGroup]:
@@ -197,30 +205,13 @@ class Session:
     @cached_property
     def aoi(self) -> AreaOfInterest | None:
         """All groups together (the union of their areas)."""
-        aois = [g.aoi for g in self.groups if g.aoi is not None]
-        if not aois:
-            return None
-        if len(aois) == 1:
-            return aois[0]
-        return AreaOfInterest(
-            aoi=shapely.union_all([a.aoi for a in aois]),
-            zones=[shapely.union_all([a.zones[0] for a in aois])],
-            tracks=shapely.union_all([a.tracks for a in aois]),
-        )
+        return _union([g.aoi for g in self.groups if g.aoi is not None])
 
     @cached_property
     def detail_aoi(self) -> AreaOfInterest | None:
         """The groups with labels (by default the walked ones): labels, local frame."""
         aois = [g.aoi for g in self.groups if g.aoi is not None and g.labels]
-        if len(aois) == 1:
-            return aois[0]
-        if not aois:
-            return self.aoi
-        return AreaOfInterest(
-            aoi=shapely.union_all([a.aoi for a in aois]),
-            zones=[shapely.union_all([a.zones[0] for a in aois])],
-            tracks=shapely.union_all([a.tracks for a in aois]),
-        )
+        return _union(aois) if aois else self.aoi
 
     @cached_property
     def frame(self) -> LocalFrame:

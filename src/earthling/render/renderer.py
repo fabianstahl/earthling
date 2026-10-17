@@ -21,6 +21,7 @@ from pyglm import glm
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore, bind_uniforms
+from earthling.core.sun import enu_to_celestial
 from earthling.render.bloom import Bloom
 from earthling.render.camera import Camera, far_for_height
 from earthling.render.hud import HudLayer
@@ -29,7 +30,6 @@ from earthling.render.layers import generate_glsl, required_tile_sources
 from earthling.render.lighting import (
     Lighting,
     compute_lighting,
-    enu_to_celestial,
     lighting_uniforms,
 )
 from earthling.render.lightning import LightningLayer

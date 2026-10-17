@@ -3,21 +3,18 @@
 from __future__ import annotations
 
 import contextlib
-import threading
-from collections import OrderedDict
 from dataclasses import dataclass
 
 import numpy as np
 
 from earthling.core.aoi import TilePlan
-from earthling.core.geo import tile_bounds_mercator
-from earthling.data.cache import TileCache
+from earthling.core.geo import TileKey, tile_bounds_mercator
+from earthling.data.cache import LruCache, TileCache
 from earthling.data.dem import GRID_INTERVALS, read_heightmap
 from earthling.data.downloader import TileDownloader
 from earthling.data.imagery import compose_tile_texture
 from earthling.data.providers import TileProvider
 
-TileKey = tuple[int, int, int]
 TEXEL_ZOOM_OFFSET = 2  # node imagery = 4x4 tiles at z + 2 (1024 px)
 
 
@@ -94,9 +91,7 @@ class TerrainData:
         self._imagery_sets = {
             z: {(int(x), int(y)) for x, y in t} for z, t in plan.levels.get("imagery", {}).items()
         }
-        self._heightmaps: OrderedDict[TileKey, np.ndarray | None] = OrderedDict()
-        self._max = max_heightmaps
-        self._lock = threading.Lock()
+        self._heightmaps = LruCache(max_heightmaps)
         reference = colour_reference[0] if colour_reference is not None else None
         providers = [p for stack in self.stacks.values() for p in stack]
         if reference is not None:
@@ -116,10 +111,9 @@ class TerrainData:
             )  # fmt: skip
 
     def _heightmap(self, key: TileKey) -> np.ndarray | None:
-        with self._lock:
-            if key in self._heightmaps:
-                self._heightmaps.move_to_end(key)
-                return self._heightmaps[key]
+        hit, heights = self._heightmaps.lookup(key)
+        if hit:
+            return heights
         heights = self._composite_heightmap(key)
         if heights is not None and key[0] > 0 and not np.isfinite(heights).all():
             # gaps no source covers at this zoom (e.g. a national DEM ending at the border):
@@ -128,11 +122,7 @@ class TerrainData:
             parent = self._heightmap((z - 1, x >> 1, y >> 1))
             if parent is not None:
                 heights = fill_from_parent(heights, parent, x & 1, y & 1)
-        with self._lock:
-            self._heightmaps[key] = heights
-            while len(self._heightmaps) > self._max:
-                self._heightmaps.popitem(last=False)
-        return heights
+        return self._heightmaps.put(key, heights)
 
     def _composite_heightmap(self, key: TileKey) -> np.ndarray | None:
         """The heightmap of ``key`` from the DEM sources in priority order. All sources are

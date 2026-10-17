@@ -20,8 +20,7 @@ import math
 import re
 import threading
 import time
-from collections import OrderedDict
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,8 +38,14 @@ from earthling.core.geo import (
     tile_bounds_lonlat,
     tile_bounds_mercator,
 )
-from earthling.data.cache import TileCache, write_atomic
-from earthling.data.downloader import MAX_RETRIES, DownloadProgress, RateLimiter, http_client
+from earthling.data.cache import LruCache, TileCache, write_atomic
+from earthling.data.downloader import (
+    MAX_RETRIES,
+    DownloadProgress,
+    ProgressCallback,
+    RateLimiter,
+    http_client,
+)
 from earthling.data.providers import License
 
 log = logging.getLogger(__name__)
@@ -53,8 +58,6 @@ HEIGHTMAP_SAMPLES = GRID_INTERVALS + 3  # 259
 HEIGHT_SCALE = 0.2
 HEIGHT_OFFSET = -1000.0
 NODATA_VALUE = 0
-
-ProgressCallback = Callable[[DownloadProgress], None]
 
 
 # --- encoding ----------------------------------------------------------------------------
@@ -262,8 +265,7 @@ class TerrariumDemSource(DemSource):
     )
 
     def __init__(self) -> None:
-        self._tiles: OrderedDict[tuple[int, int, int], np.ndarray | None] = OrderedDict()
-        self._lock = threading.Lock()
+        self._tiles = LruCache(256)
 
     def files_for_bounds(self, bounds, client=None):
         return []
@@ -274,10 +276,9 @@ class TerrariumDemSource(DemSource):
             return None
         x %= n
         key = (z, x, y)
-        with self._lock:
-            if key in self._tiles:
-                self._tiles.move_to_end(key)
-                return self._tiles[key]
+        hit, heights = self._tiles.lookup(key)
+        if hit:
+            return heights
         response = client.get(self.url_template.format(z=z, x=x, y=y))
         if response.status_code in (403, 404):
             heights = None
@@ -286,11 +287,7 @@ class TerrariumDemSource(DemSource):
             rgb = np.asarray(Image.open(io.BytesIO(response.content)).convert("RGB"), np.float32)
             heights = rgb[..., 0] * 256.0 + rgb[..., 1] + rgb[..., 2] / 256.0 - 32768.0
             heights = np.maximum(heights, 0.0)  # sea level instead of bathymetry
-        with self._lock:
-            self._tiles[key] = heights
-            while len(self._tiles) > 256:
-                self._tiles.popitem(last=False)
-        return heights
+        return self._tiles.put(key, heights)
 
     def fetch_tile(self, z, x, y, client):
         zs = min(z, self.max_zoom)
@@ -547,20 +544,14 @@ class DemBaker:
         self._client = client
         self._limiter = RateLimiter(source.max_requests_per_second)
         self.folder = source_dir(cache, source)
-        self._rasters: OrderedDict[tuple[str, int], _Raster] = OrderedDict()
-        self._max_rasters = max_rasters
+        self._rasters = LruCache(max_rasters)
 
     def _raster(self, filename: str, decimation: int) -> _Raster:
         key = (filename, decimation)
-        raster = self._rasters.get(key)
-        if raster is None:
-            raster = _Raster(self.folder / filename, decimation)
-            self._rasters[key] = raster
-            while len(self._rasters) > self._max_rasters:
-                self._rasters.popitem(last=False)
-        else:
-            self._rasters.move_to_end(key)
-        return raster
+        hit, raster = self._rasters.lookup(key)
+        if hit:
+            return raster
+        return self._rasters.put(key, _Raster(self.folder / filename, decimation))
 
     def _decimation_for(self, z: int, lat: float) -> int:
         spacing = sample_spacing_m(z, lat)

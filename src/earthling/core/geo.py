@@ -25,6 +25,8 @@ WGS84_EP2 = (WGS84_A**2 - WGS84_B**2) / WGS84_B**2
 MERCATOR_HALF = math.pi * WGS84_A  # 20037508.342789244
 MERCATOR_MAX_LAT = 85.05112877980659
 
+TileKey = tuple[int, int, int]  # (z, x, y) of an XYZ tile
+
 
 # --- ECEF --------------------------------------------------------------------------------
 def geodetic_to_ecef(lat, lon, h=0.0) -> np.ndarray:

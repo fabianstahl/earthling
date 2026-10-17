@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 
 import numpy as np
 
+from earthling.core.easing import smoothstep
 from earthling.core.properties import PropertyStore
 from earthling.core.sun import SunPosition, local_to_aware, solar_position
 from earthling.render.atmosphere import sun_transmittance
@@ -15,33 +15,6 @@ from earthling.render.atmosphere import sun_transmittance
 
 def srgb_to_linear(c) -> tuple[float, float, float]:
     return tuple(float(v) ** 2.2 for v in c)  # type: ignore[return-value]
-
-
-def smoothstep(e0: float, e1: float, x: float) -> float:
-    t = min(1.0, max(0.0, (x - e0) / (e1 - e0)))
-    return t * t * (3.0 - 2.0 * t)
-
-
-def greenwich_sidereal_angle(when: datetime) -> float:
-    """Greenwich mean sidereal time as an angle in radians."""
-    jd = when.astimezone(UTC).timestamp() / 86400.0 + 2440587.5
-    d = jd - 2451545.0
-    gmst_deg = (280.46061837 + 360.98564736629 * d) % 360.0
-    return math.radians(gmst_deg)
-
-
-def enu_to_celestial(when: datetime, lat: float, lon: float) -> np.ndarray:
-    """3x3 matrix mapping ENU directions to the (Earth-centred) equatorial frame."""
-    phi, lam = math.radians(lat), math.radians(lon)
-    east = np.array([-math.sin(lam), math.cos(lam), 0.0])
-    north = np.array(
-        [-math.sin(phi) * math.cos(lam), -math.sin(phi) * math.sin(lam), math.cos(phi)]
-    )
-    up = np.array([math.cos(phi) * math.cos(lam), math.cos(phi) * math.sin(lam), math.sin(phi)])
-    enu_to_ecef = np.column_stack([east, north, up])
-    g = greenwich_sidereal_angle(when)
-    rot = np.array([[math.cos(g), -math.sin(g), 0], [math.sin(g), math.cos(g), 0], [0, 0, 1]])
-    return rot @ enu_to_ecef
 
 
 @dataclass

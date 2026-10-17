@@ -18,14 +18,13 @@ zone). Means of tiles and nodes are cached.
 from __future__ import annotations
 
 import io
-import threading
-from collections import OrderedDict
 from collections.abc import Callable
 
 import numpy as np
 from PIL import Image
 
-from earthling.data.cache import TileCache
+from earthling.core.geo import TileKey
+from earthling.data.cache import LruCache, TileCache
 from earthling.data.imagery import decode_image, load_tile_rgb
 from earthling.data.providers import TileProvider
 
@@ -35,8 +34,6 @@ CONTEXT = 5  # blocks of the neighbours around a node
 SIGMA = 1.5  # blur radius in blocks
 EPS = 3.0  # (0-255) keeps the gain stable in very dark areas
 GAIN_RANGE = (0.15, 5.0)  # glinting sea (white ~200) down to ~30, a dark sea up to turquoise
-
-TileKey = tuple[int, int, int]
 
 
 def _gaussian_kernel(sigma: float) -> np.ndarray:
@@ -89,44 +86,25 @@ class ColourReference:
         self.max_zoom = min(max_zoom, reference.max_zoom)
         self.strength = strength
         self.ensure_reference = ensure_reference
-        self._means: OrderedDict[tuple, np.ndarray | None] = OrderedDict()
-        self._decoded: OrderedDict[tuple, np.ndarray | None] = OrderedDict()
-        self._max = max_entries
-        self._lock = threading.Lock()
+        self._means = LruCache(max_entries)
+        self._decoded = LruCache(4096)
 
     # --- block means ---------------------------------------------------------------------
-    def _remember(self, store: OrderedDict, key, value, limit: int):
-        with self._lock:
-            store[key] = value
-            store.move_to_end(key)
-            while len(store) > limit:
-                store.popitem(last=False)
-        return value
-
-    def _cached(self, store: OrderedDict, key):
-        with self._lock:
-            if key in store:
-                store.move_to_end(key)
-                return True, store[key]
-        return False, None
-
     def source_means(self, z: int, x: int, y: int) -> np.ndarray | None:
         key = ("s", z, x, y)
-        hit, value = self._cached(self._means, key)
+        hit, value = self._means.lookup(key)
         if hit:
             return value
         data = self.cache.read(self.source.id, z, x, y, self.source.ext)
         if data is not None:  # means only: a small decode is enough
-            return self._remember(self._means, key, _block_means(_decode_small(data, 32)),
-                                  self._max)  # fmt: skip
+            return self._means.put(key, _block_means(_decode_small(data, 32)))
         found = load_tile_rgb(self.cache, self.source, z, x, y)  # an ancestor's crop
-        return self._remember(self._means, key, None if found is None else
-                              _block_means(found[0]), self._max)  # fmt: skip
+        return self._means.put(key, None if found is None else _block_means(found[0]))
 
     def _reference_tile(self, z: int, x: int, y: int, size: int) -> np.ndarray | None:
         """The reference tile decoded at about ``size`` pixels (enough for the means)."""
         key = (z, x, y, size)
-        hit, value = self._cached(self._decoded, key)
+        hit, value = self._decoded.lookup(key)
         if hit:
             return value
         if self.ensure_reference is not None:
@@ -146,23 +124,23 @@ class ColourReference:
             ox, oy = (x - ((x >> up) << up)) * sub, (y - ((y >> up) << up)) * sub
             image = tile[oy : oy + sub, ox : ox + sub]
             break
-        return self._remember(self._decoded, key, image, 4096)
+        return self._decoded.put(key, image)
 
     def reference_means(self, z: int, x: int, y: int) -> np.ndarray | None:
         key = ("r", z, x, y)
-        hit, value = self._cached(self._means, key)
+        hit, value = self._means.lookup(key)
         if hit:
             return value
         up = max(0, z - self.max_zoom)
         tile = self._reference_tile(z - up, x >> up, y >> up, min(256, 32 << up))
         if tile is None:
-            return self._remember(self._means, key, None, self._max)
+            return self._means.put(key, None)
         n = 1 << up
         size = tile.shape[0]
         sub = max(1, size // n)
         ox, oy = (x - ((x >> up) << up)) * size // n, (y - ((y >> up) << up)) * size // n
         crop = tile[oy : oy + sub, ox : ox + sub]
-        return self._remember(self._means, key, _block_means(crop), self._max)
+        return self._means.put(key, _block_means(crop))
 
     # --- per node blocks --------------------------------------------------------------
     def node_blocks(self, which: str, key: TileKey, block_zoom: int, image_zoom: int = 0):
@@ -170,7 +148,7 @@ class ColourReference:
         ``block_zoom`` (nb = 2^(block_zoom - z)): the source imagery as the node shows it (at
         ``image_zoom``, "s") or the reference ("r")."""
         cache_key = (which, *key, block_zoom, image_zoom if which == "s" else -1)
-        hit, value = self._cached(self._means, cache_key)
+        hit, value = self._means.lookup(cache_key)
         if hit:
             return value
         z, x, y = key
@@ -202,7 +180,7 @@ class ColourReference:
             f = nb // k
             grid = np.repeat(np.repeat(grid, f, axis=0), f, axis=1)
             weight = np.repeat(np.repeat(weight, f, axis=0), f, axis=1)
-        return self._remember(self._means, cache_key, (grid, weight), self._max)
+        return self._means.put(cache_key, (grid, weight))
 
     # --- harmonisation -------------------------------------------------------------------
     def gain(self, z: int, x: int, y: int, zoom_of: Callable[[TileKey], int]):

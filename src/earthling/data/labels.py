@@ -23,13 +23,12 @@ import numpy as np
 import shapely
 
 from earthling.data.cache import TileCache, write_atomic
-from earthling.data.downloader import http_client
+from earthling.data.downloader import ensure_natural_earth, http_client, natural_earth_path
 
 log = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 ATTRIBUTION = "Labels: © OpenStreetMap contributors (ODbL)"
-NE_BASE_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
 NE_DATASETS = {"countries": "ne_50m_admin_0_countries", "cities": "ne_10m_populated_places_simple"}
 NE_MIN_POPULATION = 100_000  # smaller towns come from OpenStreetMap
 LARGE_AREA_DEG2 = 40.0  # no Overpass query beyond (about 600 x 400 km in central Europe)
@@ -176,22 +175,13 @@ def is_large(bounds) -> bool:
 
 # --- Natural Earth: countries and cities -----------------------------------------------------
 def ne_path(cache: TileCache, name: str) -> Path:
-    return cache.root / "_vector" / "naturalearth" / f"{NE_DATASETS[name]}.geojson"
+    return natural_earth_path(cache, NE_DATASETS[name])
 
 
 def _ne_dataset(cache: TileCache, name: str, allow_download: bool) -> dict | None:
-    path = ne_path(cache, name)
-    if not path.exists():
-        if not allow_download:
-            return None
-        try:
-            with http_client() as client:
-                response = client.get(f"{NE_BASE_URL}/{NE_DATASETS[name]}.geojson", timeout=120.0)
-                response.raise_for_status()
-            write_atomic(path, response.content)
-        except Exception as exc:  # offline: no country and city labels
-            log.warning("cannot download %s: %s", name, exc)
-            return None
+    path = ensure_natural_earth(cache, NE_DATASETS[name], allow_download)
+    if path is None:  # offline: no country and city labels
+        return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):

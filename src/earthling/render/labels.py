@@ -18,6 +18,7 @@ import moderngl
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from earthling.core.easing import smoothstep, smoothstep_array
 from earthling.data.labels import LabelData, LabelFeature, enrich
 from earthling.render.camera import Camera
 from earthling.render.scale import pixel_scale
@@ -166,11 +167,6 @@ class FontAtlas:
 
 
 # --- layer ---------------------------------------------------------------------------------
-def smoothstep(e0: float, e1: float, x):
-    t = np.clip((np.asarray(x, dtype=np.float64) - e0) / max(e1 - e0, 1e-9), 0.0, 1.0)
-    return t * t * (3.0 - 2.0 * t)
-
-
 def label_texts(feature: LabelFeature, show_elevation: bool, lang: str = "en") -> tuple[str, str]:
     name = feature.display(lang)
     if feature.kind == "country":
@@ -374,7 +370,7 @@ class LabelLayer:
         on_screen = front & (np.abs(ndc) < 1.15).all(axis=1)
         distance = np.linalg.norm(rel, axis=1)
         max_distance = store["labels.max_distance"] * 1000.0
-        fade = 1.0 - smoothstep(0.7 * max_distance, max_distance, distance)
+        fade = 1.0 - smoothstep_array(0.7 * max_distance, max_distance, distance)
         if store["labels.follow_progress"] and self.path is not None:
             passed = self._passed_at(anchors)[idx]
             reveal = max(store["labels.progress_fade"], 1e-3)
@@ -490,11 +486,11 @@ class LabelLayer:
             _pairwise_fraction(rects, stems, of_first=False),  # own text over j's leader
         ])  # fmt: skip
         np.fill_diagonal(conflicts, 0.0)
-        top_fade = smoothstep(0.0, 12.0 * k, top)
+        top_fade = smoothstep_array(0.0, 12.0 * k, top)
         blocked = np.zeros(len(idx))
         verts: list[np.ndarray] = []
         for i in range(len(idx)):
-            a = alpha0[i] * (1.0 - _smooth(0.0, 0.06, blocked[i])) * top_fade[i]
+            a = alpha0[i] * (1.0 - smoothstep(0.0, 0.06, blocked[i])) * top_fade[i]
             if a < 0.02:
                 continue
             if a > 0.12:  # even faint (partly hidden) labels reserve their space
@@ -603,11 +599,6 @@ class LabelLayer:
             self._vis_vao.release()
         if self.atlas is not None:
             self.atlas.release()
-
-
-def _smooth(e0: float, e1: float, x: float) -> float:
-    t = min(max((x - e0) / (e1 - e0), 0.0), 1.0)
-    return t * t * (3.0 - 2.0 * t)
 
 
 def _pairwise_fraction(a: np.ndarray, b: np.ndarray, of_first: bool) -> np.ndarray:

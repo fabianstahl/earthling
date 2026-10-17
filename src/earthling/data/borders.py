@@ -21,11 +21,10 @@ from shapely.strtree import STRtree
 
 from earthling.core.geo import lonlat_to_mercator, tile_bounds_lonlat, tile_bounds_mercator
 from earthling.data.cache import TileCache, write_atomic
-from earthling.data.downloader import http_client
+from earthling.data.downloader import ensure_natural_earth, natural_earth_path
 
 log = logging.getLogger(__name__)
 
-BASE_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
 DATASETS = {
     "countries": "ne_10m_admin_0_boundary_lines_land",
     "regions": "ne_10m_admin_1_states_provinces_lines",
@@ -37,7 +36,7 @@ MIN_REGION_ZOOM = 7  # regional borders are too dense to matter on coarser nodes
 
 
 def dataset_path(cache: TileCache, name: str) -> Path:
-    return cache.root / "_vector" / "naturalearth" / f"{DATASETS[name]}.geojson"
+    return natural_earth_path(cache, DATASETS[name])
 
 
 def clamped_distance_field(segments: np.ndarray, size: int, max_dist: float) -> np.ndarray:
@@ -106,22 +105,7 @@ class BorderData:
 
     # --- loading ----------------------------------------------------------------------
     def ensure_downloaded(self, name: str) -> Path | None:
-        path = dataset_path(self.cache, name)
-        if path.exists():
-            return path
-        if not self.allow_download:
-            return None
-        url = f"{BASE_URL}/{DATASETS[name]}.geojson"
-        log.info("downloading %s", url)
-        try:
-            with http_client() as client:
-                response = client.get(url, timeout=120.0)
-                response.raise_for_status()
-            write_atomic(path, response.content)
-        except Exception as exc:  # offline etc.: borders are optional
-            log.warning("cannot download %s: %s", url, exc)
-            return None
-        return path
+        return ensure_natural_earth(self.cache, DATASETS[name], self.allow_download)
 
     @staticmethod
     def _clean(path: Path) -> None:

@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 
+from earthling.core.sun import enu_to_celestial
 from earthling.render.atmosphere import (
     BLOCKED_DEPTH,
     MIE_SCALE_HEIGHT,
@@ -13,7 +14,6 @@ from earthling.render.atmosphere import (
     optical_depth_lut,
     sun_transmittance,
 )
-from earthling.render.lighting import enu_to_celestial
 
 
 def test_zenith_optical_depth_equals_scale_heights():
