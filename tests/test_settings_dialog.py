@@ -26,7 +26,7 @@ def test_settings_dialog_saves_and_the_scene_stays_open(qtbot, tmp_path):
     text = dialog.editor.toPlainText()
     dialog.editor.setPlainText(text + "\n[area\n")
     assert not dialog.check()
-    dialog.editor.setPlainText(text.replace('timezone', '# (edited)\ntimezone', 1))
+    dialog.editor.setPlainText(text.replace("timezone", "# (edited)\ntimezone", 1))
     assert dialog.check()
     dialog._save()
     assert "# (edited)" in window.project.config_path.read_text(encoding="utf-8")
