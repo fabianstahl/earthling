@@ -99,7 +99,7 @@ dem     = ["ign_rgealti", "swisstopo_alti3d", "copernicus_glo30"]
 
 Several track groups can have their own detail zones and styles. For example, your walked days
 can get full detail while a 3000 km planned route gets a coarse overview (`[[tracks]]`, see
-[ROADMAP.md](ROADMAP.md), phase 14).
+[docs/configuration.md](docs/configuration.md), which describes every key).
 
 GPS watches often count a few kilometres too many. When you know the true distance at some
 points (km signs, photos taken at them), a group can correct the distance shown in the stats
@@ -123,8 +123,18 @@ uv run earthling plan   <project>             # tiles and download size per zone
 uv run earthling fetch  <project>             # download everything into the cache
 uv run earthling render <project> --scene scene.json --preset h264 --resolution 3840x2160
 uv run earthling render --list-presets
+uv run earthling stills <project> --scene scene.json 0 5 12.5   # preview stills + contact sheet
+uv run earthling qa     renders/video.mp4                       # contact sheet, jumps, flashes
 uv run earthling check-source <project> ign_bdortho --out contact-sheet/   # test a source
 ```
+
+## Scene scripts
+
+Scenes can be built in the application or written by Python scripts with the scene kit
+(`earthling.scenekit`): load a project's journey, plan smooth chase, orbit or map cameras,
+draw the line along a day's track, add POIs, light and still seconds at both ends, and save
+`scenes/<name>.json` for `earthling render`. The showcase scenes in
+[examples/showcase/tools](examples/showcase/tools) are examples.
 
 ## Data sources
 
@@ -148,4 +158,5 @@ uv run pytest
 uv run ruff check
 ```
 
-[ROADMAP.md](ROADMAP.md) documents the architecture and every implemented step.
+[docs/architecture.md](docs/architecture.md) explains how the code is organised,
+[ROADMAP.md](ROADMAP.md) lists every implemented step.

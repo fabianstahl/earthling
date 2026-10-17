@@ -138,7 +138,7 @@ class DistanceMark(_Model):
 
 
 class TrackGroupDef(_Model):
-    """A group of GPX files (``[[tracks]]``), see ROADMAP step 14.1.
+    """A group of GPX files (``[[tracks]]``), see docs/configuration.md.
 
     ``role = "walked"``: the hike itself (progress, hiker marker, stats, labels follow it);
     ``role = "planned"``: e.g. the official route of a trail, always drawn in full. Every group
