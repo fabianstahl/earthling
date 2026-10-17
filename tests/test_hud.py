@@ -300,3 +300,27 @@ def test_minimap(gl_ctx):
     red = lambda img: ((img[..., 0] > 150) & (img[..., 1] < 80)).sum()  # noqa: E731
     half = draw(5_000.0).astype(int)
     assert red(half[:270, 480:]) > red(corner) + 20  # the drawn part in the track colour
+
+
+def test_time_without_date(gl_ctx):
+    """The clock alone (no date) is shown too: a race through the night."""
+    store = Scene().store
+    store.set("stats.visible", True)
+    store.set("stats.show_date", False)
+    atlas = FontAtlas(gl_ctx)
+    hud = HudLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    fbo = gl_ctx.simple_framebuffer((960, 540))
+
+    def draw(show_time: bool) -> np.ndarray:
+        store.set("stats.show_time", show_time)
+        fbo.use()
+        fbo.clear(0.0, 0.0, 0.0, 1.0)
+        hud.render(fbo, 960, 540, store, fake_path(), 20_000.0, "UTC")
+        img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(540, 960, 3)[::-1]
+        return img.astype(int)
+
+    without, with_time = draw(False), draw(True)
+    changed = np.abs(with_time - without).max(axis=2) > 60
+    assert changed.sum() > 40  # "12:00 Uhr" next to the title
+    ys, xs = np.nonzero(changed)
+    assert xs.max() < 480 and ys.min() > 270  # in the panel (bottom left)

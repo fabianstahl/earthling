@@ -503,14 +503,18 @@ class HudLayer:
         day_word = "days" if store["stats.day_style"] == "count" else "day"
         title = word(lang, day_word).format(n=v.day) if store["stats.show_day"] else ""
         subtitle = ""
-        if store["stats.show_date"] and v.time is not None:
-            subtitle = format_date(v.time, store["stats.date_format"], lang)
-            if store["stats.show_time"]:
-                subtitle += "  " + word(lang, "time").format(t=v.time)
+        if v.time is not None and (store["stats.show_date"] or store["stats.show_time"]):
+            parts = []
+            if store["stats.show_date"]:
+                parts.append(format_date(v.time, store["stats.date_format"], lang))
+            if store["stats.show_time"]:  # (also without the date: a race through the night)
+                clock = word(lang, "time").format(t=v.time)
                 if store["stats.show_utc_offset"]:
                     from earthling.core.timezones import utc_offset_text
 
-                    subtitle += f" ({utc_offset_text(v.time)})"
+                    clock += f" ({utc_offset_text(v.time)})"
+                parts.append(clock)
+            subtitle = "  ".join(parts)
         title_size, sub_size = 28.0 * s, 19.0 * s
         text = store["stats.text"].strip()
         # (text, caption, template): the template is the widest the value can get, so the

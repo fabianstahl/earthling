@@ -802,6 +802,10 @@ mark is searched after the previous mark.
 Two more built-in POI icons: `aid` (a cup of water and a banana) and `beerpong` (red cups and a
 ball).
 
+**19.33 Clock without the date**
+The stats panel shows the time of day also when the date is switched off (a race through the
+night: "23:40 Uhr" under the distance, no date).
+
 ---
 
 ## 5. Risks & notes
