@@ -112,8 +112,10 @@ def main() -> None:
         shots.append((float(tt), eye, target))
     key_shots(scene, shots)
 
-    stations = [("moscow", path.tracks[0].enu[0], "flag"),
-                ("beijing", path.tracks[-1].enu[-1], "finish")]
+    stations = [
+        ("moscow", path.tracks[0].enu[0], "flag"),
+        ("beijing", path.tracks[-1].enu[-1], "finish"),
+    ]
     scene.set_pois([poi(pid, where, icon, 40.0) for pid, where, icon in stations])
     show(scene, "moscow", None)
     show(scene, "beijing", RIDE[1] - 0.3)

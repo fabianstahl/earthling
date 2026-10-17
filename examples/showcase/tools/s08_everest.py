@@ -94,6 +94,7 @@ def main() -> None:
     for t in np.arange(TREK[0], TREK[1] + 1e-9, 1.0 / 15.0):
         key(scene, "progress.head", round(float(t), 4),
             path.progress_for_distance(head_of(t), "time"), Interp.LINEAR)  # fmt: skip
+
     # the sun from the recorded time at the head, switching straight from one day's end to the
     # next morning (the head jumps over the nights: "follow the GPX time" showed a night flash)
     def sun_head(t: float) -> float:

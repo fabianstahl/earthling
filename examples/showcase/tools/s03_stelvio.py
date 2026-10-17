@@ -110,7 +110,7 @@ def main() -> None:
     # the end: above the pass, looking down the wall of hairpins
     pass_top = hike.end(1)
     below = hike.path.position_at(total * 0.88)
-    look = (pass_top * 0.35 + below * 0.65)
+    look = pass_top * 0.35 + below * 0.65
     final_eye = orbit_eye(look, 252.0, -27.0, 2400.0)  # from the east, up the wall
     final_eye[2] = max(final_eye[2], hike.ground_z(final_eye) + 350.0)
     end = [(t, final_eye.copy(), look.copy()) for t in times]

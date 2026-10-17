@@ -71,8 +71,10 @@ def main() -> int:
         if diff[i] > max(args.ratio * base, base + 2.5):
             jumps.append((i + 1, float(diff[i]), base))
     hold = int(round(fps))
-    print(f"{name}: {n} frames at {fps:g} fps ({n / fps:.2f} s), mean change {diff.mean():.2f}, "
-          f"first second {diff[: hold - 1].mean():.2f}, last second {diff[-(hold - 1):].mean():.2f}")
+    print(
+        f"{name}: {n} frames at {fps:g} fps ({n / fps:.2f} s), mean change {diff.mean():.2f}, "
+        f"first second {diff[: hold - 1].mean():.2f}, last second {diff[-(hold - 1) :].mean():.2f}"
+    )
     for i, d, base in jumps[:20]:
         print(f"  jump at {i / fps:6.2f} s (frame {i}): {d:5.1f} vs {base:4.1f}")
     if jumps:

@@ -97,8 +97,9 @@ def main() -> None:
     # the sun: morning light for the opening (the hike starts before sunrise), from the moment
     # the head reaches that time the GPX time, then a time-lapse to dusk
     switch = HIKE[0] + 2.0
-    morning = dt.datetime.fromtimestamp(path.time_at(head_of(switch)),
-                                        dt.timezone(dt.timedelta(hours=-7))).replace(tzinfo=None)
+    morning = dt.datetime.fromtimestamp(
+        path.time_at(head_of(switch)), dt.timezone(dt.timedelta(hours=-7))
+    ).replace(tzinfo=None)
     key(scene, "sun.datetime", 0.0, morning, Interp.STEP)
     key(scene, "sun.follow_track", 0.0, False, Interp.STEP)
     key(scene, "sun.follow_track", switch, True, Interp.STEP)

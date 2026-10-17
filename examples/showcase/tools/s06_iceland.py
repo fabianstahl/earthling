@@ -150,7 +150,11 @@ def main() -> None:
     scene.set_pois(pois)
     show(scene, "reykjavik", None)
     for g in hikes:
-        show(scene, f"hike_{g.track.source.stem}", round(float(np.interp(g.offset_m, md, mt)) - 1.0, 3))
+        show(
+            scene,
+            f"hike_{g.track.source.stem}",
+            round(float(np.interp(g.offset_m, md, mt)) - 1.0, 3),
+        )
     save(scene, "s06_iceland")
 
 

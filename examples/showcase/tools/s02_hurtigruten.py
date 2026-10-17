@@ -105,6 +105,7 @@ def main() -> None:
         boost = float(np.clip((3.0 - elev) / 9.0, 0.0, 1.0))
         key(scene, "post.exposure", round(float(t), 4), 3.6 * boost, Interp.LINEAR)
         key(scene, "light.night_ambient", round(float(t), 4), 1.0 + 9.0 * boost, Interp.LINEAR)
+
     # a calm map camera, north up: no turns, only the zoom changes between the chapters
     # (close: ~9 km away, the ship and the coast; high: ~130 km, the coastline like on a map)
     def distance_of(t: float) -> float:

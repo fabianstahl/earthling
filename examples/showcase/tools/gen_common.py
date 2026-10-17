@@ -57,7 +57,10 @@ def place(p) -> tuple[float, float]:
 # --- geometry ---------------------------------------------------------------------------------
 def haversine(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = map(np.radians, (lat1, lon1, lat2, lon2))
-    a = np.sin((lat2 - lat1) / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin((lon2 - lon1) / 2) ** 2
+    a = (
+        np.sin((lat2 - lat1) / 2) ** 2
+        + np.cos(lat1) * np.cos(lat2) * np.sin((lon2 - lon1) / 2) ** 2
+    )
     return 2 * R_EARTH * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
 
 
@@ -280,7 +283,11 @@ def run_times(pts, ele, start: dt.datetime, finish_s: float, fade: float = 0.06,
     rng = np.random.default_rng(seed)
     x = s[1:] / s[-1]
     slope = np.clip(smooth(slope, 15), -0.04, 0.06)  # (bridges and DEM noise in a flat city)
-    pace = (1.0 + fade * x**2) * (1.0 + 3.0 * slope) * (1.0 + 0.03 * smooth(rng.normal(size=len(ds)), 41))
+    pace = (
+        (1.0 + fade * x**2)
+        * (1.0 + 3.0 * slope)
+        * (1.0 + 0.03 * smooth(rng.normal(size=len(ds)), 41))
+    )
     t = np.concatenate([[0.0], np.cumsum(ds * pace)])
     return start.timestamp() + t * finish_s / t[-1]
 
@@ -334,7 +341,9 @@ def water_route(a, b, land_cost: float | None = None, zoom: int = 12, margin_deg
     from earthling.data.water import WaterData
 
     a, b = place(a), place(b)
-    key = hashlib.md5(f"{a}|{b}|{land_cost}|{zoom}|{margin_deg}|{shore_m}|v2".encode()).hexdigest()[:16]
+    key = hashlib.md5(f"{a}|{b}|{land_cost}|{zoom}|{margin_deg}|{shore_m}|v2".encode()).hexdigest()[
+        :16
+    ]
     path = CACHE / "water_routes" / f"{key}.json"
     if path.exists():
         return np.array(json.loads(path.read_text()))
@@ -478,7 +487,12 @@ def nearest_wet(wet: np.ndarray, cell: tuple[int, int], reach: int = 200) -> tup
     if wet[y, x]:
         return cell
     h, w = wet.shape
-    y0, y1, x0, x1 = max(0, y - reach), min(h, y + reach + 1), max(0, x - reach), min(w, x + reach + 1)
+    y0, y1, x0, x1 = (
+        max(0, y - reach),
+        min(h, y + reach + 1),
+        max(0, x - reach),
+        min(w, x + reach + 1),
+    )
     ys, xs = np.nonzero(wet[y0:y1, x0:x1])
     if not len(ys):
         raise RuntimeError(f"no water near {cell}")

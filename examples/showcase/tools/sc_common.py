@@ -345,7 +345,7 @@ def plan_camera(scene: Scene, hike: Hike | None, views: list[tuple[float, View]]
             if math.isfinite(ground):
                 lift[i] = max(0.0, ground + clearance - eye[2])
         reach = max(1, int(round(1.5 / step)))
-        held = np.array([lift[max(0, i - reach): i + reach + 1].max() for i in range(len(lift))])
+        held = np.array([lift[max(0, i - reach) : i + reach + 1].max() for i in range(len(lift))])
         eyes[:, 2] += np.maximum(gaussian(held, 0.6 / step), lift)
     for t, eye, target, roll in zip(ts, eyes, targets, rolls, strict=True):
         scene.animation.set_key("camera.pose", round(float(t), 4), pose(eye, target, roll),
@@ -519,7 +519,7 @@ def stops(hike: Hike, day: int, min_minutes: float = 4.0, radius_m: float = 40.0
         while j + 1 < len(t) and np.linalg.norm((p[j + 1] - p[i])[:2]) < radius_m:
             j += 1
         if t[j] - t[i] >= min_minutes * 60.0:
-            out.append((float(t[i]), float(t[j]), p[i:j + 1].mean(axis=0)))
+            out.append((float(t[i]), float(t[j]), p[i : j + 1].mean(axis=0)))
             i = j + 1
         else:
             i += 1
@@ -698,7 +698,10 @@ def night_light(scene: Scene, t_from: float, t_to: float, ambient: float = 3.5,
                 exposure: float = 1.4) -> None:  # fmt: skip
     """A readable night (eyes adapted): ambient and exposure rise between t_from and t_to
     (both 0: from the start)."""
-    for pid, value, base in (("light.night_ambient", ambient, 1.0), ("post.exposure", exposure, 0.0)):
+    for pid, value, base in (
+        ("light.night_ambient", ambient, 1.0),
+        ("post.exposure", exposure, 0.0),
+    ):
         if t_to <= 0.0:
             key(scene, pid, 0.0, value)
             continue
@@ -757,8 +760,19 @@ def geo_orbit_eye(hike: Hike, lat: float, lon: float, h: float, heading: float, 
     return eye, target
 
 
-def map_shots(hike: Hike, times, head_of, *, distance_of, heading_of=None, pitch_of=None,
-              sigma_s: float = 2.5, fit: float = 0.28, points_of=None, clearance: float = 300.0):
+def map_shots(
+    hike: Hike,
+    times,
+    head_of,
+    *,
+    distance_of,
+    heading_of=None,
+    pitch_of=None,
+    sigma_s: float = 2.5,
+    fit: float = 0.28,
+    points_of=None,
+    clearance: float = 300.0,
+):
     """Calm map camera: (time, eye, target) with a fixed (or slowly keyed) heading, north up by
     default, looking down steeply at a heavily smoothed point near the head.
 
@@ -781,7 +795,7 @@ def map_shots(hike: Hike, times, head_of, *, distance_of, heading_of=None, pitch
     # needed, not when the head is already at the edge)
     window = max(1, int(step))
     padded = np.pad(dist, window, mode="edge")
-    dist = np.array([padded[i:i + 2 * window + 1].max() for i in range(len(dist))])
+    dist = np.array([padded[i : i + 2 * window + 1].max() for i in range(len(dist))])
     dist = np.exp(gaussian(np.log(dist), step))
     shots = []
     for t, c, d in zip(times, centres, dist, strict=True):
