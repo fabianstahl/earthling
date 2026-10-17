@@ -15,7 +15,6 @@ from PyQt6.QtGui import QIcon, QPixmap, QUndoCommand
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
-    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -32,6 +31,7 @@ from PyQt6.QtWidgets import (
 from earthling.core.pois import Poi, slug
 from earthling.core.scene import Scene
 from earthling.render.pois import builtin_icons, resolve_icon
+from earthling.ui.widgets import double_spin, row
 
 CUSTOM = "__custom__"
 
@@ -92,6 +92,13 @@ class PoiDock(QDockWidget):
         self.hiker_position = hiker_position
         self.request_pick = request_pick
         self.base_dir = base_dir
+        self.setWidget(self._build_body())
+        self._updating = False
+        self._connect()
+        self.refresh()
+
+    def _build_body(self) -> QWidget:
+        """Add/remove buttons, the POI list and the form editing the current POI."""
         body = QWidget()
         layout = QVBoxLayout(body)
         buttons = QHBoxLayout()
@@ -114,65 +121,47 @@ class PoiDock(QDockWidget):
             path = resolve_icon(f"builtin:{name}", None)
             self.icon.addItem(QIcon(QPixmap(str(path))), name, f"builtin:{name}")
         self.icon.addItem("Custom file…", CUSTOM)
-        self.size = QDoubleSpinBox()
-        self.size.setRange(8.0, 512.0)
-        self.size.setSuffix(" px")
-        self.lift = QDoubleSpinBox()
-        self.lift.setRange(0.0, 400.0)
-        self.lift.setSuffix(" px")
+        self.size_px = double_spin(8.0, 512.0, suffix=" px")
+        self.lift = double_spin(0.0, 400.0, suffix=" px")
         self.cols = QSpinBox()
         self.rows = QSpinBox()
         for spin in (self.cols, self.rows):
             spin.setRange(1, 64)
-        self.fps = QDoubleSpinBox()
-        self.fps.setRange(0.5, 60.0)
-        sprite = QHBoxLayout()
-        for w in (QLabel("cols"), self.cols, QLabel("rows"), self.rows, QLabel("fps"), self.fps):
-            sprite.addWidget(w)
-        sprite_widget = QWidget()
-        sprite_widget.setLayout(sprite)
+        self.fps = double_spin(0.5, 60.0)
+        sprite = row(QLabel("cols"), self.cols, QLabel("rows"), self.rows, QLabel("fps"), self.fps)
         self.position = QLabel("–")
-        move = QHBoxLayout()
         self.move_hiker = QPushButton("To hiker")
         self.move_click = QPushButton("Pick…")
-        move.addWidget(self.position, 1)
-        move.addWidget(self.move_hiker)
-        move.addWidget(self.move_click)
-        move_widget = QWidget()
-        move_widget.setLayout(move)
         form.addRow("Name", self.name)
         form.addRow("Caption", self.caption)
         form.addRow("Icon", self.icon)
-        form.addRow("Size (1080p)", self.size)
+        form.addRow("Size (1080p)", self.size_px)
         form.addRow("Pin height", self.lift)
-        form.addRow("Sprite sheet", sprite_widget)
-        form.addRow("Position", move_widget)
+        form.addRow("Sprite sheet", sprite)
+        form.addRow("Position", row((self.position, 1), self.move_hiker, self.move_click))
         layout.addLayout(form)
         layout.addWidget(QLabel("Animate visibility, effects … in the POI's section of the "
                                 "parameter panel."))  # fmt: skip
-        self.setWidget(body)
-        self._updating = False
+        return body
+
+    def _connect(self) -> None:
         self.add_hiker.clicked.connect(self._add_at_hiker)
         self.add_click.clicked.connect(self._add_by_click)
         self.remove.clicked.connect(self._remove)
         self.list.currentRowChanged.connect(self._show_current)
-        self.name.editingFinished.connect(lambda: self._edit_field("name", self.name.text()))
-        self.caption.editingFinished.connect(
-            lambda: self._edit_field("caption", self.caption.text())
-        )
         self.icon.activated.connect(self._icon_chosen)
-        self.size.editingFinished.connect(lambda: self._edit_field("size_px", self.size.value()))
-        self.lift.editingFinished.connect(lambda: self._edit_field("lift_px", self.lift.value()))
-        self.cols.editingFinished.connect(
-            lambda: self._edit_field("sprite_cols", self.cols.value())
-        )
-        self.rows.editingFinished.connect(
-            lambda: self._edit_field("sprite_rows", self.rows.value())
-        )
-        self.fps.editingFinished.connect(lambda: self._edit_field("fps", self.fps.value()))
+        for field, widget, value in (
+            ("name", self.name, self.name.text),
+            ("caption", self.caption, self.caption.text),
+            ("size_px", self.size_px, self.size_px.value),
+            ("lift_px", self.lift, self.lift.value),
+            ("sprite_cols", self.cols, self.cols.value),
+            ("sprite_rows", self.rows, self.rows.value),
+            ("fps", self.fps, self.fps.value),
+        ):
+            widget.editingFinished.connect(lambda f=field, v=value: self._edit_field(f, v()))
         self.move_hiker.clicked.connect(self._move_to_hiker)
         self.move_click.clicked.connect(self._move_by_click)
-        self.refresh()
 
     # --- helpers ------------------------------------------------------------------------
     def current(self) -> Poi | None:
@@ -196,7 +185,7 @@ class PoiDock(QDockWidget):
     def _show_current(self, *_args) -> None:
         poi = self.current()
         enabled = poi is not None
-        for w in (self.name, self.caption, self.icon, self.size, self.lift, self.cols, self.rows,
+        for w in (self.name, self.caption, self.icon, self.size_px, self.lift, self.cols, self.rows,
                   self.fps, self.move_hiker, self.move_click, self.remove):  # fmt: skip
             w.setEnabled(enabled)
         if poi is None:
@@ -210,7 +199,7 @@ class PoiDock(QDockWidget):
             self.icon.insertItem(self.icon.count() - 1, Path(poi.icon).name, poi.icon)
             index = self.icon.findData(poi.icon)
         self.icon.setCurrentIndex(index)
-        self.size.setValue(poi.size_px)
+        self.size_px.setValue(poi.size_px)
         self.lift.setValue(poi.lift_px)
         self.cols.setValue(poi.sprite_cols)
         self.rows.setValue(poi.sprite_rows)

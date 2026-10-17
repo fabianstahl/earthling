@@ -67,8 +67,18 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self.viewport.shutdown)
-        self.parameters_dock = QDockWidget("Parameters", self)
-        self.parameters_dock.setObjectName("ParametersDock")
+        self._build_docks()
+        self.viewport.timeline_time_provider = lambda: self.timeline.time
+        self._pois_changed()
+        self._connect_viewport()
+        self._update_title()
+        self.data_changed.connect(self._reload_terrain)
+        self.statusBar().showMessage("Ready")
+
+    def _build_docks(self) -> None:
+        """Parameters, history, timeline, tracks and POI docks (each listed in the View menu)."""
+        area = Qt.DockWidgetArea
+        right, bottom = area.RightDockWidgetArea, area.BottomDockWidgetArea
         self.property_panel = PropertyPanel(
             self.scene.store,
             on_edit=self._on_panel_edit,
@@ -76,41 +86,45 @@ class MainWindow(QMainWindow):
         )
         # project specific properties (track groups, POIs) appear as their own sections
         self.scene.dynamic_listeners.append(self.property_panel.rebuild)
-        self.parameters_dock.setWidget(self.property_panel)
+        self.parameters_dock = self._add_dock(
+            right, QDockWidget("Parameters", self), "ParametersDock", self.property_panel
+        )
         self.parameters_dock.setMinimumWidth(340)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.parameters_dock)
-        self.view_menu.addAction(self.parameters_dock.toggleViewAction())
-        self.history_dock = QDockWidget("History", self)
-        self.history_dock.setObjectName("HistoryDock")
-        self.history_dock.setWidget(QUndoView(self.undo_stack))
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.history_dock)
+        self.history_dock = self._add_dock(
+            right, QDockWidget("History", self), "HistoryDock", QUndoView(self.undo_stack)
+        )
         self.history_dock.hide()
-        self.view_menu.addAction(self.history_dock.toggleViewAction())
-        self.timeline_dock = QDockWidget("Timeline", self)
-        self.timeline_dock.setObjectName("TimelineDock")
         self.timeline_widget = TimelineWidget(self.timeline, self.keys)
-        self.timeline_dock.setWidget(self.timeline_widget)
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
-        self.view_menu.addAction(self.timeline_dock.toggleViewAction())
+        self.timeline_dock = self._add_dock(
+            bottom, QDockWidget("Timeline", self), "TimelineDock", self.timeline_widget
+        )
         self.timeline.settings_changed.connect(lambda: self.scene.mark_dirty())
-        self.tracks_dock = TracksDock(self)
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.tracks_dock)
+        self.tracks_dock = self._add_dock(bottom, TracksDock(self))
         self.tabifyDockWidget(self.timeline_dock, self.tracks_dock)
         self.timeline_dock.raise_()
         self._install_timeline_shortcuts()
-        self.view_menu.addAction(self.tracks_dock.toggleViewAction())
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
         self.tracks_changed.connect(self.viewport.request_render)
         self.tracks_dock.track_activated.connect(self._frame_track)
-        self.poi_dock = PoiDock(self.scene, self.undo_stack, self.hiker_lonlat,
-                                self._pick_lonlat, self._scene_dir, self)  # fmt: skip
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.poi_dock)
+        poi_dock = PoiDock(self.scene, self.undo_stack, self.hiker_lonlat, self._pick_lonlat,
+                           self._scene_dir, self)  # fmt: skip
+        self.poi_dock = self._add_dock(right, poi_dock)
         self.tabifyDockWidget(self.parameters_dock, self.poi_dock)
         self.parameters_dock.raise_()
-        self.view_menu.addAction(self.poi_dock.toggleViewAction())
         self.poi_dock.changed.connect(self._pois_changed)
-        self.viewport.timeline_time_provider = lambda: self.timeline.time
-        self._pois_changed()
+
+    def _add_dock(self, area, dock: QDockWidget, name: str = "", widget=None) -> QDockWidget:
+        """Dock ``dock`` (optionally naming it and setting its widget) and list it in View."""
+        if name:
+            dock.setObjectName(name)
+        if widget is not None:
+            dock.setWidget(widget)
+        self.addDockWidget(area, dock)
+        self.view_menu.addAction(dock.toggleViewAction())
+        return dock
+
+    def _connect_viewport(self) -> None:
+        """Viewport state in the View menu actions and the status bar."""
         self.viewport.mode_changed.connect(
             lambda mode: self.fly_mode_action.setChecked(mode == self.viewport.FLY)
         )
@@ -124,9 +138,6 @@ class MainWindow(QMainWindow):
         self.viewport.shader_error.connect(
             lambda msg: self.statusBar().showMessage(f"Shader error: {msg}", 10000)
         )
-        self._update_title()
-        self.data_changed.connect(self._reload_terrain)
-        self.statusBar().showMessage("Ready")
 
     # --- menus -------------------------------------------------------------------------
     def _build_menus(self) -> None:
@@ -323,12 +334,8 @@ class MainWindow(QMainWindow):
 
     def _on_panel_edit(self, pid: str, value, interactive: bool) -> None:
         """Panel edits: animated properties are keyed at the playhead (auto-key)."""
-        if self.keys.auto_key and self.scene.animation.is_animated(pid):
-            self.scene.store.set(pid, value)  # live preview while dragging
-            if not interactive:
-                self.keys.set_key(pid, value)
-            return
-        self.set_property(pid, value, interactive)
+        if not self.keys.on_property_edited(pid, value, interactive):
+            self.set_property(pid, value, interactive)
 
     def set_property(self, pid: str, value, interactive: bool = False) -> None:
         """All interactive property edits go through the undo stack."""
@@ -382,21 +389,14 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.tracks_dock.set_tracks(session.all_tracks)
         self.scene.set_dynamic("track_groups", session.track_group_properties())
-        self.viewport.set_scene(
-            session.frame, session.all_tracks, timezone=session.config.project.timezone
-        )
-        self.viewport.set_outlines(session.outline_lines())
-        self._reload_terrain(reframe=True)
+        self._show_session(reframe=True)
         scene_path = project.folder / DEFAULT_SCENE_NAME
         if scene_path.exists():
             self.load_scene(scene_path)
         else:
             self.scene.reset(scene_path)
             self._init_new_scene(session)
-            self.timeline.settings_changed.emit()
-            self.timeline.set_time(0.0)
-            self.keys.changed.emit()
-            self.scene.mark_dirty(False)
+            self._scene_replaced()
             self.undo_stack.clear()
             self._update_title()
         self.statusBar().showMessage(
@@ -411,6 +411,21 @@ class MainWindow(QMainWindow):
         start = session.first_local_start()
         if start is not None:
             self.scene.store.set("sun.datetime", start.replace(hour=12, minute=0, second=0))
+
+    def _show_session(self, reframe: bool = False) -> None:
+        """(Re)build the 3D scene of the session: tracks, area outlines, terrain."""
+        session = self.session
+        self.viewport.set_scene(
+            session.frame, session.all_tracks, timezone=session.config.project.timezone
+        )
+        self.viewport.set_outlines(session.outline_lines())
+        self._reload_terrain(reframe=reframe)
+
+    def _scene_replaced(self) -> None:
+        """A new or loaded scene: the views catch up, starting at 0 s and clean."""
+        self.timeline.settings_changed.emit()
+        self.timeline.set_time(0.0)
+        self.keys.changed.emit()  # views caching the curves (graph editor, dope sheet, camera path)
         self.scene.mark_dirty(False)
 
     # --- scene files -------------------------------------------------------------------
@@ -423,11 +438,7 @@ class MainWindow(QMainWindow):
         self.undo_stack.clear()
         self._apply_scene_origin()
         self.timeline.pause()
-        self.timeline.settings_changed.emit()
-        self.timeline.set_time(0.0)
-        self.keys.changed.emit()  # views caching the curves (graph editor, dope sheet size)
-        self.scene.mark_dirty(False)
-        self._camera_keys_changed()
+        self._scene_replaced()
         has_camera_keys = self.scene.animation.is_animated("camera.pose")
         self.viewport.set_animated_camera(has_camera_keys)
         if self.scene.camera and not has_camera_keys:
@@ -443,14 +454,8 @@ class MainWindow(QMainWindow):
     def _apply_scene_origin(self) -> None:
         """Rebuild the 3D scene when the scene file has its own frame origin (or the previous
         scene had one)."""
-        session = self.session
-        if session is None or not session.set_origin(self.scene.origin):
-            return
-        self.viewport.set_scene(
-            session.frame, session.all_tracks, timezone=session.config.project.timezone
-        )
-        self.viewport.set_outlines(session.outline_lines())
-        self._reload_terrain()
+        if self.session is not None and self.session.set_origin(self.scene.origin):
+            self._show_session()
 
     def save_scene(self, path: Path | None = None) -> bool:
         if path is None and self.scene.path is None:
@@ -520,17 +525,20 @@ class MainWindow(QMainWindow):
         if reframe:
             self.viewport.frame_all()
 
-    def _show_plan(self) -> None:
+    def _planned_session(self, title: str) -> Session | None:
+        """The session if it has a download plan, else a hint titled ``title``."""
         if self.session is None or self.session.plan is None:
-            QMessageBox.information(self, "Download plan", "Open a project with tracks first.")
-            return
-        PlanDialog(self.session, self).exec()
+            QMessageBox.information(self, title, "Open a project with tracks first.")
+            return None
+        return self.session
+
+    def _show_plan(self) -> None:
+        if (session := self._planned_session("Download plan")) is not None:
+            PlanDialog(session, self).exec()
 
     def _show_download(self) -> None:
-        if self.session is None or self.session.plan is None:
-            QMessageBox.information(self, "Download", "Open a project with tracks first.")
+        if (session := self._planned_session("Download")) is None:
             return
-        session = self.session
         dialog = DownloadDialog(session, lambda kinds: download_jobs(session, kinds), self)
         dialog.data_changed.connect(self.data_changed.emit)
         dialog.exec()

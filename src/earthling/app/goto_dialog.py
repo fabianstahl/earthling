@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout
+from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout
+
+from earthling.ui.widgets import double_spin
 
 
 class GoToDialog(QDialog):
@@ -10,12 +12,12 @@ class GoToDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Go to coordinate")
         form = QFormLayout(self)
-        self.lat = self._spin(-85, 85, lat, 6, "°")
-        self.lon = self._spin(-180, 180, lon, 6, "°")
-        self.height = self._spin(0, 100_000, 500, 0, " m")
+        self.lat = double_spin(-85, 85, decimals=6, suffix="°", value=lat)
+        self.lon = double_spin(-180, 180, decimals=6, suffix="°", value=lon)
+        self.above_ground = double_spin(0, 100_000, decimals=0, suffix=" m", value=500)
         form.addRow("Latitude", self.lat)
         form.addRow("Longitude", self.lon)
-        form.addRow("Height above ground", self.height)
+        form.addRow("Height above ground", self.above_ground)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -23,14 +25,5 @@ class GoToDialog(QDialog):
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
-    @staticmethod
-    def _spin(lo, hi, value, decimals, suffix) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
-        spin.setRange(lo, hi)
-        spin.setDecimals(decimals)
-        spin.setValue(value)
-        spin.setSuffix(suffix)
-        return spin
-
     def values(self) -> tuple[float, float, float]:
-        return self.lat.value(), self.lon.value(), self.height.value()
+        return self.lat.value(), self.lon.value(), self.above_ground.value()

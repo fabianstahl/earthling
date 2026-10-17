@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QDateTimeEdit,
     QDoubleSpinBox,
     QGridLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -29,6 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from earthling.core.properties import PropertyDef, PropertyStore, PType
+from earthling.ui.widgets import double_spin, tight_hbox
 
 SLIDER_STEPS = 1000
 
@@ -64,8 +64,7 @@ class PropertyEditor(QWidget):
 class FloatEditor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.spin = QDoubleSpinBox()
         self.spin.setDecimals(d.decimals)
         self.spin.setRange(
@@ -126,8 +125,7 @@ class FloatEditor(PropertyEditor):
 class IntEditor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.spin = QSpinBox()
         self.spin.setRange(
             int(d.minimum) if d.minimum is not None else -(2**31),
@@ -147,8 +145,7 @@ class IntEditor(PropertyEditor):
 class BoolEditor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.box = QCheckBox()
         layout.addWidget(self.box)
         layout.addStretch()
@@ -161,8 +158,7 @@ class BoolEditor(PropertyEditor):
 class EnumEditor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.combo = QComboBox()
         for value, label in d.options:
             self.combo.addItem(label, value)
@@ -178,8 +174,7 @@ class EnumEditor(PropertyEditor):
 class ColorEditor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.button = QPushButton()
         self.button.setFixedHeight(22)
         layout.addWidget(self.button)
@@ -202,14 +197,10 @@ class ColorEditor(PropertyEditor):
 class Vec3Editor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.spins = []
         for _ in range(3):
-            spin = QDoubleSpinBox()
-            spin.setRange(-1e9, 1e9)
-            spin.setDecimals(d.decimals)
-            spin.setKeyboardTracking(False)
+            spin = double_spin(-1e9, 1e9, decimals=d.decimals, tracking=False)
             spin.valueChanged.connect(self._changed)
             layout.addWidget(spin)
             self.spins.append(spin)
@@ -225,8 +216,7 @@ class Vec3Editor(PropertyEditor):
 class DateTimeEditor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.edit = QDateTimeEdit()
         self.edit.setDisplayFormat("yyyy-MM-dd  HH:mm")
         self.edit.setCalendarPopup(True)
@@ -241,8 +231,7 @@ class DateTimeEditor(PropertyEditor):
 class TextEditor(PropertyEditor):
     def __init__(self, d: PropertyDef, parent=None) -> None:
         super().__init__(d, parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout = tight_hbox(self)
         self.edit = QLineEdit()
         layout.addWidget(self.edit)
         self.edit.editingFinished.connect(lambda: self._emit(self.edit.text()))

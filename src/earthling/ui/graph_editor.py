@@ -11,11 +11,9 @@ from dataclasses import dataclass
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
-    QAction,
     QColor,
     QIcon,
     QKeyEvent,
-    QKeySequence,
     QMouseEvent,
     QPainter,
     QPainterPath,
@@ -37,25 +35,28 @@ from PyQt6.QtWidgets import (
 )
 
 from earthling.app.keyframing import KeyframeEditor, KeyRef
-from earthling.core.animation import (
-    HANDLE_LABELS,
-    INTERP_LABELS,
-    Curve,
-    HandleMode,
-    Interp,
-    Keyframe,
-    snap_to_frame,
-)
+from earthling.core.animation import HANDLE_LABELS, Curve, HandleMode, Keyframe, snap_to_frame
 from earthling.core.properties import PType
-from earthling.ui.timeline_widget import diamond, nice_tick_step
+from earthling.ui.key_views import (
+    ADDITIVE,
+    KEY_OUTLINE,
+    KEY_RADIUS,
+    PLAYHEAD_COLOR,
+    SELECTED_COLOR,
+    KeySelection,
+    add_actions,
+    add_choice_menu,
+    all_keys,
+    diamond,
+    paint_band,
+)
+from earthling.ui.timeline_widget import nice_tick_step, tick_label
+from earthling.ui.widgets import tool_button
 
 CHANNEL_COLORS = [
     QColor(240, 110, 90), QColor(110, 200, 110), QColor(100, 160, 250), QColor(240, 190, 60),
     QColor(200, 120, 230), QColor(90, 210, 210), QColor(245, 120, 180), QColor(180, 180, 180),
 ]  # fmt: skip
-SELECTED_COLOR = QColor(255, 255, 255)
-PLAYHEAD_COLOR = QColor(90, 170, 255)
-KEY_RADIUS = 5.0
 HANDLE_RADIUS = 3.5
 PICK_RADIUS = 7.0
 AXIS_LEFT = 58  # value labels
@@ -81,7 +82,7 @@ class _Drag:
     moved: bool = False
 
 
-class GraphView(QWidget):
+class GraphView(QWidget, KeySelection):
     selection_changed = pyqtSignal()
 
     def __init__(self, editor: KeyframeEditor, parent=None) -> None:
@@ -121,10 +122,7 @@ class GraphView(QWidget):
         self.update()
 
     def _on_changed(self) -> None:
-        existing = {
-            (pid, k.time) for pid, c in self.editor.animation.curves.items() for k in c.keys
-        }
-        self.selection &= existing
+        self.prune_selection()
         self.update()
 
     def curve_range(self, curve: Curve) -> tuple[float, float]:
@@ -262,9 +260,7 @@ class GraphView(QWidget):
         p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom() + AXIS_BOTTOM))
         p.setClipping(False)
         if self._band is not None:
-            p.setPen(QPen(PLAYHEAD_COLOR, 1, Qt.PenStyle.DashLine))
-            p.setBrush(QColor(90, 170, 255, 40))
-            p.drawRect(self._band)
+            paint_band(p, self._band)
         if not curves:
             p.setPen(pal.placeholderText().color())
             hint = "No curves to show – animate a numeric property or tick a channel"
@@ -283,8 +279,7 @@ class GraphView(QWidget):
             p.setPen(grid)
             p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom()))
             p.setPen(text)
-            label = f"{t:.0f}s" if step >= 1 else f"{t:.2f}s"
-            p.drawText(QPointF(x + 3, r.bottom() + 14), label)
+            p.drawText(QPointF(x + 3, r.bottom() + 14), tick_label(t, step))
             t += step
         vstep = nice_value_step(self.v1 - self.v0, r.height())
         v = math.ceil(self.v0 / vstep) * vstep
@@ -347,9 +342,9 @@ class GraphView(QWidget):
                     p.setPen(QPen(color.lighter(130), 1))
                     p.drawLine(center, hp)
                     p.setBrush(SELECTED_COLOR)
-                    p.setPen(QPen(QColor(30, 30, 30), 1))
+                    p.setPen(QPen(KEY_OUTLINE, 1))
                     p.drawEllipse(hp, HANDLE_RADIUS, HANDLE_RADIUS)
-            p.setPen(QPen(QColor(30, 30, 30), 1))
+            p.setPen(QPen(KEY_OUTLINE, 1))
             p.setBrush(SELECTED_COLOR if selected else color)
             p.drawPolygon(diamond(center, KEY_RADIUS))
 
@@ -376,9 +371,7 @@ class GraphView(QWidget):
             self._drag = _Drag("scrub", pos)
             self._scrub(pos)
             return
-        additive = bool(
-            mods & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)
-        )
+        additive = bool(mods & ADDITIVE)
         hit = self.hit(pos)
         if hit is not None and hit[0] == "handle":
             _, pid, key, side = hit
@@ -530,59 +523,36 @@ class GraphView(QWidget):
 
     # --- keyboard / menu --------------------------------------------------------------
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        key = event.key()
-        if event.matches(QKeySequence.StandardKey.Delete) or key == Qt.Key.Key_Backspace:
-            self.delete_selected()
-        elif key == Qt.Key.Key_Home:
+        if self.handle_selection_key(event):
+            return
+        if event.key() == Qt.Key.Key_Home:
             self.frame_all()
-        elif key == Qt.Key.Key_F:
+        elif event.key() == Qt.Key.Key_F:
             self.frame_selected()
-        elif event.matches(QKeySequence.StandardKey.SelectAll):
-            self.selection = {(pid, k.time) for pid, c in self.visible_curves() for k in c.keys}
-            self.selection_changed.emit()
-            self.update()
         else:
             super().keyPressEvent(event)
 
-    def delete_selected(self) -> None:
-        if self.selection:
-            self.editor.delete_keys(self.selection)
-            self.selection = set()
-            self.update()
+    def select_all(self) -> None:
+        self.selection = all_keys(self.visible_curves())
+        self.selection_changed.emit()
+        self.update()
 
     def set_handle_mode(self, mode: HandleMode) -> None:
         if self.selection:
             self.editor.set_handle_mode(self.selection, mode)
 
-    def set_interpolation(self, interp: Interp) -> None:
-        if self.selection:
-            self.editor.set_interpolation(self.selection, interp)
-
     def _context_menu(self, global_pos) -> None:
         menu = QMenu(self)
         has_sel = bool(self.selection)
-        handles = menu.addMenu("Handles")
-        for mode in HandleMode:
-            action = QAction(HANDLE_LABELS[mode], menu)
-            action.triggered.connect(lambda _=False, m=mode: self.set_handle_mode(m))
-            action.setEnabled(has_sel)
-            handles.addAction(action)
-        interp_menu = menu.addMenu("Interpolation")
-        for interp in Interp:
-            action = QAction(INTERP_LABELS[interp], menu)
-            action.triggered.connect(lambda _=False, i=interp: self.set_interpolation(i))
-            action.setEnabled(has_sel)
-            interp_menu.addAction(action)
+        add_choice_menu(menu, "Handles", [(m, HANDLE_LABELS[m]) for m in HandleMode],
+                        self.set_handle_mode, has_sel)  # fmt: skip
+        self.add_interpolation_menu(menu)
         menu.addSeparator()
-        for text, slot, enabled in (
+        add_actions(menu, (
             ("Frame all (Home)", self.frame_all, True),
             ("Frame selected (F)", self.frame_selected, has_sel),
             ("Delete", self.delete_selected, has_sel),
-        ):
-            action = QAction(text, menu)
-            action.triggered.connect(slot)
-            action.setEnabled(enabled)
-            menu.addAction(action)
+        ))  # fmt: skip
         menu.exec(global_pos)
 
 
@@ -610,20 +580,15 @@ class GraphEditor(QWidget):
         self.view = GraphView(editor)
         self.buttons: dict[str, QToolButton] = {}
 
-        def button(name: str, text: str, tip: str, slot, checkable: bool = False) -> None:
-            btn = QToolButton()
-            btn.setText(text)
-            btn.setToolTip(tip)
-            btn.setCheckable(checkable)
-            (btn.toggled if checkable else btn.clicked).connect(slot)
+        def button(name: str, *args, **kwargs) -> None:
+            self.buttons[name] = btn = tool_button(*args, **kwargs)
             bar.addWidget(btn)
-            self.buttons[name] = btn
 
         button("frame_all", "Frame all", "Show all curves (Home)", self.view.frame_all)
         button("frame_sel", "Frame selected", "Zoom to the selected keys (F)",
                self.view.frame_selected)  # fmt: skip
         button("normalize", "Normalize", "Scale every curve to 0…1 to compare shapes",
-               self.view.set_normalized, checkable=True)  # fmt: skip
+               self.view.set_normalized, checked=False)  # fmt: skip
         bar.addSpacing(16)
         for mode in HandleMode:
             button(f"handles_{mode.value}", HANDLE_LABELS[mode].split(" ")[0],

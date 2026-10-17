@@ -3,32 +3,31 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import (
-    QAction,
-    QColor,
-    QKeyEvent,
-    QKeySequence,
-    QMouseEvent,
-    QPainter,
-    QPaintEvent,
-    QPen,
-)
+from PyQt6.QtGui import QColor, QKeyEvent, QKeySequence, QMouseEvent, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import QMenu, QSizePolicy, QToolButton, QWidget
 
 from earthling.app.keyframing import KeyframeEditor, KeyRef
-from earthling.core.animation import INTERP_LABELS, Interp, layer_switch_warnings, snap_to_frame
-from earthling.ui.timeline_widget import diamond
+from earthling.core.animation import Interp, layer_switch_warnings, snap_to_frame
+from earthling.ui.key_views import (
+    ADDITIVE,
+    KEY_COLOR,
+    KEY_OUTLINE,
+    KEY_RADIUS,
+    PLAYHEAD_COLOR,
+    SELECTED_COLOR,
+    KeySelection,
+    add_actions,
+    all_keys,
+    diamond,
+    paint_band,
+)
 
 LABEL_WIDTH = 200
 ROW_HEIGHT = 20
-KEY_RADIUS = 5.0
-KEY_COLOR = QColor(240, 190, 60)
-SELECTED_COLOR = QColor(255, 255, 255)
-PLAYHEAD_COLOR = QColor(90, 170, 255)
 WARN_COLOR = QColor(235, 70, 60)  # keys that cause a visible jump
 
 
-class DopeSheet(QWidget):
+class DopeSheet(QWidget, KeySelection):
     selection_changed = pyqtSignal()
 
     def __init__(self, editor: KeyframeEditor, time_to_x, x_to_time, parent=None) -> None:
@@ -74,10 +73,7 @@ class DopeSheet(QWidget):
         return best
 
     def _on_animation_changed(self) -> None:
-        existing = {
-            (pid, k.time) for pid, c in self.editor.animation.curves.items() for k in c.keys
-        }
-        self.selection &= existing
+        self.prune_selection()
         self.setMinimumHeight(max(ROW_HEIGHT * 3, ROW_HEIGHT * len(self.rows())))
         self.update()
 
@@ -118,7 +114,7 @@ class DopeSheet(QWidget):
                 warned = t in warn_times
                 if selected and self._drag_keys and (pid, t) in self._drag_keys:
                     t = t + self._drag_dt
-                p.setPen(QPen(QColor(30, 30, 30), 1))
+                p.setPen(QPen(KEY_OUTLINE, 1))
                 p.setBrush(SELECTED_COLOR if selected else (WARN_COLOR if warned else KEY_COLOR))
                 p.drawPolygon(diamond(QPointF(self.time_to_x(t), y0 + ROW_HEIGHT / 2), KEY_RADIUS))
         if not rows:
@@ -134,19 +130,14 @@ class DopeSheet(QWidget):
         p.setPen(QPen(PLAYHEAD_COLOR, 2))
         p.drawLine(QPointF(x, 0), QPointF(x, self.height()))
         if self._band is not None:
-            p.setPen(QPen(PLAYHEAD_COLOR, 1, Qt.PenStyle.DashLine))
-            p.setBrush(QColor(90, 170, 255, 40))
-            p.drawRect(self._band)
+            paint_band(p, self._band)
         p.end()
 
     # --- mouse ------------------------------------------------------------------------
     def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = event.position()
         key = self.key_at(pos)
-        mods = event.modifiers()
-        additive = bool(
-            mods & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)
-        )
+        additive = bool(event.modifiers() & ADDITIVE)
         if event.button() == Qt.MouseButton.RightButton:
             if key is not None and key not in self.selection:
                 self.selection = {key}
@@ -203,48 +194,30 @@ class DopeSheet(QWidget):
 
     # --- keyboard / menu --------------------------------------------------------------
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.matches(QKeySequence.StandardKey.Delete) or event.key() == Qt.Key.Key_Backspace:
-            self.delete_selected()
-        elif event.matches(QKeySequence.StandardKey.Copy):
+        if self.handle_selection_key(event):
+            return
+        if event.matches(QKeySequence.StandardKey.Copy):
             self.editor.copy(self.selection)
         elif event.matches(QKeySequence.StandardKey.Paste):
             self.selection = set(self.editor.paste())
             self.update()
-        elif event.matches(QKeySequence.StandardKey.SelectAll):
-            self.selection = {
-                (pid, k.time) for pid, c in self.editor.animation.curves.items() for k in c.keys
-            }
-            self.update()
         else:
             super().keyPressEvent(event)
 
-    def delete_selected(self) -> None:
-        if self.selection:
-            self.editor.delete_keys(self.selection)
-            self.selection = set()
-            self.update()
+    def select_all(self) -> None:
+        self.selection = all_keys(self.editor.animation.curves.items())
+        self.update()
 
     def _context_menu(self, global_pos) -> None:
         menu = QMenu(self)
-        interp_menu = menu.addMenu("Interpolation")
-        for interp in Interp:
-            action = QAction(INTERP_LABELS[interp], menu)
-            action.triggered.connect(
-                lambda _=False, i=interp: self.editor.set_interpolation(self.selection, i)
-            )
-            action.setEnabled(bool(self.selection))
-            interp_menu.addAction(action)
+        self.add_interpolation_menu(menu)
         menu.addSeparator()
-        for text, slot, enabled in (
+        add_actions(menu, (
             ("Copy", lambda: self.editor.copy(self.selection), bool(self.selection)),
             ("Paste at playhead", lambda: setattr(self, "selection", set(self.editor.paste())),
              bool(self.editor.clipboard)),
             ("Delete", self.delete_selected, bool(self.selection)),
-        ):  # fmt: skip
-            action = QAction(text, menu)
-            action.triggered.connect(slot)
-            action.setEnabled(enabled)
-            menu.addAction(action)
+        ))  # fmt: skip
         menu.exec(global_pos)
 
 

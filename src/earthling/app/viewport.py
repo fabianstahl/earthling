@@ -69,10 +69,14 @@ class Viewport(QOpenGLWidget):
         self.fly = FlyController(self.camera)
         self.mode = self.ORBIT
         self.frame: LocalFrame | None = None
+        # set before the GL context exists; uploaded by initializeGL (see _upload_pending)
         self._pending_scene: tuple[LocalFrame, list[Track]] | None = None
         self._pending_outlines = None
         self._pending_terrain = None
         self._pending_camera_path = None
+        # the latest POIs / photos (kept: initializeGL hands them to the new renderer)
+        self._pending_pois: tuple[list, Path | None, object] | None = None
+        self._pending_photos: tuple[list, Path | None] | None = None
         self.store = None  # PropertyStore of the scene
         self.suspended = False  # no viewport rendering (e.g. while exporting a video)
         self.timeline_time_provider = None  # () -> timeline seconds (POI animations)
@@ -104,37 +108,57 @@ class Viewport(QOpenGLWidget):
         self.frame = frame
         self.timezone = timezone
         self._camera_restored = False
-        if self.renderer is None:
-            self._pending_scene = (frame, tracks)
-            return
-        self.renderer.timezone = timezone
-        self.makeCurrent()
-        self.renderer.set_scene(frame, tracks)
-        self.doneCurrent()
-        self.request_render()
-        if reframe:
+        if self.renderer is not None:
+            self.renderer.timezone = timezone
+        self._pending_scene = (frame, tracks)
+        if self._upload() and reframe:
             self.frame_all()
 
     def set_terrain_source(self, data, nodes, labels=None, attribution: str = "") -> None:
         """``labels``: LabelData of the area (optional); ``attribution``: data credits."""
-        if self.renderer is None:
-            self._pending_terrain = (data, nodes, labels, attribution)
-            return
-        self.makeCurrent()
-        self.renderer.set_terrain_source(data, nodes)
-        self.renderer.set_labels(labels)
-        self.renderer.hud.attribution = attribution
-        self.doneCurrent()
-        self.request_render()
+        self._pending_terrain = (data, nodes, labels, attribution)
+        self._upload()
 
     def set_outlines(self, lines) -> None:
+        self._pending_outlines = lines
+        self._upload()
+
+    def set_camera_path(self, lines) -> None:
+        self._pending_camera_path = lines
+        self._upload()
+
+    def _upload(self) -> bool:
+        """Hand the pending scene data to the renderer; False (kept pending) before
+        initializeGL."""
         if self.renderer is None:
-            self._pending_outlines = lines
-            return
+            return False
         self.makeCurrent()
-        self.renderer.outlines.set_lines(lines)
+        self._upload_pending()
         self.doneCurrent()
         self.request_render()
+        return True
+
+    def _upload_pending(self, reframe: bool = False) -> None:
+        """Needs the GL context. Order: scene (+ framing), terrain, outlines, camera path."""
+        r = self.renderer
+        if self._pending_scene is not None:
+            frame, tracks = self._pending_scene
+            self._pending_scene = None
+            r.set_scene(frame, tracks)
+            if reframe:
+                self.frame_all()
+        if self._pending_terrain is not None:
+            data, nodes, labels, attribution = self._pending_terrain
+            r.set_terrain_source(data, nodes)
+            r.set_labels(labels)
+            r.hud.attribution = attribution
+            self._pending_terrain = None
+        if self._pending_outlines is not None:
+            r.outlines.set_lines(self._pending_outlines)
+            self._pending_outlines = None
+        if self._pending_camera_path is not None:
+            r.camera_path.set_lines(self._pending_camera_path)
+            self._pending_camera_path = None
 
     def set_on_demand(self, enabled: bool) -> None:
         if self.renderer is not None and self.renderer.terrain.data is not None:
@@ -143,17 +167,24 @@ class Viewport(QOpenGLWidget):
     def set_pois(self, pois, base_dir=None, animation=None) -> None:
         """Points of interest of the scene (``animation``: for their pop-in timing)."""
         self._pending_pois = (list(pois), base_dir, animation)
-        if self.renderer is not None:
-            self.renderer.pois.set_pois(list(pois), base_dir)
-            self.renderer.animation = animation
+        self._apply_pois()
         self.request_render()
 
     def set_photos(self, photos, base_dir=None) -> None:
         """Photo overlays of the scene."""
         self._pending_photos = (list(photos), base_dir)
-        if self.renderer is not None:
-            self.renderer.photos.set_photos(list(photos), base_dir)
+        self._apply_photos()
         self.request_render()
+
+    def _apply_pois(self) -> None:
+        if self.renderer is not None and self._pending_pois is not None:
+            pois, base_dir, animation = self._pending_pois
+            self.renderer.pois.set_pois(pois, base_dir)
+            self.renderer.animation = animation
+
+    def _apply_photos(self) -> None:
+        if self.renderer is not None and self._pending_photos is not None:
+            self.renderer.photos.set_photos(*self._pending_photos)
 
     def set_store(self, store) -> None:
         self.store = store
@@ -184,10 +215,13 @@ class Viewport(QOpenGLWidget):
         return (*(float(v) for v in c.position), c.heading, c.pitch, c.roll)
 
     def apply_pose(self, pose) -> None:
+        self._set_pose(pose)
+        self.request_render()
+
+    def _set_pose(self, pose) -> None:
         x, y, z, heading, pitch, roll = pose
         self.camera.position = np.array([x, y, z], dtype=np.float64)
         self.camera.heading, self.camera.pitch, self.camera.roll = heading, pitch, roll
-        self.request_render()
 
     def set_animated_camera(self, enabled: bool) -> None:
         if enabled == self.animated_camera:
@@ -198,8 +232,7 @@ class Viewport(QOpenGLWidget):
             if pose is not None:
                 self.apply_pose(pose)
         if not enabled:
-            self.mode = self.FLY
-            self.mode_changed.emit(self.mode)
+            self._enter_mode(self.FLY)
         if self.renderer is not None:
             self.renderer.camera_path.visible = not enabled
         self.animated_camera_changed.emit(enabled)
@@ -208,15 +241,6 @@ class Viewport(QOpenGLWidget):
         """Manual navigation leaves the animated camera (like any 3D editor)."""
         if self.animated_camera:
             self.set_animated_camera(False)
-
-    def set_camera_path(self, lines) -> None:
-        if self.renderer is None:
-            self._pending_camera_path = lines
-            return
-        self.makeCurrent()
-        self.renderer.camera_path.set_lines(lines)
-        self.doneCurrent()
-        self.request_render()
 
     def shutdown(self) -> None:
         """Stop background terrain work (idempotent)."""
@@ -235,8 +259,12 @@ class Viewport(QOpenGLWidget):
             if target is None:
                 target = self.camera.position + self.camera.forward * 2000.0
             self.orbit.sync_from_camera(target)
-        self.mode = mode
         self.fly.pressed.clear()
+        self._enter_mode(mode)
+
+    def _enter_mode(self, mode: str) -> None:
+        """Switch the navigation mode as is (no controller sync) and notify."""
+        self.mode = mode
         self.mode_changed.emit(mode)
 
     def toggle_mode(self) -> None:
@@ -248,9 +276,8 @@ class Viewport(QOpenGLWidget):
             self.frame_box(*bounds)
 
     def frame_box(self, lo, hi) -> None:
-        self.mode = self.ORBIT
         self.orbit.frame_bounds(lo, hi)
-        self.mode_changed.emit(self.mode)
+        self._enter_mode(self.ORBIT)
 
     def go_to(self, lat: float, lon: float, height_above_ground: float) -> None:
         if self.frame is None:
@@ -258,8 +285,7 @@ class Viewport(QOpenGLWidget):
         ground = (self.ground_height(lat, lon) or 0.0) * self._exaggeration()
         self.camera.position = self.frame.geodetic_to_enu(lat, lon, ground + height_above_ground)
         self.camera.heading, self.camera.pitch, self.camera.roll = 0.0, -30.0, 0.0
-        self.mode = self.FLY
-        self.mode_changed.emit(self.mode)
+        self._enter_mode(self.FLY)
 
     def ground_height(self, lat: float, lon: float) -> float | None:
         data = self.renderer.terrain.data if self.renderer is not None else None
@@ -316,10 +342,9 @@ class Viewport(QOpenGLWidget):
         if state.get("mode") == self.ORBIT and "orbit_target" in state:
             self.orbit.sync_from_camera(np.array(state["orbit_target"], dtype=np.float64))
             self.camera.roll = float(state.get("roll", 0.0))
-            self.mode = self.ORBIT
+            self._enter_mode(self.ORBIT)
         else:
-            self.mode = self.FLY
-        self.mode_changed.emit(self.mode)
+            self._enter_mode(self.FLY)
         return True
 
     # --- picking -----------------------------------------------------------------------
@@ -354,34 +379,12 @@ class Viewport(QOpenGLWidget):
         if self.dev_mode:
             self._watcher = QFileSystemWatcher(self)
             self._watcher.fileChanged.connect(self._on_shader_changed)
-        if self._pending_scene is not None:
-            frame, tracks = self._pending_scene
-            self._pending_scene = None
-            self.renderer.set_scene(frame, tracks)
-            if not self._camera_restored:
-                self.frame_all()
-        if self._pending_terrain is not None:
-            data, nodes, labels, attribution = self._pending_terrain
-            self.renderer.set_terrain_source(data, nodes)
-            self.renderer.set_labels(labels)
-            self.renderer.hud.attribution = attribution
-            self._pending_terrain = None
-        if self._pending_outlines is not None:
-            self.renderer.outlines.set_lines(self._pending_outlines)
-            self._pending_outlines = None
-        if self._pending_camera_path is not None:
-            self.renderer.camera_path.set_lines(self._pending_camera_path)
-            self._pending_camera_path = None
+        self._upload_pending(reframe=not self._camera_restored)
         self.renderer.camera_path.visible = not self.animated_camera
         self.renderer.store = self.store
         self.renderer.timezone = self.timezone
-        pending = getattr(self, "_pending_pois", None)
-        if pending is not None:
-            self.renderer.pois.set_pois(pending[0], pending[1])
-            self.renderer.animation = pending[2]
-        pending = getattr(self, "_pending_photos", None)
-        if pending is not None:
-            self.renderer.photos.set_photos(pending[0], pending[1])
+        self._apply_pois()
+        self._apply_photos()
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:
@@ -392,9 +395,7 @@ class Viewport(QOpenGLWidget):
         if self.animated_camera:
             pose = self.current_animated_pose()
             if pose is not None:
-                x, y, z, heading, pitch, roll = pose
-                self.camera.position = np.array([x, y, z], dtype=np.float64)
-                self.camera.heading, self.camera.pitch, self.camera.roll = heading, pitch, roll
+                self._set_pose(pose)  # no request_render(): we are rendering
         elif self.mode == self.FLY:
             hag = self.height_above_ground()
             self.fly.step(dt, hag if hag is not None else 1000.0)
@@ -438,8 +439,7 @@ class Viewport(QOpenGLWidget):
         target = self.pick(event.position().x(), event.position().y())
         if target is not None:
             self.orbit.sync_from_camera(target)
-            self.mode = self.ORBIT
-            self.mode_changed.emit(self.mode)
+            self._enter_mode(self.ORBIT)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._last_mouse is None:

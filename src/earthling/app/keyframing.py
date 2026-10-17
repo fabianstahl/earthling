@@ -9,7 +9,14 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QUndoCommand, QUndoStack
 
 from earthling.app.timeline import TimelineController
-from earthling.core.animation import Animation, Curve, HandleMode, Interp, snap_to_frame
+from earthling.core.animation import (
+    Animation,
+    Curve,
+    HandleMode,
+    Interp,
+    Keyframe,
+    snap_to_frame,
+)
 
 KeyRef = tuple[str, float]  # (property id, key time)
 
@@ -63,6 +70,7 @@ class KeyframeEditor(QObject):
         self.stack = stack
         self.auto_key = True  # editing an animated property updates its key
         self.clipboard: list[tuple[str, float, Any, Interp]] = []
+        self._pending: tuple[list[str], dict[str, list]] | None = None  # begin() .. commit()
 
     # --- snapshots --------------------------------------------------------------------
     def _snapshot(self, pids: Iterable[str]) -> dict[str, list]:
@@ -98,7 +106,7 @@ class KeyframeEditor(QObject):
         self._notify()
 
     def commit(self, label: str) -> None:
-        pending, self._pending = getattr(self, "_pending", None), None
+        pending, self._pending = self._pending, None
         if pending is None:
             return
         pids, before = pending
@@ -114,6 +122,10 @@ class KeyframeEditor(QObject):
     def now(self) -> float:
         return snap_to_frame(self.timeline.time, self.animation.fps)
 
+    def _key_at(self, pid: str, t: float) -> tuple[Curve | None, Keyframe | None]:
+        curve = self.animation.curves.get(pid)
+        return curve, (curve.key_at(t) if curve is not None else None)
+
     def has_key_now(self, pid: str) -> bool:
         return self.animation.has_key(pid, self.now)
 
@@ -128,10 +140,13 @@ class KeyframeEditor(QObject):
         self.edit(label, [pid], lambda: self.animation.set_key(pid, self.now, value))
 
     def on_property_edited(self, pid: str, value: Any, interactive: bool) -> bool:
-        """Auto-key: returns True if the edit was turned into a key edit."""
-        if not self.auto_key or not self.animation.is_animated(pid) or interactive:
+        """Auto-key: an edit of an animated property is keyed at the playhead (drags only
+        preview the value in the store). False: not handled, the caller sets the property."""
+        if not self.auto_key or not self.animation.is_animated(pid):
             return False
-        self.set_key(pid, value)
+        self.animation.store.set(pid, value)  # live preview while dragging
+        if not interactive:
+            self.set_key(pid, value)
         return True
 
     def delete_keys(self, keys: Iterable[KeyRef]) -> None:
@@ -183,8 +198,7 @@ class KeyframeEditor(QObject):
 
         def run() -> None:
             for pid, t in keys:
-                curve = self.animation.curves.get(pid)
-                key = curve.key_at(t) if curve is not None else None
+                _, key = self._key_at(pid, t)
                 if key is not None:
                     key.interp = interp
 
@@ -193,8 +207,7 @@ class KeyframeEditor(QObject):
     def copy(self, keys: Iterable[KeyRef]) -> None:
         self.clipboard = []
         for pid, t in keys:
-            curve = self.animation.curves.get(pid)
-            key = curve.key_at(t) if curve is not None else None
+            _, key = self._key_at(pid, t)
             if key is not None:
                 self.clipboard.append((pid, key.time, key.value, key.interp))
 
@@ -221,8 +234,7 @@ class KeyframeEditor(QObject):
 
         def run() -> None:
             for pid, t in keys:
-                curve = self.animation.curves.get(pid)
-                key = curve.key_at(t) if curve is not None else None
+                curve, key = self._key_at(pid, t)
                 if key is None or curve.graph_kind is None:
                     continue
                 i = curve.keys.index(key)
