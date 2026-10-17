@@ -107,18 +107,24 @@ class PoiDock(SceneItemDock):
         category = None
         for kind in [*KINDS, *load_user_images(user_images_file())]:
             if kind.category != category:
-                if category is not None:
-                    self.kind.insertSeparator(self.kind.count())
                 category = kind.category
+                self._heading(category)
             label = kind.name if kind.icon != "none" else f"{kind.name} (no icon)"
             self.kind.addItem(icon_for(kind.icon, kind.caption), label, kind)
-            self.kind.setItemData(self.kind.count() - 1, category, 3)  # (tooltip: the category)
-        self.kind.insertSeparator(self.kind.count())
+        self._heading("")
         self.kind.addItem("Add image…", ADD_IMAGE)
-        index = next((i for i in range(self.kind.count())
-                      if isinstance(self.kind.itemData(i), PoiKind)
-                      and self.kind.itemData(i).icon == select), 0)  # fmt: skip
-        self.kind.setCurrentIndex(index)
+        kinds = [i for i in range(self.kind.count()) if isinstance(self.kind.itemData(i), PoiKind)]
+        self.kind.setCurrentIndex(next((i for i in kinds if self.kind.itemData(i).icon == select),
+                                       kinds[0]))  # fmt: skip
+
+    def _heading(self, text: str) -> None:
+        """A category title in the kind list (not selectable)."""
+        self.kind.addItem(text)
+        item = self.kind.model().item(self.kind.count() - 1)
+        item.setEnabled(False)
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
 
     def _connect_fields(self) -> None:
         self.kind.activated.connect(self._kind_chosen)
@@ -193,7 +199,7 @@ class PoiDock(SceneItemDock):
         if path:
             self._fill_kinds(select=add_user_image(user_images_file(), Path(path)).icon)
         else:
-            self.kind.setCurrentIndex(0)
+            self._fill_kinds()
 
     def _icon_ref(self, ref: str) -> str:
         """Image files relative to the scene folder where possible."""

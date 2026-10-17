@@ -33,6 +33,7 @@ class SourceDialog(QDialog):
         for sid, source in sorted({**PROVIDERS, **DEM_SOURCES}.items()):
             kind = "elevation" if sid in DEM_SOURCES else source.kind
             self.source.addItem(f"{sid}  ({kind})", sid)
+        self.source.setCurrentIndex(max(0, self.source.findData(session.config.sources.imagery[0])))
         self.place: tuple[float, float] | None = None  # (lon, lat); None: automatic
         self.place_label = QLabel("A track point inside the source's coverage")
         choose = QPushButton("Choose…")
