@@ -154,8 +154,14 @@ def load_journey(project, origin: tuple[float, float] | None = None, *,
 
 
 def current() -> Journey | None:
-    """The journey of the last :func:`load_journey`."""
+    """The journey of the last :func:`load_journey` (or :func:`set_current`)."""
     return _CURRENT
+
+
+def set_current(journey: Journey | None) -> None:
+    """Make ``journey`` the current one (e.g. one built from the application's session)."""
+    global _CURRENT
+    _CURRENT = journey
 
 
 def local(epoch: float) -> dt.datetime:

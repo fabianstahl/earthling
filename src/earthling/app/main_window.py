@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from PyQt6 import sip
 from PyQt6.QtCore import QByteArray, QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack
 from PyQt6.QtWidgets import (
@@ -183,6 +184,16 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(redo)
 
         self.animation_menu = bar.addMenu("&Animation")
+        from earthling.app import generators
+
+        for text, action in (
+            ("Generate &Camera…", generators.generate_camera),
+            ("&Draw Tracks…", generators.draw_tracks),
+            ("&Sun from the Tracks…", generators.sun_from_tracks),
+            ("Add Still &Seconds…", generators.add_still_seconds),
+        ):
+            self._add_action(self.animation_menu, text, lambda a=action: a(self))
+        self.animation_menu.addSeparator()
         self._add_action(self.animation_menu, "&Check Animation…", self.check_animation)
 
         self.view_menu = bar.addMenu("&View")
@@ -224,6 +235,14 @@ class MainWindow(QMainWindow):
     def add_camera_key(self) -> None:
         """Key the current view at the playhead."""
         self.keys.set_key("camera.pose", self.viewport.camera_pose())
+
+    def animation_changed(self) -> None:
+        """Keys or the duration changed outside the key editor (generators, their undo)."""
+        self.timeline.settings_changed.emit()
+        self.timeline.refresh()
+        self.keys.changed.emit()
+        self.viewport.set_animated_camera(self.scene.animation.is_animated("camera.pose"))
+        self.viewport.request_render()
 
     def check_animation(self) -> list[str]:
         messages = [message for _, _, message in layer_switch_warnings(self.scene.animation)]
@@ -618,6 +637,8 @@ class MainWindow(QMainWindow):
         self.recent_menu.setEnabled(bool(recent))
 
     def _update_title(self) -> None:
+        if sip.isdeleted(self):  # (the undo stack turns clean while the window is destroyed)
+            return
         title = "Earthling"
         if self.project is not None:
             scene = self.scene.path.name if self.scene.path else "untitled"

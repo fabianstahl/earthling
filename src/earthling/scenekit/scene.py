@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -320,6 +321,79 @@ def daylight_keys(scene: Scene, hike: Journey, times, head_of, sigma_s: float = 
     step = float(times[1] - times[0]) if len(times) > 1 else 1.0
     hours = gaussian(hours, sigma_s / step)
     scene.store.set("sun.follow_track", False)
+    clocks = [dt.datetime(w.year, w.month, w.day) + dt.timedelta(hours=float(h))
+              for w, h in zip(whens, hours, strict=True)]  # fmt: skip
+    for i, (t, clock) in enumerate(zip(times, clocks, strict=True)):
+        # (a key before a change of the date steps: interpolating would run through the night)
+        nxt = clocks[min(i + 1, len(clocks) - 1)]
+        interp = Interp.STEP if nxt.date() != clock.date() else Interp.LINEAR
+        key(scene, "sun.datetime", round(float(t), 4), clock, interp)
+
+
+# --- generators (also used by the Animation menu of the application) -------------------------
+def head_distance_of(scene: Scene, path) -> Callable[[float], float]:
+    """``t -> path distance`` of the drawn head, from the scene's progress keys."""
+    curves = [scene.animation.curves.get(pid) for pid in ("progress.head", "progress.mode")]
+    head_c, mode_c = (c if c is not None and c.keys else None for c in curves)
+
+    def head_of(t: float) -> float:
+        head = head_c.evaluate(t) if head_c else scene.store["progress.head"]
+        mode = mode_c.evaluate(t) if mode_c else scene.store["progress.mode"]
+        return path.distance_for(head, mode)
+
+    return head_of
+
+
+def clear_keys(scene: Scene, pid: str, t0: float, t1: float) -> None:
+    """Remove the keys of ``pid`` between t0 and t1 (inclusive)."""
+    curve = scene.animation.curves.get(pid)
+    if curve is not None:
+        curve.keys = [k for k in curve.keys if not t0 - 1e-6 <= k.time <= t1 + 1e-6]
+
+
+def draw_keys(scene: Scene, hike: Journey, d0: float, d1: float, t0: float, t1: float, *,
+              realtime: bool, soft: bool = True, step: float = 1.0 / 15.0):  # fmt: skip
+    """progress.head keys: the head runs from path distance ``d0`` to ``d1`` between the
+    timeline times t0 and t1, in the recorded time (breaks and nights pause the line) or at an
+    even speed; ``soft``: it starts and stops gently. Returns head_of(t) -> path distance."""
+    path = hike.path
+    mode = scene.store["progress.mode"]
+    e0, e1 = path.time_at(d0), path.time_at(d1)
+    timed = realtime and e0 is not None and e1 is not None and e1 > e0
+
+    def head_of(t: float) -> float:
+        f = min(max((t - t0) / max(t1 - t0, 1e-9), 0.0), 1.0)
+        f = smoother_soft(f) if soft else f
+        if timed:
+            return min(max(path.distance_for_time(e0 + f * (e1 - e0)), d0), d1)
+        return d0 + f * (d1 - d0)
+
+    clear_keys(scene, "progress.head", t0, t1)
+    for t in np.arange(t0, t1 + 1e-9, step):
+        key(scene, "progress.head", round(float(t), 4),
+            path.progress_for_distance(head_of(float(t)), mode), Interp.LINEAR)  # fmt: skip
+    return head_of
+
+
+def sun_keys(scene: Scene, hike: Journey, times, head_of, *, earliest: float | None = None,
+             latest: float | None = None, smooth_nights: bool = False,
+             sigma_s: float = 0.8) -> None:  # fmt: skip
+    """sun.datetime keys from the recorded time at the head (``head_of(t)``: path distance):
+    the light of the hike. ``earliest`` / ``latest``: limits of the clock time in hours (e.g.
+    7.5) for tracks that start before dawn or end after dark; ``smooth_nights``: where the head
+    jumps from one evening to the next morning, the sun moves back over the sky (smoothed over
+    ``sigma_s``) instead of through the night."""
+    times = np.asarray(times, dtype=np.float64)
+    whens = [local(track_time_at(hike.path, head_of(float(t)))) for t in times]
+    hours = np.array([w.hour + w.minute / 60.0 + w.second / 3600.0 for w in whens])
+    if smooth_nights and len(times) > 1:
+        hours = gaussian(hours, sigma_s / float(times[1] - times[0]))
+    if earliest is not None:
+        hours = np.maximum(hours, earliest)
+    if latest is not None:
+        hours = np.minimum(hours, latest)
+    scene.store.set("sun.follow_track", False)
+    clear_keys(scene, "sun.datetime", float(times[0]), float(times[-1]))
     clocks = [dt.datetime(w.year, w.month, w.day) + dt.timedelta(hours=float(h))
               for w, h in zip(whens, hours, strict=True)]  # fmt: skip
     for i, (t, clock) in enumerate(zip(times, clocks, strict=True)):

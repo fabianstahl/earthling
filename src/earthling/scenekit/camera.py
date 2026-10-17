@@ -253,6 +253,47 @@ def map_shots(
     return shots
 
 
+def orbit_shots(hike: Journey | None, times, centre_of, *, distance: float, pitch: float,
+                heading: float, turn: float, clearance: float = 150.0) -> list[tuple]:  # fmt: skip
+    """Circle around ``centre_of(t)`` (ENU): from ``heading`` (degrees, the direction the camera
+    looks in) by ``turn`` degrees (positive: clockwise seen from above), eased at both ends."""
+    times = np.asarray(times, dtype=np.float64)
+    span = max(float(times[-1] - times[0]), 1e-9)
+    shots = []
+    for t in times:
+        centre = np.asarray(centre_of(float(t)), dtype=np.float64)
+        u = smoother((t - times[0]) / span)
+        eye = orbit_eye(centre, heading + turn * u, pitch, distance)
+        ground = hike.ground_z(eye) if hike is not None else float("nan")
+        if math.isfinite(ground):
+            eye[2] = max(eye[2], ground + clearance)
+        shots.append((float(t), eye, centre))
+    return shots
+
+
+def line_shots(hike: Journey, times, head_of, *, near: float, far: float, pitch: float,
+               side: float, clearance: float = 300.0) -> list[tuple]:  # fmt: skip
+    """Fly along the line drawn during ``times`` (``head_of(t)``: path distance of the head):
+    the camera looks across it, ``side`` degrees off the direction of travel, and zooms out
+    from ``near`` to ``far`` halfway and back (a flight, a ferry crossing)."""
+    times = np.asarray(times, dtype=np.float64)
+    step = float(times[1] - times[0]) if len(times) > 1 else 1.0
+    heads = np.array([hike.path.position_at(head_of(float(t))) for t in times])
+    centres = gaussian(heads, 0.6 / step)
+    heading = bearing(heads[0], heads[-1]) + side
+    span = max(float(times[-1] - times[0]), 1e-9)
+    shots = []
+    for t, centre in zip(times, centres, strict=True):
+        bump = math.sin(math.pi * (t - times[0]) / span) ** 1.5
+        dist = math.exp(math.log(near) + (math.log(far) - math.log(near)) * bump)
+        eye = orbit_eye(centre, heading, pitch, dist)
+        ground = hike.ground_z(eye)
+        if math.isfinite(ground):
+            eye[2] = max(eye[2], ground + clearance)
+        shots.append((float(t), eye, centre))
+    return shots
+
+
 def blend_shots(first, second, t_a: float, t_b: float):
     """Shots of ``first`` until t_a, of ``second`` from t_b, smoothly mixed in between (both
     lists sampled at the same times)."""
