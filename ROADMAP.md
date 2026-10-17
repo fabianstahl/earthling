@@ -784,6 +784,13 @@ current day. A third scope, "Current track", counts from the start of the track 
 (e.g. a race on a day that also has the walk to the start and an evening walk).
 → Distance, ascent, pulse and profile of one activity.
 
+**19.30 Photo overlays**
+Scenes can hold photos (`photos` in the scene file, `scene.set_photos`). Each photo is drawn on
+the screen after tone mapping, upright by its EXIF orientation, with a white frame, a soft
+shadow, a rotation and a zoom inside the frame (`photo.<id>.*`: opacity, x, y, height, scale,
+rotation, border, shadow, zoom). Keys on the opacity fade it in and out.
+→ The picture taken at a place, shown while the line passes there.
+
 ---
 
 ## 5. Risks & notes

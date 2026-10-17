@@ -37,6 +37,7 @@ from earthling.render.lighting import (
 from earthling.render.lightning import LightningLayer
 from earthling.render.marker import MarkerLayer
 from earthling.render.overlays import OutlineLayer
+from earthling.render.photos import PhotoLayer
 from earthling.render.pois import PoiLayer
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
@@ -154,6 +155,7 @@ class Renderer:
         self.labels = LabelLayer(ctx, self.shaders)
         self.hud = HudLayer(ctx, self.shaders, self.labels.get_atlas)
         self.pois = PoiLayer(ctx, self.shaders, self.labels.get_atlas)
+        self.photos = PhotoLayer(ctx, self.shaders)  # pictures on the screen
         self.animation = None  # the scene animation (POI pop-in timing); set by the owner
         self.timeline_time: float | None = None  # timeline position (default: self.time)
         self.shadows = ShadowMaps(ctx)
@@ -357,6 +359,7 @@ class Renderer:
         if self.tracks.visible and self.vehicles:
             self.pois.render_vehicles(fbo, camera, view_proj, self.vehicles, *output,
                                       self.target.depth, (width, height))  # fmt: skip
+        self.photos.render(fbo, *output, self.store)
         self.hud.frame = self.frame
         self._minimap_inputs()
         hud_path, hud_head = self.tracks.path, self.tracks.head_m

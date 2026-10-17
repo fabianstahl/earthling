@@ -149,6 +149,13 @@ class Viewport(QOpenGLWidget):
             self.renderer.animation = animation
         self.request_render()
 
+    def set_photos(self, photos, base_dir=None) -> None:
+        """Photo overlays of the scene."""
+        self._pending_photos = (list(photos), base_dir)
+        if self.renderer is not None:
+            self.renderer.photos.set_photos(list(photos), base_dir)
+        self.request_render()
+
     def set_store(self, store) -> None:
         self.store = store
         store.subscribe(self._on_store_changed)
@@ -373,6 +380,9 @@ class Viewport(QOpenGLWidget):
         if pending is not None:
             self.renderer.pois.set_pois(pending[0], pending[1])
             self.renderer.animation = pending[2]
+        pending = getattr(self, "_pending_photos", None)
+        if pending is not None:
+            self.renderer.photos.set_photos(pending[0], pending[1])
 
     def paintGL(self) -> None:
         if self.ctx is None or self.renderer is None:

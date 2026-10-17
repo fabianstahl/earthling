@@ -267,6 +267,7 @@ class MainWindow(QMainWindow):
 
     def _pois_changed(self) -> None:
         self.viewport.set_pois(self.scene.pois, self._scene_dir(), self.scene.animation)
+        self.viewport.set_photos(self.scene.photos, self._scene_dir())
 
     def hiker_lonlat(self) -> tuple[float, float] | None:
         """(lon, lat) of the head of the drawn track."""

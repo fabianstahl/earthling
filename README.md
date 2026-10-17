@@ -23,8 +23,8 @@ timeline and export 4K video.
 - **Overlays:** peak, pass and place labels (OpenStreetMap), country names and large cities
   (Natural Earth) for journeys across a continent, a stats panel with distance, ascent, speed
   or pace, gradient, heart rate, the gap in a race, elevation profile and time of day (in
-  English or German), a mini-map of the whole journey with the head on it, and data
-  attribution.
+  English or German), a mini-map of the whole journey with the head on it, photos faded in on
+  the screen (with a white frame, a shadow and a slow zoom), and data attribution.
 - **Points of interest:** icons (PNG, animated GIF or APNG, sprite sheets) with captions,
   pop-in animations and effects.
 - **Weather:** volumetric fog and cloud layers (fields of cloud with clear gaps, bases and tops

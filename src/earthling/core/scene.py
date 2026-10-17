@@ -54,6 +54,7 @@ class Scene:
         self.path: Path | None = None
         self.dirty = False
         self.pois: list = []  # earthling.core.pois.Poi
+        self.photos: list = []  # earthling.core.photos.Photo (pictures on the screen)
         # (lat, lon) of the local frame for this scene, or None for the project default
         # (the centre of the tracks). Far from the origin the ENU "up" tilts away from the
         # local vertical (5 degrees at 600 km): scenes there get their own origin.
@@ -95,6 +96,13 @@ class Scene:
         self.pois = list(pois)
         self.set_dynamic("pois", all_poi_properties(self.pois))
 
+    def set_photos(self, photos) -> None:
+        """Replace the photo overlays (and their keyframeable properties)."""
+        from earthling.core.photos import all_photo_properties
+
+        self.photos = list(photos)
+        self.set_dynamic("photos", all_photo_properties(self.photos))
+
     # --- dirty state ------------------------------------------------------------------
     def mark_dirty(self, dirty: bool = True) -> None:
         if dirty != self.dirty:
@@ -114,16 +122,19 @@ class Scene:
             "camera": self.camera,
             "ui": self.ui,
             "pois": [poi.to_json() for poi in self.pois],
+            **({"photos": [photo.to_json() for photo in self.photos]} if self.photos else {}),
             **({"origin": list(self.origin)} if self.origin is not None else {}),
         }
 
     def load_json(self, doc: dict[str, Any]) -> list[str]:
         """Replace the scene contents. Returns non-fatal problems (unknown properties...)."""
         doc = migrate(dict(doc))
+        from earthling.core.photos import Photo
         from earthling.core.pois import Poi
 
-        # POIs first: their properties must exist before the values are loaded
+        # POIs and photos first: their properties must exist before the values are loaded
         self.set_pois([Poi.from_json(p) for p in doc.get("pois", [])])
+        self.set_photos([Photo.from_json(p) for p in doc.get("photos", [])])
         for d in self.registry:  # properties missing in the file get their defaults
             self.store.set(d.id, d.default)
         problems = self.store.load_json(doc.get("properties", {}))

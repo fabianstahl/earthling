@@ -132,6 +132,7 @@ def cmd_render(args) -> int:
     renderer.timezone = session.config.project.timezone
     renderer.set_labels(session.labels, session)
     renderer.pois.set_pois(scene.pois, scene_path.parent)
+    renderer.photos.set_photos(scene.photos, scene_path.parent)
     renderer.hud.attribution = session.attribution()
     frames = FrameRenderer(renderer, anim)
     started = time.monotonic()
