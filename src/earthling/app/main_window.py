@@ -173,6 +173,7 @@ class MainWindow(QMainWindow):
         )  # fmt: skip
         self.recent_menu = self.file_menu.addMenu("Open &Recent")
         self._add_action(self.file_menu, "Re&load Project", self._reload_project, "F5")
+        self._add_action(self.file_menu, "Project Se&ttings…", self.edit_settings, "Ctrl+,")
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "Open &Scene…", self._open_scene_dialog)
         self._add_action(
@@ -662,8 +663,23 @@ class MainWindow(QMainWindow):
             self.open_project(folder)
 
     def _reload_project(self) -> None:
-        if self.project is not None:
-            self.open_project(self.project.folder)
+        """Load the project again (tracks, data sources) and reopen the scene that was open."""
+        if self.project is None:
+            return
+        scene = self.scene.path
+        if not self.open_project(self.project.folder):
+            return
+        if scene is not None and scene.exists() and scene != self.scene.path:
+            self.load_scene(scene)
+
+    def edit_settings(self) -> None:
+        """The project's earthling.toml in a checking editor; saving reloads the project."""
+        from earthling.app.settings_dialog import SettingsDialog
+
+        if self.project is None:
+            return
+        if SettingsDialog(self.project.config_path, self).exec():
+            self._reload_project()
 
     def _recent(self) -> list[str]:
         value = self.settings.value("recent_projects", [])
