@@ -14,6 +14,24 @@ from earthling.render.camera_rig import CameraRig, clamp_above_ground
 from earthling.render.renderer import Renderer
 
 
+def scene_renderer(ctx: moderngl.Context, session, scene) -> Renderer:
+    """A renderer showing ``scene`` of ``session`` (a :class:`earthling.session.Session`): the
+    local frame centred on the scene's origin, tracks, terrain, labels, POIs, photos and the
+    data credits. POI icons and photos are found relative to the scene file."""
+    base_dir = scene.path.parent if scene.path is not None else None
+    renderer = Renderer(ctx)
+    session.set_origin(scene.origin)
+    renderer.set_scene(session.frame, session.all_tracks)
+    renderer.set_terrain_source(session.terrain_data(), session.terrain_nodes())
+    renderer.store = scene.store
+    renderer.timezone = session.config.project.timezone
+    renderer.set_labels(session.labels, session)
+    renderer.pois.set_pois(scene.pois, base_dir)
+    renderer.photos.set_photos(scene.photos, base_dir)
+    renderer.hud.attribution = session.attribution()
+    return renderer
+
+
 def parse_resolution(text: str) -> tuple[int, int]:
     w, h = text.lower().split("x")
     return int(w), int(h)
@@ -242,16 +260,15 @@ def save_png(image: np.ndarray, path) -> None:
     from PIL import Image
 
     if image.dtype == np.uint16:
-        # Pillow cannot write 16-bit RGB directly; go through a 48-bit raw buffer
-        import zlib
-
-        _write_png16(image, path, zlib)
+        _write_png16(image, path)  # (Pillow cannot write 16-bit RGB directly)
         return
     Image.fromarray(image).save(path)
 
 
-def _write_png16(image: np.ndarray, path, zlib) -> None:
+def _write_png16(image: np.ndarray, path) -> None:
+    """A 48-bit RGB PNG written by hand."""
     import struct
+    import zlib
 
     h, w, _ = image.shape
     raw = b"".join(b"\x00" + image[y].astype(">u2").tobytes() for y in range(h))

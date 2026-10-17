@@ -27,6 +27,40 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--start", type=float, default=0.0, help="start time in seconds")
     render.add_argument("--end", type=float, default=None, help="end time (default: duration)")
     render.add_argument("--list-presets", action="store_true", help="list presets and exit")
+    stills = sub.add_parser("stills", help="render preview stills of a scene (+ contact sheet)")
+    stills.add_argument("project", help="project folder")
+    stills.add_argument("times", nargs="*", type=float, help="times in seconds")
+    stills.add_argument("--scene", default="scene.json", help="scene file (in the project folder)")
+    stills.add_argument(
+        "--auto",
+        type=int,
+        default=0,
+        metavar="N",
+        help="N evenly spaced times (instead of listing them)",
+    )
+    stills.add_argument("--size", default="960x540", help="image size (default 960x540)")
+    stills.add_argument("--samples", default="1", help="anti-aliasing samples (default 1)")
+    stills.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="PID=VALUE",
+        help="fix a property (Python literal; dt:2026-09-05T18:30 for dates)",
+    )
+    stills.add_argument(
+        "--sequence",
+        type=float,
+        default=None,
+        metavar="T",
+        help="render every frame from T on first, as the video export does",
+    )
+    stills.add_argument("--tag", default="", help="suffix of the file names")
+    stills.add_argument("--out", default=None, help="folder (default: <project>/renders/stills)")
+    qa = sub.add_parser("qa", help="check a rendered video: contact sheet, jumps and flashes")
+    qa.add_argument("video", help="video file")
+    qa.add_argument("--frames", type=int, default=12, help="frames on the contact sheet")
+    qa.add_argument("--ratio", type=float, default=3.0, help="jump = change > ratio x local")
+    qa.add_argument("--out", default=None, help="folder (default: qa/ next to the video)")
     check = sub.add_parser(
         "check-source", help="test an imagery provider or DEM source at a location"
     )
@@ -96,10 +130,8 @@ def cmd_render(args) -> int:
 
     import moderngl
 
-    from earthling.core.scene import Scene
-    from earthling.export.frames import FrameRenderer, parse_resolution
+    from earthling.export.frames import FrameRenderer, parse_resolution, scene_renderer
     from earthling.export.video import PRESETS, available_presets, export_video
-    from earthling.render.renderer import Renderer
 
     if args.list_presets:
         for preset in available_presets():
@@ -111,29 +143,14 @@ def cmd_render(args) -> int:
     session = _load_session(args.project)
     if session is None:
         return 1
-    scene_path = Path(args.scene)
-    if not scene_path.is_absolute():
-        scene_path = session.project.folder / scene_path
-    scene = Scene()
-    scene.set_dynamic("track_groups", session.track_group_properties())
-    for problem in scene.load(scene_path):
-        print(f"warning: {problem}", file=sys.stderr)
+    scene = _load_scene(session, args.scene)
+    scene_path = scene.path
     preset = PRESETS[args.preset]
     width, height = parse_resolution(args.resolution or scene.store["export.resolution"])
     anim = scene.animation
     end = anim.duration if args.end is None else args.end
     out = Path(args.out) if args.out else scene_path.with_suffix(preset.extension)
-    ctx = moderngl.create_standalone_context(require=430)
-    renderer = Renderer(ctx)
-    session.set_origin(scene.origin)
-    renderer.set_scene(session.frame, session.all_tracks)
-    renderer.set_terrain_source(session.terrain_data(), session.terrain_nodes())
-    renderer.store = scene.store
-    renderer.timezone = session.config.project.timezone
-    renderer.set_labels(session.labels, session)
-    renderer.pois.set_pois(scene.pois, scene_path.parent)
-    renderer.photos.set_photos(scene.photos, scene_path.parent)
-    renderer.hud.attribution = session.attribution()
+    renderer = scene_renderer(moderngl.create_standalone_context(require=430), session, scene)
     frames = FrameRenderer(renderer, anim)
     started = time.monotonic()
 
@@ -173,6 +190,60 @@ def _load_session(project_dir: str):
         print("no tracks found", file=sys.stderr)
         return None
     return session
+
+
+def cmd_stills(args) -> int:
+    from pathlib import Path
+
+    import moderngl
+
+    from earthling.export.frames import FrameRenderer, parse_resolution, scene_renderer
+    from earthling.export.stills import apply_overrides, auto_times, contact_sheet, render_stills
+
+    session = _load_session(args.project)
+    if session is None:
+        return 1
+    scene = _load_scene(session, args.scene)
+    scene.store.set("export.samples", args.samples)
+    apply_overrides(scene, args.set)
+    anim = scene.animation
+    times = auto_times(anim.duration, args.auto, anim.fps) if args.auto else args.times
+    if not times:
+        print("no times given (list them or use --auto N)", file=sys.stderr)
+        return 2
+    width, height = parse_resolution(args.size)
+    out = Path(args.out) if args.out else session.project.folder / "renders" / "stills"
+    stem = scene.path.stem + args.tag
+    renderer = scene_renderer(moderngl.create_standalone_context(require=430), session, scene)
+    try:
+        paths = render_stills(FrameRenderer(renderer, anim), times, width, height, out, stem,
+                              args.sequence)  # fmt: skip
+    finally:
+        renderer.terrain.shutdown()
+    if len(paths) > 1:
+        print(contact_sheet(paths, out / f"{stem}_sheet.jpg", width, height))
+    return 0
+
+
+def cmd_qa(args) -> int:
+    from pathlib import Path
+
+    from earthling.export.qa import check_video
+
+    video = Path(args.video)
+    if not video.exists():
+        print(f"no such file: {video}", file=sys.stderr)
+        return 1
+    out = Path(args.out) if args.out else video.parent / "qa"
+    check_video(video, out, args.frames, args.ratio)
+    return 0
+
+
+def _load_scene(session, scene_file: str):
+    scene, problems = session.load_scene(scene_file)
+    for problem in problems:
+        print(f"warning: {problem}", file=sys.stderr)
+    return scene
 
 
 def _progress_printer():
@@ -248,6 +319,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_fetch(args.project, args.kind, args.max_zoom)
     if command == "render":
         return cmd_render(args)
+    if command == "stills":
+        return cmd_stills(args)
+    if command == "qa":
+        return cmd_qa(args)
     if command == "check-source":
         return cmd_check_source(args)
     return 1

@@ -19,6 +19,7 @@ from earthling.core.aoi import AreaOfInterest, TilePlan, compute_aoi, plan_tiles
 from earthling.core.config import AreaSection, ConfigError, Project, TrackGroupDef
 from earthling.core.geo import LocalFrame, frame_for_bbox
 from earthling.core.gpx import Track, load_gpx_file, load_gpx_folder
+from earthling.core.scene import Scene
 from earthling.data.cache import TileCache
 from earthling.data.providers import TileProvider, get_provider
 
@@ -144,6 +145,22 @@ class Session:
         from earthling.render.parameters import track_group_properties
 
         return track_group_properties(self.groups)
+
+    def new_scene(self) -> Scene:
+        """An empty scene with this project's track-group properties."""
+        scene = Scene()
+        scene.set_dynamic("track_groups", self.track_group_properties())
+        return scene
+
+    def load_scene(self, path) -> tuple[Scene, list[str]]:
+        """A scene file (relative paths: in the project folder) and the non-fatal problems
+        found while loading it (unknown properties, ...)."""
+        path = Path(path)
+        if not path.is_absolute():
+            path = self.project.folder / path
+        scene = self.new_scene()
+        problems = scene.load(path)
+        return scene, problems
 
     def group(self, name: str) -> TrackGroup | None:
         return next((g for g in self.groups if g.name == name), None)
