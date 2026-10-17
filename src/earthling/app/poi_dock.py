@@ -1,4 +1,5 @@
-"""Points of interest dock: add (at the hiker or by clicking the terrain), edit and remove POIs.
+"""Points of interest dock: add POIs of a kind from the library (at the hiker, by clicking the
+terrain or at a place), edit and remove them.
 
 Structural edits are undoable (snapshots of the POIs with their property values and keys).
 The animatable part of every POI appears as its own section in the parameter panel.
@@ -10,8 +11,8 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from PyQt6.QtCore import QSize, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QUndoCommand
+from PyQt6.QtCore import QSize, QStandardPaths, pyqtSignal
+from PyQt6.QtGui import QIcon, QImage, QPixmap, QUndoCommand
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -28,12 +29,31 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from earthling.core.poi_library import KINDS, PoiKind, add_user_image, load_user_images
 from earthling.core.pois import Poi, slug
 from earthling.core.scene import Scene
-from earthling.render.pois import builtin_icons, resolve_icon
+from earthling.render.pois import BADGE, badge_image, builtin_icons, resolve_icon
 from earthling.ui.widgets import double_spin, row
 
 CUSTOM = "__custom__"
+ADD_IMAGE = "__add_image__"
+
+
+def user_images_file() -> Path:
+    """The user's own POI images (shared by all projects)."""
+    folder = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+    return Path(folder) / "poi_images.json"
+
+
+def icon_for(ref: str, caption: str = "", base_dir: Path | None = None) -> QIcon:
+    """A small picture of an icon reference (a builtin, a file, the text badge, none)."""
+    if ref == BADGE:
+        image = badge_image(caption or "Text")
+        data = image.tobytes("raw", "RGBA")
+        qimage = QImage(data, image.width, image.height, QImage.Format.Format_RGBA8888)
+        return QIcon(QPixmap.fromImage(qimage.copy()))
+    path = resolve_icon(ref, base_dir)
+    return QIcon(QPixmap(str(path))) if path is not None else QIcon()
 
 
 def poi_snapshot(scene: Scene) -> str:
@@ -83,8 +103,10 @@ class PoiDock(QDockWidget):
     changed = pyqtSignal()  # POIs edited (the viewport redraws)
 
     def __init__(self, scene: Scene, undo_stack, hiker_position: Callable, request_pick: Callable,
-                 base_dir: Callable[[], Path | None], parent=None) -> None:  # fmt: skip
-        """``hiker_position() -> (lon, lat) | None``; ``request_pick(callback(lon, lat))``."""
+                 base_dir: Callable[[], Path | None], parent=None,
+                 choose_place: Callable | None = None) -> None:  # fmt: skip
+        """``hiker_position() -> (lon, lat) | None``; ``request_pick(callback(lon, lat))``;
+        ``choose_place(title, (lon, lat) | None) -> (lon, lat) | None`` (a place dialog)."""
         super().__init__("Points of Interest", parent)
         self.setObjectName("poi_dock")
         self.scene = scene
@@ -92,6 +114,7 @@ class PoiDock(QDockWidget):
         self.hiker_position = hiker_position
         self.request_pick = request_pick
         self.base_dir = base_dir
+        self.choose_place = choose_place
         self.setWidget(self._build_body())
         self._updating = False
         self._connect()
@@ -101,13 +124,23 @@ class PoiDock(QDockWidget):
         """Add/remove buttons, the POI list and the form editing the current POI."""
         body = QWidget()
         layout = QVBoxLayout(body)
+        self.kind = QComboBox()
+        self.kind.setIconSize(QSize(22, 22))
+        self.kind.setToolTip("What the new POI is: its icon, name and caption")
+        self._fill_kinds()
+        layout.addWidget(row(QLabel("New"), (self.kind, 1)))
         buttons = QHBoxLayout()
         self.add_hiker = QPushButton("+ At hiker")
         self.add_hiker.setToolTip("New POI at the head of the drawn track")
         self.add_click = QPushButton("+ On map…")
         self.add_click.setToolTip("New POI where you click on the terrain")
+        self.add_place = QPushButton("+ At…")
+        self.add_place.setToolTip(
+            "New POI at coordinates or at a point of a track (start, end, "
+            "highest or lowest point, a distance)"
+        )
         self.remove = QPushButton("Remove")
-        for b in (self.add_hiker, self.add_click, self.remove):
+        for b in (self.add_hiker, self.add_click, self.add_place, self.remove):
             buttons.addWidget(b)
         layout.addLayout(buttons)
         self.list = QListWidget()
@@ -117,9 +150,10 @@ class PoiDock(QDockWidget):
         self.name = QLineEdit()
         self.caption = QLineEdit()
         self.icon = QComboBox()
+        self.icon.addItem("No icon (caption only)", "none")
+        self.icon.addItem(icon_for(BADGE), "Text badge (caption inside)", BADGE)
         for name in builtin_icons():
-            path = resolve_icon(f"builtin:{name}", None)
-            self.icon.addItem(QIcon(QPixmap(str(path))), name, f"builtin:{name}")
+            self.icon.addItem(icon_for(f"builtin:{name}"), name, f"builtin:{name}")
         self.icon.addItem("Custom file…", CUSTOM)
         self.size_px = double_spin(8.0, 512.0, suffix=" px")
         self.lift = double_spin(0.0, 400.0, suffix=" px")
@@ -129,24 +163,66 @@ class PoiDock(QDockWidget):
             spin.setRange(1, 64)
         self.fps = double_spin(0.5, 60.0)
         sprite = row(QLabel("cols"), self.cols, QLabel("rows"), self.rows, QLabel("fps"), self.fps)
-        self.position = QLabel("–")
+        self.lat = double_spin(-90.0, 90.0, decimals=6, suffix="°")
+        self.lon = double_spin(-180.0, 180.0, decimals=6, suffix="°")
+        self.lat.setToolTip("Latitude (north positive)")
+        self.lon.setToolTip("Longitude (east positive)")
         self.move_hiker = QPushButton("To hiker")
         self.move_click = QPushButton("Pick…")
+        self.move_place = QPushButton("Place…")
         form.addRow("Name", self.name)
         form.addRow("Caption", self.caption)
         form.addRow("Icon", self.icon)
         form.addRow("Size (1080p)", self.size_px)
         form.addRow("Pin height", self.lift)
         form.addRow("Sprite sheet", sprite)
-        form.addRow("Position", row((self.position, 1), self.move_hiker, self.move_click))
+        form.addRow("Position", row((self.lat, 1), (self.lon, 1)))
+        form.addRow("", row(self.move_hiker, self.move_click, self.move_place))
         layout.addLayout(form)
         layout.addWidget(QLabel("Animate visibility, effects … in the POI's section of the "
                                 "parameter panel."))  # fmt: skip
         return body
 
+    def _fill_kinds(self, select: str | None = None) -> None:
+        """The library grouped by category, the user's images and "Add image…"."""
+        self.kind.clear()
+        category = None
+        for kind in [*KINDS, *load_user_images(user_images_file())]:
+            if kind.category != category:
+                if category is not None:
+                    self.kind.insertSeparator(self.kind.count())
+                category = kind.category
+            label = kind.name if kind.icon != "none" else f"{kind.name} (no icon)"
+            self.kind.addItem(icon_for(kind.icon, kind.caption), f"{label}", kind)
+            self.kind.setItemData(self.kind.count() - 1, category, 3)  # (tooltip: the category)
+        self.kind.insertSeparator(self.kind.count())
+        self.kind.addItem("Add image…", ADD_IMAGE)
+        index = next((i for i in range(self.kind.count())
+                      if isinstance(self.kind.itemData(i), PoiKind)
+                      and self.kind.itemData(i).icon == select), 0)  # fmt: skip
+        self.kind.setCurrentIndex(index)
+
+    def _kind_chosen(self, index: int) -> None:
+        if self.kind.itemData(index) != ADD_IMAGE:
+            return
+        start = str(self.base_dir() or Path.home())
+        path, _ = QFileDialog.getOpenFileName(self, "POI image", start,
+                                              "Images (*.png *.gif *.apng *.webp)")  # fmt: skip
+        if path:
+            self._fill_kinds(select=add_user_image(user_images_file(), Path(path)).icon)
+        else:
+            self.kind.setCurrentIndex(0)
+
+    def current_kind(self) -> PoiKind:
+        kind = self.kind.currentData()
+        return kind if isinstance(kind, PoiKind) else KINDS[0]
+
     def _connect(self) -> None:
+        self.kind.activated.connect(self._kind_chosen)
         self.add_hiker.clicked.connect(self._add_at_hiker)
         self.add_click.clicked.connect(self._add_by_click)
+        self.add_place.clicked.connect(self._add_at_place)
+        self.move_place.clicked.connect(self._move_to_place)
         self.remove.clicked.connect(self._remove)
         self.list.currentRowChanged.connect(self._show_current)
         self.icon.activated.connect(self._icon_chosen)
@@ -160,6 +236,10 @@ class PoiDock(QDockWidget):
             ("fps", self.fps, self.fps.value),
         ):
             widget.editingFinished.connect(lambda f=field, v=value: self._edit_field(f, v()))
+        for spin in (self.lat, self.lon):
+            spin.editingFinished.connect(
+                lambda: self._updating or self._move_to(self.lon.value(), self.lat.value())
+            )
         self.move_hiker.clicked.connect(self._move_to_hiker)
         self.move_click.clicked.connect(self._move_by_click)
 
@@ -173,8 +253,7 @@ class PoiDock(QDockWidget):
         self.list.blockSignals(True)
         self.list.clear()
         for poi in self.scene.pois:
-            path = resolve_icon(poi.icon, self.base_dir()) or resolve_icon("builtin:pin", None)
-            item = QListWidgetItem(QIcon(QPixmap(str(path))), poi.name)
+            item = QListWidgetItem(icon_for(poi.icon, poi.caption, self.base_dir()), poi.name)
             item.setToolTip(f"{poi.caption}\n{poi.lat:.5f}, {poi.lon:.5f}".strip())
             self.list.addItem(item)
         self.list.blockSignals(False)
@@ -186,10 +265,10 @@ class PoiDock(QDockWidget):
         poi = self.current()
         enabled = poi is not None
         for w in (self.name, self.caption, self.icon, self.size_px, self.lift, self.cols, self.rows,
-                  self.fps, self.move_hiker, self.move_click, self.remove):  # fmt: skip
+                  self.fps, self.lat, self.lon, self.move_hiker, self.move_click,
+                  self.move_place, self.remove):  # fmt: skip
             w.setEnabled(enabled)
         if poi is None:
-            self.position.setText("–")
             return
         self._updating = True
         self.name.setText(poi.name)
@@ -204,7 +283,8 @@ class PoiDock(QDockWidget):
         self.cols.setValue(poi.sprite_cols)
         self.rows.setValue(poi.sprite_rows)
         self.fps.setValue(poi.fps)
-        self.position.setText(f"{poi.lat:.5f}, {poi.lon:.5f}")
+        self.lat.setValue(poi.lat)
+        self.lon.setValue(poi.lon)
         self._updating = False
 
     def _apply(self, label: str, mutate: Callable[[], None], select: int | None = None) -> None:
@@ -222,8 +302,14 @@ class PoiDock(QDockWidget):
         self.changed.emit()
 
     # --- actions ------------------------------------------------------------------------
-    def add_poi(self, lon: float, lat: float, name: str = "POI") -> Poi:
-        poi = Poi(slug(name, {p.id for p in self.scene.pois}), name, float(lon), float(lat))
+    def add_poi(self, lon: float, lat: float, name: str | None = None,
+                kind: PoiKind | None = None) -> Poi:  # fmt: skip
+        """A new POI of ``kind`` (default: the one chosen in the dock) at lon/lat."""
+        kind = kind or self.current_kind()
+        name = name or kind.name
+        poi = Poi(slug(name, {p.id for p in self.scene.pois}), name, float(lon), float(lat),
+                  icon=self._icon_ref(kind.icon), caption=kind.caption,
+                  size_px=kind.size_px)  # fmt: skip
         self._apply("Add POI", lambda: self.scene.set_pois([*self.scene.pois, poi]),
                     select=len(self.scene.pois))  # fmt: skip
         return poi
@@ -235,6 +321,20 @@ class PoiDock(QDockWidget):
 
     def _add_by_click(self) -> None:
         self.request_pick(lambda lon, lat: self.add_poi(lon, lat))
+
+    def _add_at_place(self) -> None:
+        place = (
+            self.choose_place("New POI at…", self.hiker_position()) if self.choose_place else None
+        )
+        if place is not None:
+            self.add_poi(*place)
+
+    def _move_to_place(self) -> None:
+        poi = self.current()
+        if poi is not None and self.choose_place is not None:
+            place = self.choose_place(f"Move {poi.name} to…", (poi.lon, poi.lat))
+            if place is not None:
+                self._move_to(*place)
 
     def _remove(self) -> None:
         poi = self.current()
@@ -256,6 +356,16 @@ class PoiDock(QDockWidget):
 
         self._apply(f"POI {field}", mutate)
 
+    def _icon_ref(self, ref: str) -> str:
+        """Image files relative to the scene folder where possible."""
+        if ref in ("none", BADGE) or ref.startswith("builtin:"):
+            return ref
+        base = self.base_dir()
+        try:
+            return str(Path(ref).relative_to(base)) if base else ref
+        except ValueError:
+            return ref
+
     def _icon_chosen(self, index: int) -> None:
         data = self.icon.itemData(index)
         if data == CUSTOM:
@@ -266,11 +376,7 @@ class PoiDock(QDockWidget):
             if not path:
                 self._show_current()
                 return
-            base = self.base_dir()
-            try:
-                data = str(Path(path).relative_to(base)) if base else path
-            except ValueError:
-                data = path
+            data = self._icon_ref(path)
         self._edit_field("icon", data)
 
     def _move_to(self, lon: float, lat: float) -> None:

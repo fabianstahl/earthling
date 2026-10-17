@@ -26,6 +26,33 @@ MAX_ICON_PX = 256
 LIFT_M = 3.0  # anchor above the ground (avoids z-fighting with the terrain in the depth test)
 
 
+BADGE = "badge"  # icon: the caption drawn inside a pill (e.g. a "10 km" marker)
+
+
+def badge_image(text: str) -> Image.Image:
+    """A white pill with an orange rim and dark text (100 px high, 4x supersampled)."""
+    from PIL import ImageDraw, ImageFilter, ImageFont
+
+    from earthling.render.text import FONT_PATH
+
+    text = " ".join(text.split()) or " "
+    ss, h = 4, 100
+    font = ImageFont.truetype(str(FONT_PATH), 58 * ss)
+    w = int(font.getlength(text) / ss) + 56
+    img = Image.new("RGBA", (w * ss, h * ss), (0, 0, 0, 0))
+    r = (h - 12) * ss // 2
+    shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle((6 * ss, 10 * ss, (w - 6) * ss, (h - 2) * ss), r,
+                                             fill=(0, 0, 0, 110))  # fmt: skip
+    img.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(4 * ss)))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((6 * ss, 4 * ss, (w - 6) * ss, (h - 8) * ss), r, fill=(255, 106, 31, 255))
+    d.rounded_rectangle((13 * ss, 11 * ss, (w - 13) * ss, (h - 15) * ss), r - 7 * ss,
+                        fill=(255, 255, 255, 255))  # fmt: skip
+    d.text((w * ss / 2, (h - 10) * ss / 2), text, font=font, fill=(35, 35, 40, 255), anchor="mm")
+    return img.resize((w, h), Image.Resampling.LANCZOS)
+
+
 def builtin_icons() -> list[str]:
     return sorted(p.stem for p in ICON_DIR.glob("*.png"))
 
@@ -116,6 +143,11 @@ class PoiLayer:
 
     # --- resources ----------------------------------------------------------------------
     def _icon(self, poi: Poi) -> _GpuIcon | None:
+        if poi.icon == BADGE:  # the caption in a pill, drawn once per text
+            key = (BADGE, poi.caption)
+            if key not in self._icons:
+                self._icons[key] = self._upload(IconFrames([np.asarray(badge_image(poi.caption))]))
+            return self._icons[key]
         path = resolve_icon(poi.icon, self.base_dir) or resolve_icon("builtin:pin", None)
         if path is None:
             return None
@@ -131,6 +163,11 @@ class PoiLayer:
                 else self._icon(Poi(poi.id, poi.name, poi.lon, poi.lat))
             )
             return self._icons[key]
+        self._icons[key] = self._upload(frames)
+        return self._icons[key]
+
+    def _upload(self, frames: IconFrames) -> _GpuIcon:
+        """All frames of an icon on one texture (premultiplied, mipmapped)."""
         h, w = frames.frames[0].shape[:2]
         cols = math.ceil(math.sqrt(len(frames.frames)))
         rows = math.ceil(len(frames.frames) / cols)
@@ -144,9 +181,7 @@ class PoiLayer:
         tex.build_mipmaps()
         tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
         tex.repeat_x = tex.repeat_y = False
-        icon = _GpuIcon(tex, frames, cols, (w, h))
-        self._icons[key] = icon
-        return icon
+        return _GpuIcon(tex, frames, cols, (w, h))
 
     def _anchor(self, poi: Poi, frame, terrain_data, exaggeration: float) -> np.ndarray:
         key = (poi.id, poi.lon, poi.lat, poi.height_offset_m, exaggeration, id(terrain_data),
@@ -288,7 +323,7 @@ class PoiLayer:
         icon_quad[:, 7], icon_quad[:, 8], icon_quad[:, 9] = opacity, 0.0, 1.0
         if not iconless:
             parts.append(icon_quad)
-        if store[p + "caption"] and poi.caption:
+        if store[p + "caption"] and poi.caption and poi.icon != BADGE:
             lines = poi.caption.split("\n")
             atlas.ensure("".join(lines))  # all glyphs first: adding some repacks the atlas
             title_size = store[p + "caption_size"] * k * pop

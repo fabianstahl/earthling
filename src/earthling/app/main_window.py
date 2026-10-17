@@ -107,7 +107,7 @@ class MainWindow(QMainWindow):
         self.tracks_changed.connect(self.viewport.request_render)
         self.tracks_dock.track_activated.connect(self._frame_track)
         poi_dock = PoiDock(self.scene, self.undo_stack, self.hiker_lonlat, self._pick_lonlat,
-                           self._scene_dir, self)  # fmt: skip
+                           self._scene_dir, self, choose_place=self.choose_place)  # fmt: skip
         self.poi_dock = self._add_dock(right, poi_dock)
         self.tabifyDockWidget(self.parameters_dock, self.poi_dock)
         self.parameters_dock.raise_()
@@ -291,6 +291,20 @@ class MainWindow(QMainWindow):
             return None
         lat, lon, _ = self.session.frame.enu_to_geodetic(enu)
         return float(lon), float(lat)
+
+    def built_tracks(self) -> list:
+        """The tracks as drawn (BuiltTrack: ENU points, distances, times), [] before a project."""
+        renderer = self.viewport.renderer
+        return list(renderer.tracks._gpu) if renderer is not None else []
+
+    def choose_place(self, title: str, start: tuple[float, float] | None):
+        """(lon, lat) from the place dialog (coordinates or a track point), None if cancelled."""
+        from earthling.app.place_dialog import PlaceDialog
+
+        if self.session is None:
+            return None
+        dialog = PlaceDialog(title, self.built_tracks(), self.session.frame, start, self)
+        return dialog.lonlat() if dialog.exec() else None
 
     def _pick_lonlat(self, callback) -> None:
         self.statusBar().showMessage("Click on the terrain to place the POI", 5000)

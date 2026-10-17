@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 OUT = Path(__file__).resolve().parents[1] / "src" / "earthling" / "assets" / "icons"
 SIZE = 256
@@ -395,6 +395,385 @@ def draw_peak() -> Image.Image:
     return finish(shadow(img))
 
 
+# --- general POI icons ------------------------------------------------------------------------
+# Ring colours by category: nature/terrain green or brown, water blue, services blue, food warm
+# brown/orange, built places terracotta, danger/medical red, transport navy (like the airport).
+NATURE = (70, 125, 75)
+HUT = (140, 90, 50)
+WATER = (35, 135, 205)
+SERVICE = (30, 110, 195)
+FOOD = (200, 120, 40)
+PICNIC = (122, 78, 48)
+PLACE = (180, 85, 60)
+DANGER = (210, 40, 40)
+TRANSPORT = (45, 95, 175)
+INK = (35, 38, 45, 255)
+WHITE = (255, 255, 255, 255)
+SKY = (205, 225, 240, 255)
+ROCK = (80, 105, 85, 255)
+SNOW = (170, 200, 165, 255)
+WATER_FILL = (60, 150, 225, 255)
+
+
+def _in_disc(img: Image.Image, layer: Image.Image) -> None:
+    """Composite ``layer`` onto the badge, clipped to its white disc."""
+    m2 = 28 * SS
+    mask = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(mask).ellipse((m2, m2, S - m2, S - m2), fill=255)
+    layer.putalpha(ImageChops.multiply(layer.getchannel("A"), mask))
+    img.alpha_composite(layer)
+
+
+def _wave(d: ImageDraw.ImageDraw, x0: float, x1: float, y: float, fill, amp: float = 0.022,
+          periods: float = 3.0, width: int = 6) -> None:  # fmt: skip
+    pts = [p(x0 + (x1 - x0) * u, y + amp * math.sin(u * 2.0 * periods * math.pi))
+           for u in (i / 40.0 for i in range(41))]  # fmt: skip
+    d.line(pts, fill=fill, width=width * SS, joint="curve")
+
+
+def draw_viewpoint() -> Image.Image:
+    """Viewpoint: binoculars."""
+    img, d = badge(NATURE)
+    for x in (0.35, 0.65):
+        d.rounded_rectangle((*p(x - 0.07, 0.25), *p(x + 0.07, 0.38)), radius=5 * SS, fill=INK)
+        d.rounded_rectangle((*p(x - 0.11, 0.34), *p(x + 0.11, 0.62)), radius=10 * SS, fill=INK)
+        d.ellipse((*p(x - 0.13, 0.5), *p(x + 0.13, 0.76)), fill=INK)
+        d.ellipse((*p(x - 0.085, 0.545), *p(x + 0.085, 0.715)), fill=(*NATURE, 255))
+        d.ellipse((*p(x - 0.05, 0.57), *p(x + 0.0, 0.62)), fill=(170, 200, 165, 255))  # glint
+    d.rectangle((*p(0.44, 0.4), *p(0.56, 0.52)), fill=INK)  # bridge
+    return finish(shadow(img))
+
+
+def draw_pass() -> Image.Image:
+    """Mountain pass: a saddle between two peaks with a path winding up and over it."""
+    img, d = badge(NATURE)
+    d.polygon([p(0.17, 0.74), p(0.34, 0.3), p(0.5, 0.52), p(0.66, 0.28), p(0.83, 0.74)],
+              fill=ROCK)  # fmt: skip
+    d.polygon([p(0.34, 0.3), p(0.4, 0.38), p(0.36, 0.37), p(0.32, 0.4), p(0.29, 0.39)],
+              fill=SNOW)  # fmt: skip
+    d.polygon([p(0.66, 0.28), p(0.715, 0.37), p(0.68, 0.355), p(0.64, 0.39), p(0.6, 0.36)],
+              fill=SNOW)  # fmt: skip
+    path = [p(0.4, 0.78), p(0.58, 0.69), p(0.43, 0.62), p(0.55, 0.56), p(0.5, 0.52)]
+    d.line(path, fill=(240, 205, 120, 255), width=7 * SS, joint="curve")
+    d.line([p(0.5, 0.52), p(0.5, 0.36)], fill=(60, 60, 60, 255), width=4 * SS)  # pass sign
+    d.rectangle((*p(0.43, 0.34), *p(0.57, 0.42)), fill=(240, 205, 120, 255),
+                outline=(60, 60, 60, 255), width=2 * SS)  # fmt: skip
+    return finish(shadow(img))
+
+
+def draw_hut() -> Image.Image:
+    """Mountain hut / refuge: a hut with a pitched roof in front of a mountain."""
+    img, d = badge(HUT)
+    d.polygon([p(0.17, 0.74), p(0.4, 0.26), p(0.52, 0.4), p(0.6, 0.33), p(0.83, 0.74)],
+              fill=(135, 140, 150, 255))  # fmt: skip
+    d.polygon([p(0.4, 0.26), p(0.47, 0.345), p(0.42, 0.33), p(0.38, 0.36), p(0.345, 0.34)],
+              fill=WHITE)  # fmt: skip
+    d.rectangle((*p(0.33, 0.53), *p(0.67, 0.74)), fill=(110, 68, 38, 255))  # walls
+    d.polygon([p(0.26, 0.56), p(0.5, 0.38), p(0.74, 0.56)], fill=(205, 60, 45, 255))  # roof
+    d.rectangle((*p(0.45, 0.6), *p(0.55, 0.74)), fill=(60, 35, 20, 255))  # door
+    for x in (0.37, 0.59):
+        d.rectangle((*p(x, 0.6), *p(x + 0.05, 0.65)), fill=(250, 215, 110, 255))  # windows
+    d.line([p(0.2, 0.745), p(0.8, 0.745)], fill=(60, 60, 60, 255), width=4 * SS)
+    return finish(shadow(img))
+
+
+def _drop(d: ImageDraw.ImageDraw, cx: float, top: float, r: float, fill) -> None:
+    """A water drop: a disc with a pointed top."""
+    cy = top + 2.4 * r
+    d.ellipse((*p(cx - r, cy - r), *p(cx + r, cy + r)), fill=fill)
+    d.polygon([p(cx, top), p(cx + r * 0.92, cy - r * 0.38), p(cx - r * 0.92, cy - r * 0.38)],
+              fill=fill)  # fmt: skip
+
+
+def draw_water() -> Image.Image:
+    """Drinking water: a tap with a falling drop."""
+    img, d = badge(WATER)
+    d.rectangle((*p(0.22, 0.3), *p(0.28, 0.52)), fill=INK)  # wall plate
+    d.rectangle((*p(0.27, 0.36), *p(0.6, 0.45)), fill=INK)  # pipe
+    d.pieslice((*p(0.5, 0.36), *p(0.68, 0.54)), 270, 360, fill=INK)  # bend
+    d.rectangle((*p(0.59, 0.45), *p(0.68, 0.54)), fill=INK)  # spout
+    d.rectangle((*p(0.41, 0.27), *p(0.46, 0.37)), fill=INK)  # stem
+    d.rounded_rectangle((*p(0.33, 0.22), *p(0.54, 0.28)), radius=3 * SS, fill=INK)  # handle
+    _drop(d, 0.635, 0.58, 0.065, (*WATER, 255))
+    return finish(shadow(img))
+
+
+def draw_waterfall() -> Image.Image:
+    """Waterfall: water falling over a rock ledge into a pool."""
+    img, d = badge(WATER)
+    rock = (95, 100, 110, 255)
+    layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    ld.polygon([p(0.1, 0.28), p(0.42, 0.28), p(0.38, 0.4), p(0.34, 0.7), p(0.1, 0.7)], fill=rock)
+    ld.polygon([p(0.58, 0.32), p(0.9, 0.32), p(0.9, 0.7), p(0.66, 0.7), p(0.63, 0.45)], fill=rock)
+    ld.rectangle((*p(0.37, 0.28), *p(0.63, 0.7)), fill=WATER_FILL)  # the fall
+    for x in (0.43, 0.5, 0.57):
+        ld.line([p(x, 0.32), p(x, 0.64)], fill=(210, 235, 250, 255), width=4 * SS)
+    ld.rectangle((*p(0.1, 0.66), *p(0.9, 0.9)), fill=WATER_FILL)  # pool
+    _wave(ld, 0.12, 0.88, 0.75, (210, 235, 250, 255), amp=0.015, periods=4.0, width=4)
+    for x in (0.31, 0.69):  # spray
+        ld.ellipse((*p(x - 0.035, 0.62), *p(x + 0.035, 0.69)), fill=(210, 235, 250, 255))
+    _in_disc(img, layer)
+    return finish(shadow(img))
+
+
+def draw_swimming() -> Image.Image:
+    """Swimming / bathing: a swimmer doing the crawl in the waves."""
+    img, d = badge(WATER)
+    ink = (25, 50, 75, 255)
+    d.ellipse((*p(0.63, 0.36), *p(0.75, 0.48)), fill=ink)  # head
+    d.line([p(0.24, 0.56), p(0.6, 0.5)], fill=ink, width=12 * SS, joint="curve")  # body
+    d.line([p(0.56, 0.51), p(0.46, 0.34), p(0.32, 0.36)], fill=ink, width=9 * SS,
+           joint="curve")  # arm  # fmt: skip
+    _wave(d, 0.2, 0.8, 0.62, (*WATER, 255), amp=0.025, periods=2.5, width=7)
+    _wave(d, 0.24, 0.76, 0.72, (*WATER, 255), amp=0.025, periods=2.0, width=7)
+    return finish(shadow(img))
+
+
+def draw_beach() -> Image.Image:
+    """Beach: a sun umbrella on the sand by the sea."""
+    img, d = badge(WATER)
+    layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    ld.rectangle((*p(0.0, 0.64), *p(1.0, 1.0)), fill=WATER_FILL)  # sea
+    ld.ellipse((*p(0.2, 0.68), *p(1.3, 1.2)), fill=(240, 205, 130, 255))  # sand
+    _in_disc(img, layer)
+    d.ellipse((*p(0.66, 0.2), *p(0.78, 0.32)), fill=(250, 190, 40, 255))  # sun
+    canopy = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    c = ImageDraw.Draw(canopy)
+    box = (*p(0.2, 0.26), *p(0.7, 0.66))
+    for k in range(4):
+        fill = (220, 55, 45, 255) if k % 2 == 0 else WHITE
+        c.pieslice(box, 180 + 45 * k, 225 + 45 * k, fill=fill)
+    c.arc(box, 180, 360, fill=(150, 40, 35, 255), width=3 * SS)
+    c.line([p(0.2, 0.46), p(0.7, 0.46)], fill=(150, 40, 35, 255), width=3 * SS)
+    canopy = canopy.rotate(15, center=p(0.45, 0.46), resample=Image.Resampling.BICUBIC)
+    d.line([p(0.45, 0.38), p(0.53, 0.78)], fill=(70, 55, 45, 255), width=5 * SS)  # pole
+    img.alpha_composite(canopy)
+    return finish(shadow(img))
+
+
+def draw_bridge() -> Image.Image:
+    """Bridge: a stone arch bridge over water."""
+    img, d = badge(NATURE)
+    layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    ld.rectangle((*p(0.0, 0.66), *p(1.0, 1.0)), fill=WATER_FILL)
+    ld.rectangle((*p(0.0, 0.42), *p(1.0, 0.7)), fill=INK)  # deck and piers
+    ld.rectangle((*p(0.0, 0.335), *p(1.0, 0.36)), fill=INK)  # railing
+    for x in (0.2, 0.32, 0.44, 0.56, 0.68, 0.8):
+        ld.rectangle((*p(x - 0.012, 0.34), *p(x + 0.012, 0.43)), fill=INK)
+    ld.ellipse((*p(0.32, 0.5), *p(0.68, 0.9)), fill=WATER_FILL)  # the arch
+    ld.rectangle((*p(0.32, 0.7), *p(0.68, 0.9)), fill=WATER_FILL)
+    _wave(ld, 0.1, 0.9, 0.79, (210, 235, 250, 255), amp=0.015, periods=4.0, width=4)
+    _in_disc(img, layer)
+    return finish(shadow(img))
+
+
+def draw_town() -> Image.Image:
+    """Town / village: houses around a church tower."""
+    img, d = badge(PLACE)
+    ink, roof = (60, 45, 45, 255), (*PLACE, 255)
+    d.rectangle((*p(0.22, 0.55), *p(0.38, 0.74)), fill=ink)  # left house
+    d.polygon([p(0.19, 0.56), p(0.3, 0.43), p(0.41, 0.56)], fill=roof)
+    d.rectangle((*p(0.6, 0.5), *p(0.78, 0.74)), fill=ink)  # right house
+    d.polygon([p(0.57, 0.51), p(0.69, 0.37), p(0.81, 0.51)], fill=roof)
+    d.rectangle((*p(0.43, 0.38), *p(0.57, 0.74)), fill=ink)  # tower
+    d.polygon([p(0.41, 0.39), p(0.5, 0.17), p(0.59, 0.39)], fill=roof)  # spire
+    for x0, y0 in ((0.27, 0.6), (0.65, 0.56), (0.71, 0.56), (0.47, 0.45)):
+        d.rectangle((*p(x0, y0), *p(x0 + 0.045, y0 + 0.05)), fill=(250, 215, 110, 255))
+    d.rectangle((*p(0.47, 0.64), *p(0.53, 0.74)), fill=(250, 215, 110, 255))  # door
+    d.line([p(0.18, 0.745), p(0.82, 0.745)], fill=ink, width=4 * SS)
+    return finish(shadow(img))
+
+
+def draw_church() -> Image.Image:
+    """Church: a tower with a spire and a cross between two aisles."""
+    img, d = badge(PLACE)
+    ink = (60, 45, 45, 255)
+    d.rectangle((*p(0.25, 0.54), *p(0.75, 0.75)), fill=ink)  # aisles
+    d.polygon([p(0.25, 0.55), p(0.44, 0.45), p(0.56, 0.45), p(0.75, 0.55)], fill=ink)
+    d.rectangle((*p(0.42, 0.38), *p(0.58, 0.75)), fill=ink)  # tower
+    d.polygon([p(0.4, 0.39), p(0.5, 0.24), p(0.6, 0.39)], fill=(*PLACE, 255))  # spire
+    d.rectangle((*p(0.49, 0.13), *p(0.51, 0.25)), fill=ink)  # cross
+    d.rectangle((*p(0.46, 0.165), *p(0.54, 0.185)), fill=ink)
+    d.chord((*p(0.45, 0.6), *p(0.55, 0.7)), 180, 360, fill=WHITE)  # door
+    d.rectangle((*p(0.45, 0.65), *p(0.55, 0.75)), fill=WHITE)
+    d.ellipse((*p(0.47, 0.44), *p(0.53, 0.5)), fill=WHITE)  # rose window
+    for x in (0.31, 0.65):
+        d.chord((*p(x, 0.58), *p(x + 0.04, 0.62)), 180, 360, fill=WHITE)
+        d.rectangle((*p(x, 0.6), *p(x + 0.04, 0.68)), fill=WHITE)
+    return finish(shadow(img))
+
+
+def draw_castle() -> Image.Image:
+    """Castle / ruin: two towers with battlements and a gate in the wall."""
+    img, d = badge(PLACE)
+    ink = (60, 45, 45, 255)
+
+    def battlements(x0: float, x1: float, y: float, n: int) -> None:
+        w = (x1 - x0) / (2 * n - 1)
+        for k in range(n):
+            d.rectangle((*p(x0 + 2 * k * w, y - 0.055), *p(x0 + (2 * k + 1) * w, y)), fill=ink)
+
+    d.rectangle((*p(0.23, 0.33), *p(0.39, 0.75)), fill=ink)  # left tower
+    battlements(0.23, 0.39, 0.335, 3)
+    d.rectangle((*p(0.61, 0.33), *p(0.77, 0.75)), fill=ink)  # right tower
+    battlements(0.61, 0.77, 0.335, 3)
+    d.rectangle((*p(0.38, 0.49), *p(0.62, 0.75)), fill=ink)  # wall
+    battlements(0.395, 0.605, 0.495, 3)
+    d.chord((*p(0.44, 0.58), *p(0.56, 0.7)), 180, 360, fill=WHITE)  # gate
+    d.rectangle((*p(0.44, 0.64), *p(0.56, 0.75)), fill=WHITE)
+    for x in (0.295, 0.675):  # arrow slits
+        d.rectangle((*p(x, 0.42), *p(x + 0.03, 0.5)), fill=WHITE)
+    d.line([p(0.31, 0.28), p(0.31, 0.14)], fill=ink, width=4 * SS)  # flag
+    d.polygon([p(0.315, 0.14), p(0.42, 0.17), p(0.315, 0.2)], fill=(*PLACE, 255))
+    return finish(shadow(img))
+
+
+def draw_restaurant() -> Image.Image:
+    """Restaurant: a fork and a knife."""
+    img, d = badge(FOOD)
+    ink = (70, 45, 30, 255)
+    for x in (0.33, 0.39, 0.45):  # fork tines
+        d.rounded_rectangle((*p(x - 0.017, 0.22), *p(x + 0.017, 0.4)), radius=4 * SS, fill=ink)
+    d.rounded_rectangle((*p(0.313, 0.36), *p(0.467, 0.46)), radius=10 * SS, fill=ink)
+    d.rounded_rectangle((*p(0.36, 0.42), *p(0.42, 0.78)), radius=8 * SS, fill=ink)  # handle
+    d.polygon([p(0.58, 0.48), p(0.58, 0.3), p(0.6, 0.24), p(0.66, 0.22), p(0.67, 0.48)],
+              fill=ink)  # blade  # fmt: skip
+    d.rounded_rectangle((*p(0.58, 0.46), *p(0.66, 0.78)), radius=8 * SS, fill=ink)  # handle
+    return finish(shadow(img))
+
+
+def draw_picnic() -> Image.Image:
+    """Picnic area: a picnic table with benches."""
+    img, d = badge(PICNIC)
+    ink, w = (70, 45, 30, 255), 8 * SS
+    d.rounded_rectangle((*p(0.2, 0.35), *p(0.8, 0.43)), radius=3 * SS, fill=ink)  # top
+    d.rounded_rectangle((*p(0.15, 0.55), *p(0.85, 0.61)), radius=3 * SS, fill=ink)  # benches
+    for x0, x1 in ((0.38, 0.27), (0.62, 0.73)):  # A-legs
+        d.line([p(x0, 0.42), p(x1, 0.74)], fill=ink, width=w)
+    return finish(shadow(img))
+
+
+def draw_toilet() -> Image.Image:
+    """Toilets (WC): a man and a woman."""
+    img, d = badge(SERVICE)
+    ink = (25, 45, 80, 255)
+    for x in (0.34, 0.66):  # heads
+        d.ellipse((*p(x - 0.055, 0.22), *p(x + 0.055, 0.33)), fill=ink)
+    d.rounded_rectangle((*p(0.27, 0.36), *p(0.41, 0.58)), radius=6 * SS, fill=ink)  # man
+    d.rectangle((*p(0.285, 0.55), *p(0.33, 0.78)), fill=ink)
+    d.rectangle((*p(0.35, 0.55), *p(0.395, 0.78)), fill=ink)
+    d.polygon([p(0.62, 0.36), p(0.7, 0.36), p(0.77, 0.62), p(0.55, 0.62)], fill=ink)  # woman
+    d.rectangle((*p(0.615, 0.6), *p(0.65, 0.78)), fill=ink)
+    d.rectangle((*p(0.67, 0.6), *p(0.705, 0.78)), fill=ink)
+    d.line([p(0.5, 0.2), p(0.5, 0.8)], fill=ink, width=4 * SS)
+    return finish(shadow(img))
+
+
+def draw_firstaid() -> Image.Image:
+    """First aid / medical: a red cross."""
+    img, d = badge(DANGER)
+    red = (*DANGER, 255)
+    d.rectangle((*p(0.41, 0.24), *p(0.59, 0.76)), fill=red)
+    d.rectangle((*p(0.24, 0.41), *p(0.76, 0.59)), fill=red)
+    return finish(shadow(img))
+
+
+def draw_warning() -> Image.Image:
+    """Warning / danger: a yellow warning triangle with an exclamation mark."""
+    img, d = badge(DANGER)
+    tri = [p(0.5, 0.2), p(0.79, 0.71), p(0.21, 0.71)]
+    d.polygon(tri, fill=INK)
+    d.line([*tri, tri[0], tri[1]], fill=INK, width=10 * SS, joint="curve")  # rounded corners
+    d.polygon([p(0.5, 0.29), p(0.71, 0.665), p(0.29, 0.665)], fill=(250, 195, 30, 255))
+    d.polygon([p(0.475, 0.39), p(0.525, 0.39), p(0.513, 0.56), p(0.487, 0.56)], fill=INK)
+    d.ellipse((*p(0.47, 0.58), *p(0.53, 0.64)), fill=INK)
+    return finish(shadow(img))
+
+
+def draw_parking() -> Image.Image:
+    """Parking: a white P on a blue square."""
+    img, d = badge(SERVICE)
+    blue = (*SERVICE, 255)
+    d.rounded_rectangle((*p(0.27, 0.27), *p(0.73, 0.73)), radius=14 * SS, fill=blue)
+    d.rectangle((*p(0.4, 0.34), *p(0.48, 0.66)), fill=WHITE)  # stem
+    d.rounded_rectangle((*p(0.4, 0.34), *p(0.64, 0.53)), radius=19 * SS, fill=WHITE)  # bowl
+    d.rounded_rectangle((*p(0.48, 0.405), *p(0.565, 0.465)), radius=8 * SS, fill=blue)
+    return finish(shadow(img))
+
+
+def draw_train() -> Image.Image:
+    """Train station: a train from the front on its rails."""
+    img, d = badge(TRANSPORT)
+    ink = (30, 45, 80, 255)
+    d.line([p(0.38, 0.7), p(0.29, 0.8)], fill=ink, width=6 * SS)  # rails
+    d.line([p(0.62, 0.7), p(0.71, 0.8)], fill=ink, width=6 * SS)
+    d.rounded_rectangle((*p(0.31, 0.2), *p(0.69, 0.7)), radius=40 * SS, fill=ink)  # body
+    d.rectangle((*p(0.31, 0.45), *p(0.69, 0.7)), fill=ink)
+    d.rounded_rectangle((*p(0.36, 0.3), *p(0.64, 0.47)), radius=8 * SS, fill=SKY)  # window
+    d.rectangle((*p(0.42, 0.22), *p(0.58, 0.26)), fill=SKY)  # destination board
+    for x in (0.39, 0.61):  # headlights
+        d.ellipse((*p(x - 0.035, 0.56), *p(x + 0.035, 0.63)), fill=(250, 220, 90, 255))
+    d.rectangle((*p(0.31, 0.505), *p(0.69, 0.525)), fill=(220, 60, 50, 255))  # stripe
+    return finish(shadow(img))
+
+
+def draw_cablecar() -> Image.Image:
+    """Cable car / gondola: a cabin hanging on a rope."""
+    img, d = badge(TRANSPORT)
+    ink = (30, 45, 80, 255)
+    layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ImageDraw.Draw(layer).line([p(0.05, 0.34), p(0.95, 0.18)], fill=ink, width=5 * SS)  # rope
+    _in_disc(img, layer)
+    d.ellipse((*p(0.45, 0.22), *p(0.55, 0.3)), fill=ink)  # grip on the rope (y = 0.26)
+    d.line([p(0.5, 0.27), p(0.5, 0.4)], fill=ink, width=5 * SS)  # hanger
+    d.rounded_rectangle((*p(0.3, 0.38), *p(0.7, 0.76)), radius=12 * SS, fill=ink)  # cabin
+    for x0 in (0.35, 0.515):  # windows
+        d.rounded_rectangle((*p(x0, 0.44), *p(x0 + 0.135, 0.58)), radius=4 * SS, fill=SKY)
+    d.rectangle((*p(0.3, 0.63), *p(0.7, 0.655)), fill=(220, 60, 50, 255))  # stripe
+    return finish(shadow(img))
+
+
+def draw_bikerepair() -> Image.Image:
+    """Bike repair: a bicycle with a wrench above it."""
+    img, d = badge(SERVICE)
+    ink, w = (25, 45, 80, 255), 6 * SS
+    for cx in (0.31, 0.69):  # wheels
+        d.ellipse((*p(cx - 0.13, 0.52), *p(cx + 0.13, 0.78)), outline=ink, width=w)
+    frame = [p(0.31, 0.65), p(0.43, 0.48), p(0.6, 0.48), p(0.5, 0.65), p(0.31, 0.65)]
+    d.line(frame, fill=ink, width=w, joint="curve")
+    d.line([p(0.43, 0.48), p(0.5, 0.65)], fill=ink, width=w)
+    d.line([p(0.69, 0.65), p(0.58, 0.42), p(0.64, 0.41)], fill=ink, width=w)  # fork, bars
+    d.line([p(0.43, 0.48), p(0.41, 0.43)], fill=ink, width=w)  # seat post
+    d.line([p(0.36, 0.43), p(0.46, 0.43)], fill=ink, width=w)  # saddle
+    # the wrench: a handle with an open jaw at the top right
+    blue = (*SERVICE, 255)
+    d.line([p(0.33, 0.37), p(0.56, 0.24)], fill=blue, width=8 * SS)
+    d.ellipse((*p(0.27, 0.32), *p(0.36, 0.41)), fill=blue)
+    d.ellipse((*p(0.53, 0.16), *p(0.65, 0.28)), fill=blue)
+    d.polygon(_rotated([(0.575, 0.15), (0.615, 0.15), (0.615, 0.22), (0.575, 0.22)], -30.0,
+                       0.59, 0.22), fill=WHITE)  # fmt: skip
+    return finish(shadow(img))
+
+
+def draw_info() -> Image.Image:
+    """Information: a bold lower-case i."""
+    img, d = badge(SERVICE)
+    blue = (*SERVICE, 255)
+    d.ellipse((*p(0.44, 0.21), *p(0.56, 0.33)), fill=blue)  # dot
+    d.rectangle((*p(0.445, 0.39), *p(0.555, 0.72)), fill=blue)  # stem
+    d.rectangle((*p(0.39, 0.39), *p(0.555, 0.45)), fill=blue)  # serif
+    d.rectangle((*p(0.39, 0.69), *p(0.61, 0.75)), fill=blue)  # foot
+    return finish(shadow(img))
+
+
+POI_ICONS = ("viewpoint", "pass", "hut", "water", "waterfall", "swimming", "beach", "bridge",
+             "town", "church", "castle", "restaurant", "picnic", "toilet", "firstaid", "warning",
+             "parking", "train", "cablecar", "bikerepair", "info")  # fmt: skip
+
+
 # --- vehicle markers (the head of a track; see render/vehicles.py) ---------------------------
 # Top views point up (north = the direction of travel; they are rotated with the track), side
 # views face right (mirrored when the track runs to the left). Light shapes with a dark rim
@@ -557,6 +936,8 @@ def main() -> None:
     draw_peak().save(OUT / "peak.png")
     draw_aid().save(OUT / "aid.png")
     draw_beerpong().save(OUT / "beerpong.png")
+    for name in POI_ICONS:
+        globals()[f"draw_{name}"]().save(OUT / f"{name}.png")
     storm = [draw_storm_frame(i / 30) for i in range(30)]
     storm[0].save(OUT / "storm.png", save_all=True, append_images=storm[1:], duration=60,
                   loop=0, disposal=0, blend=0, format="PNG")  # fmt: skip

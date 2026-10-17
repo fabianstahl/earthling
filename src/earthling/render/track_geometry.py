@@ -344,3 +344,24 @@ def build_tracks(tracks: list[Track], frame: LocalFrame, options: TrackGeometryO
             indices=indices,
         ))  # fmt: skip
     return built
+
+
+TRACK_POINTS = ("start", "end", "highest", "lowest", "distance")
+
+
+def track_point(g: BuiltTrack, where: str, km: float = 0.0) -> np.ndarray:
+    """ENU point of a built track: its start, end, highest or lowest point, or the point at
+    ``km`` walked kilometres (with the track's distance marks, as the stats count them)."""
+    if where == "start":
+        return g.enu[0].copy()
+    if where == "end":
+        return g.enu[-1].copy()
+    if where in ("highest", "lowest"):
+        ele = g.ele if g.ele is not None and np.isfinite(g.ele).any() else g.enu[:, 2]
+        i = int(np.nanargmax(ele) if where == "highest" else np.nanargmin(ele))
+        return g.enu[i].copy()
+    if where == "distance":
+        ground = g.ground if g.ground is not None else g.dist
+        d = float(np.clip(km * 1000.0, ground[0], ground[-1]))
+        return np.array([np.interp(d, ground, g.enu[:, k]) for k in range(3)])
+    raise ValueError(f"unknown track point '{where}'")
