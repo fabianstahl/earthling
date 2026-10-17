@@ -124,9 +124,7 @@ class FrameRenderer:
             self.renderer.terrain.exaggeration,
         )
         camera = Camera()
-        x, y, z, heading, pitch, roll = pose
-        camera.position = np.array([x, y, z], dtype=np.float64)
-        camera.heading, camera.pitch, camera.roll = heading, pitch, roll
+        camera.set_pose(pose)
         return camera
 
     def _draw(self, time: float, width: int, height: int) -> moderngl.Framebuffer:

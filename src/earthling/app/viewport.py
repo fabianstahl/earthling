@@ -215,13 +215,8 @@ class Viewport(QOpenGLWidget):
         return (*(float(v) for v in c.position), c.heading, c.pitch, c.roll)
 
     def apply_pose(self, pose) -> None:
-        self._set_pose(pose)
+        self.camera.set_pose(pose)
         self.request_render()
-
-    def _set_pose(self, pose) -> None:
-        x, y, z, heading, pitch, roll = pose
-        self.camera.position = np.array([x, y, z], dtype=np.float64)
-        self.camera.heading, self.camera.pitch, self.camera.roll = heading, pitch, roll
 
     def set_animated_camera(self, enabled: bool) -> None:
         if enabled == self.animated_camera:
@@ -395,7 +390,7 @@ class Viewport(QOpenGLWidget):
         if self.animated_camera:
             pose = self.current_animated_pose()
             if pose is not None:
-                self._set_pose(pose)  # no request_render(): we are rendering
+                self.camera.set_pose(pose)  # no request_render(): we are rendering
         elif self.mode == self.FLY:
             hag = self.height_above_ground()
             self.fly.step(dt, hag if hag is not None else 1000.0)

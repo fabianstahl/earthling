@@ -42,6 +42,12 @@ class Camera:
             self.far,
         )
 
+    def set_pose(self, pose) -> None:
+        """Place the camera at a camera.pose value (x, y, z, heading, pitch, roll)."""
+        x, y, z, heading, pitch, roll = pose
+        self.position = np.array([x, y, z], dtype=np.float64)
+        self.heading, self.pitch, self.roll = heading, pitch, roll
+
     @property
     def forward(self) -> np.ndarray:
         return forward_vector(self.heading, self.pitch)
