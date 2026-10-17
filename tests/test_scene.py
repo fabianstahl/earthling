@@ -42,6 +42,22 @@ def test_migration_chain(monkeypatch):
         migrate({"version": SCENE_VERSION + 1})
 
 
+def test_version_1_colours_keep_their_look(tmp_path):
+    # up to version 1 these colours were linearised twice: a stored c showed as c^2.2
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps({
+        "version": 1,
+        "properties": {"borders.color": [0.35, 0.85, 1.0], "tracks.color": [1.0, 0.5, 0.0]},
+        "animation": {"curves": {"water.color": [{"t": 0.0, "v": [0.5, 0.5, 0.5]}]}},
+    }))  # fmt: skip
+    scene = Scene()
+    assert scene.load(path) == []
+    assert scene.store["borders.color"] == pytest.approx((0.35**2.2, 0.85**2.2, 1.0))
+    assert scene.store["tracks.color"] == (1.0, 0.5, 0.0)  # (linearised once already)
+    key = scene.animation.curves["water.color"].keys[0]
+    assert key.value == pytest.approx((0.5**2.2,) * 3)
+
+
 def test_bad_files(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text("{not json")

@@ -82,7 +82,9 @@ LAYERS: list[Layer] = [
         """
     float c = contour_lines(li.height, u_contour_interval, u_contour_major, u_contour_width);
     return mix(u_cmap_paper, u_contour_color, c);""",
-        color("layer_contours.paper", "Paper colour", (0.96, 0.94, 0.88), uniform="u_cmap_paper"),
+        color(
+            "layer_contours.paper", "Paper colour", (0.9141, 0.8727, 0.7549), uniform="u_cmap_paper"
+        ),
         shading=0.7,
     ),
     _layer(
@@ -95,8 +97,8 @@ LAYERS: list[Layer] = [
     base = mix(u_bmap_sea, base, smoothstep(0.5, 30.0, li.height));
     base = mix(base, u_region_color * 0.7, line_coverage(li.region_px, u_region_width) * 0.7);
     return mix(base, u_border_color, line_coverage(li.border_px, u_border_width));""",
-        color("layer_borders.land", "Land colour", (0.82, 0.8, 0.74), uniform="u_bmap_land"),
-        color("layer_borders.sea", "Sea colour", (0.62, 0.74, 0.84), uniform="u_bmap_sea"),
+        color("layer_borders.land", "Land colour", (0.6462, 0.6121, 0.5156), uniform="u_bmap_land"),
+        color("layer_borders.sea", "Sea colour", (0.3494, 0.5156, 0.6814), uniform="u_bmap_sea"),
         flt(
             "layer_borders.relief",
             "Mountains lighter",
@@ -234,13 +236,13 @@ BORDERS = section(
         tooltip="Fades the overlay lines and glow (e.g. from a map view into the imagery)"),
     flt("borders.width", "Country line width", 2.5, 0.5, 12.0, step=0.1, decimals=1, unit="px",
         uniform="u_border_width"),
-    color("borders.color", "Country line colour", (1.0, 0.82, 0.3), uniform="u_border_color"),
+    color("borders.color", "Country line colour", (1.0, 0.6462, 0.0707), uniform="u_border_color"),
     flt("borders.glow", "Glow width", 8.0, 0.0, 80.0, step=1.0, decimals=0, unit="px",
         uniform="u_border_glow"),
     flt("borders.glow_strength", "Glow strength", 0.5, 0.0, 5.0, uniform="u_border_glow_strength"),
     flt("borders.region_width", "Region line width", 1.2, 0.3, 8.0, step=0.1, decimals=1,
         unit="px", uniform="u_region_width"),
-    color("borders.region_color", "Region line colour", (0.92, 0.92, 0.92),
+    color("borders.region_color", "Region line colour", (0.8324, 0.8324, 0.8324),
           uniform="u_region_color"),
 )  # fmt: skip
 
@@ -253,7 +255,7 @@ CONTOURS = section(
         uniform="u_contour_major"),
     flt("contours.width", "Line width", 1.2, 0.3, 5.0, step=0.1, decimals=1, unit="px",
         uniform="u_contour_width"),
-    color("contours.color", "Line colour", (0.45, 0.25, 0.12), uniform="u_contour_color"),
+    color("contours.color", "Line colour", (0.1726, 0.0474, 0.0094), uniform="u_contour_color"),
     flt("contours.opacity", "Overlay opacity", 0.8, 0.0, 1.0, uniform="u_contour_opacity"),
 )  # fmt: skip
 
@@ -303,7 +305,7 @@ def _uniform_declaration(d: PropertyDef) -> str:
         return f"uniform bool {d.uniform} = {'true' if v else 'false'};"
     if d.type is PType.ENUM:
         return f"uniform int {d.uniform} = {[o for o, _ in d.options].index(v)};"
-    x, y, z = (float(c) ** 2.2 if d.type is PType.COLOR else float(c) for c in v)
+    x, y, z = (float(c) for c in v)
     return f"uniform vec3 {d.uniform} = vec3({x:.6g}, {y:.6g}, {z:.6g});"
 
 

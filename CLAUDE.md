@@ -48,14 +48,17 @@ files, photos or project scripts; `renders/` is git-ignored.
 
 ## Verifying "no visible change"
 
-Rendering is deterministic: regenerate the showcase scenes
+Scene scripts are deterministic: regenerate the showcase scenes
 (`python examples/showcase/tools/sNN_*.py`) before and after a change and compare the JSON
-files; render stills (`earthling stills ... --out DIR`) before and after and compare pixels.
+files; render stills (`earthling stills ... --out DIR`) before and after and compare pixels
+(twice before, to know the run-to-run noise).
 
 ## Known pitfalls
 
-- Some colour uniforms are linearised twice (`bind_uniforms` and again in the shader); the
-  current look depends on it (ROADMAP, open points).
-- shapely/GEOS predicates on one prepared geometry are not thread-safe (label enrichment and
-  terrain workers share coverage geometries).
+- Colour properties reach the shaders as sRGB (`bind_uniforms`); a shader linearises them
+  once. Colours set in Python (`c**2.2`) are passed linear.
+- shapely/GEOS predicates on one prepared geometry are not thread-safe: `Coverage` serialises
+  them (label enrichment and the terrain workers share coverage geometries).
+- Two renders of a scene can differ by a fraction of a colour level (label heights depend on
+  which heightmaps are loaded); compare stills against the run-to-run noise, not bit by bit.
 - The viewport defers GL work until `initializeGL`; setters store data and `_upload()` it.

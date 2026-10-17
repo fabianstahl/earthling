@@ -86,8 +86,9 @@ and the HUD (stats panel and mini-map).
   and the sun from the GPX time all use it. `render.track_geometry.build_tracks` builds the
   geometry without a GPU.
 - **Determinism.** The export waits for all terrain of a frame before drawing it; weather,
-  lightning and noise are functions of the timeline time, never of the wall clock. The same
-  scene renders the same pixels on the same machine.
+  lightning and noise are functions of the timeline time, never of the wall clock. Two renders
+  of a scene match up to a fraction of a colour level (label heights depend on which
+  heightmaps happen to be loaded when the labels are enriched).
 - **Resolution independence.** Sizes on screen are given for 1080p and scale with the output
   height (`render/scale.py`).
 
@@ -110,5 +111,6 @@ The workflow for a video: run the scene script, check stills
 
 The scene scripts of the showcase (and of private projects) are deterministic: regenerate
 their scenes before and after a change and compare the JSON files byte for byte; render a few
-stills per scene with `earthling stills` before and after and compare the pixels. Unit tests
+stills per scene with `earthling stills` before (twice: that is the run-to-run noise) and
+after, and check that the differences stay within that noise. Unit tests
 (`uv run pytest`, about 70 s) never touch the network; GL tests skip without OpenGL 4.3.

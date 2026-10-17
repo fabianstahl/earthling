@@ -57,7 +57,7 @@ def main() -> None:
     key(scene, "haze.aerial", 16.0, 0.3)
     s.set("borders.overlay", True)
     s.set("borders.regions", False)
-    s.set("borders.color", (1.0, 0.85, 0.35))
+    s.set("borders.color", (1.0, 0.6994, 0.0993))
     s.set("borders.width", 2.0)
     s.set("borders.glow_strength", 0.8)
     s.set("stats.visible", True)

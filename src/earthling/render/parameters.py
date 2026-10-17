@@ -150,7 +150,8 @@ WATER = section(
     flt("water.uniform", "Even open water", 0.0, 0.0, 1.0, uniform="u_water_body",
         tooltip="Open water (away from the shore) takes the colour below instead of the "
                 "imagery: no seams between imagery tiles out at sea"),
-    color("water.color", "Open water colour", (0.05, 0.14, 0.22), uniform="u_water_body_color"),
+    color("water.color", "Open water colour", (0.0014, 0.0132, 0.0358),
+          uniform="u_water_body_color"),
 )  # fmt: skip
 
 SHADOWS = section(
@@ -250,7 +251,8 @@ TRACKS = section(
     flt("tracks.casing", "Casing", 0.0, 0.0, 30.0, step=0.5, decimals=1, unit="px",
         uniform="u_track_casing",
         tooltip="Soft border around the tracks: sets them apart from busy imagery"),
-    color("tracks.casing_color", "Casing colour", (0.03, 0.03, 0.05), uniform="u_casing_color"),
+    color("tracks.casing_color", "Casing colour", (0.0004, 0.0004, 0.0014),
+          uniform="u_casing_color"),
     flt("tracks.casing_opacity", "Casing opacity", 0.75, 0.0, 1.0, uniform="u_casing_opacity"),
 )  # fmt: skip
 

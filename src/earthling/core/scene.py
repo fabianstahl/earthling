@@ -2,7 +2,7 @@
 
 Scenes are stored as JSON (``scene.json`` in the project folder by default)::
 
-    {"version": 1, "properties": {...}, "animation": {...}, "camera": {...}, "ui": {...}}
+    {"version": 2, "properties": {...}, "animation": {...}, "camera": {...}, "ui": {...}}
 
 ``MIGRATIONS`` upgrade older files step by step to :data:`SCENE_VERSION`.
 """
@@ -17,11 +17,40 @@ from typing import Any
 from earthling.core.animation import Animation
 from earthling.core.properties import PropertyStore
 
-SCENE_VERSION = 1
+SCENE_VERSION = 2
 DEFAULT_SCENE_NAME = "scene.json"
 
+# Version 2: colour uniforms reach the shaders as sRGB and are linearised once. Up to version 1
+# these colours were linearised twice, so a stored c showed as c^2.2: storing c^2.2 keeps the
+# look of older scenes.
+RELINEARISED_COLOURS = (
+    "water.color", "tracks.casing_color", "borders.color", "borders.region_color",
+    "contours.color", "layer_contours.paper", "layer_borders.land", "layer_borders.sea",
+)  # fmt: skip
+
+
+def _colours_linearised_once(doc: dict[str, Any]) -> dict[str, Any]:
+    def shown(value):
+        return [float(c) ** 2.2 for c in value]
+
+    doc = dict(doc)
+    properties = dict(doc.get("properties", {}))
+    curves = dict(doc.get("animation", {}).get("curves", {}))
+    for pid in RELINEARISED_COLOURS:
+        if pid in properties:
+            properties[pid] = shown(properties[pid])
+        if pid in curves:
+            curves[pid] = [{**key, "v": shown(key["v"])} for key in curves[pid]]
+    doc["properties"] = properties
+    if "animation" in doc:
+        doc["animation"] = {**doc["animation"], "curves": curves}
+    return doc
+
+
 # version -> function upgrading a document of that version to version + 1
-MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    1: _colours_linearised_once,
+}
 
 
 class SceneError(Exception):

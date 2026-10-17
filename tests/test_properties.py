@@ -91,7 +91,7 @@ def test_bind_uniforms():
     bind_uniforms(program, s)
     assert program["u_f"].value == 1.0
     assert program["u_e"].value == 1
-    assert program["u_c"].value[1] == pytest.approx(0.5**2.2)
+    assert program["u_c"].value[1] == 0.5  # sRGB: the shaders linearise
 
 
 def test_scene_registry_is_valid():

@@ -74,16 +74,14 @@ All phases below are implemented. The full text of every step is in its commit m
 | 16 Weather | 16.1 fog & cloud layers, 16.2 rain, 16.3 thunderstorms | volumetric clouds with shadows, rain with wet ground, lightning |
 | 17 Presentation | 17.1 readable tracks, 17.2 German text, 17.3 map styles, 17.4 smooth terrain detail, 17.5 more POI icons | casings, an English/German overlay, a dark map style with glowing borders, zooms without holes |
 | 18 Journeys | 18.1 continental views, 18.2 travel icons, 18.3 views from space, 18.4 travel lines, 18.5 resolution-independent sizes, 18.6 colour harmonisation, 18.7 rain from above | trips with flights, buses and ferries across a country, the globe from space, scene origins, `colour_reference` |
-| 19 Showcase features | 19.1 wind & gusts, 19.2 banking camera, 19.3 local time, 19.4 portrait/square, 19.5 speed/gradient/HR, 19.6 snow & rainbows, 19.7 day/night side & city lights, 19.8 vehicles, 19.9 several heads, 19.10 water surface, 19.11 tracks on water, 19.12 the whole globe, 19.13 showcase fixes, 19.14 per-pixel aerial perspective, 19.15 fixed-width stats, 19.16 less uniform clouds, 19.17 waves into the distance, 19.18 coloured vehicles with captions, 19.19 no labels in clouds, 19.20 mini-map, 19.21 country & city labels, 19.22 livelier clouds, even open water, 19.23 cloud fields keep coverage, 19.24 bus marker, 19.25 lines end at their points, 19.26 still cameras stay still, 19.27 no dark flashes at the memory limit, 19.28 steady dotted lines, 19.29 stats of the current track, 19.30 photo overlays, 19.31 true distances, 19.32 aid & beer pong icons, 19.33 clock without date, 19.34 labels when passed | ten synthetic showcase scenes (`examples/showcase`) and everything they needed |
+| 19 Showcase features | 19.1 wind & gusts, 19.2 banking camera, 19.3 local time, 19.4 portrait/square, 19.5 speed/gradient/HR, 19.6 snow & rainbows, 19.7 day/night side & city lights, 19.8 vehicles, 19.9 several heads, 19.10 water surface, 19.11 tracks on water, 19.12 the whole globe, 19.13 showcase fixes, 19.14 per-pixel aerial perspective, 19.15 fixed-width stats, 19.16 less uniform clouds, 19.17 waves into the distance, 19.18 coloured vehicles with captions, 19.19 no labels in clouds, 19.20 mini-map, 19.21 country & city labels, 19.22 livelier clouds, even open water, 19.23 cloud fields keep coverage, 19.24 bus marker, 19.25 lines end at their points, 19.26 still cameras stay still, 19.27 no dark flashes at the memory limit, 19.28 steady dotted lines, 19.29 stats of the current track, 19.30 photo overlays, 19.31 true distances, 19.32 aid & beer pong icons, 19.33 clock without date, 19.34 labels when passed, 19.35 colours linearised once, 19.36 no crash from concurrent coverage tests | ten synthetic showcase scenes (`examples/showcase`) and everything they needed |
 | Cleanup (Oct 2026) | cleanup 1–11 | dead code removed, shared helpers instead of copies, core independent of data/render, `earthling.session`, split render modules, `gl_util`, `earthling stills` / `earthling qa`, the scene kit (`earthling.scenekit`), GUI widget helpers, test helpers, these docs |
 
 ## 4. Open points
 
-- Colours declared as sRGB are converted to linear twice for some shader inputs (track
-  casing, region/border/contour/water colours, layer colours): `bind_uniforms` already
-  linearises, the shaders do it again.
-- Concurrent shapely predicates on one prepared coverage geometry (label enrichment and the
-  terrain workers at the same time) can crash the process.
+- Rendering is deterministic up to small run-to-run differences (a fraction of a colour level
+  on average, single pixels more): label heights depend on which heightmaps happen to be
+  loaded when the labels are enriched.
 - From the showcase reviews: the twilight model is too dark in high-latitude summer nights;
   cloud layers have no vertical profile (no cumulonimbus); a flat far cloud band at the
   horizon; a pale band at the top edge beyond the loaded terrain; colour matching of mixed

@@ -311,7 +311,7 @@ void main() {
         vec3 lights = texture(u_night, v_tile_uv).rgb;
         float lum = dot(lights, vec3(0.299, 0.587, 0.114));
         float glow = max(lum - 0.12, 0.0) / 0.88;  // (the dark land of the mosaic stays dark)
-        color += u_night_color * glow * u_night_lights * dark * 0.08;
+        color += srgb_to_linear(u_night_color) * glow * u_night_lights * dark * 0.08;
     }
     float dist = length(v_world);
     color = apply_atmosphere(color, v_world / max(dist, 1e-3), dist);

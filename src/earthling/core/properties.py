@@ -238,7 +238,8 @@ class PropertyStore:
 
 
 def bind_uniforms(program, store: PropertyStore) -> None:
-    """Write every property with a ``uniform`` present in ``program``."""
+    """Write every property with a ``uniform`` present in ``program``. Colours are passed as
+    sRGB; the shaders linearise them (once) where they shade with them."""
     for d in store.registry:
         if d.uniform is None:
             continue
@@ -252,7 +253,7 @@ def bind_uniforms(program, store: PropertyStore) -> None:
         elif d.type is PType.ENUM:
             uniform.value = [v for v, _ in d.options].index(value)
         elif d.type is PType.COLOR:
-            uniform.value = tuple(c**2.2 for c in value)  # linear for shading
+            uniform.value = tuple(value)
         elif d.type in (PType.DATETIME, PType.CAMERA):
             continue
         else:
