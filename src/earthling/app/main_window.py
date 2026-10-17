@@ -21,6 +21,7 @@ from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
 from earthling.app.goto_dialog import GoToDialog
 from earthling.app.keyframing import KeyframeEditor
+from earthling.app.photo_dock import PhotoDock
 from earthling.app.plan_dialog import PlanDialog
 from earthling.app.poi_dock import PoiDock
 from earthling.app.timeline import TimelineController
@@ -112,6 +113,13 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.parameters_dock, self.poi_dock)
         self.parameters_dock.raise_()
         self.poi_dock.changed.connect(self._pois_changed)
+        photo_dock = PhotoDock(self.scene, self.undo_stack, self.hiker_lonlat, self._pick_lonlat,
+                               self._scene_dir, self, choose_place=self.choose_place,
+                               place_at_time=self.lonlat_at_time)  # fmt: skip
+        self.photo_dock = self._add_dock(right, photo_dock)
+        self.tabifyDockWidget(self.poi_dock, self.photo_dock)
+        self.parameters_dock.raise_()
+        self.photo_dock.changed.connect(self._pois_changed)
 
     def _add_dock(self, area, dock: QDockWidget, name: str = "", widget=None) -> QDockWidget:
         """Dock ``dock`` (optionally naming it and setting its widget) and list it in View."""
@@ -289,6 +297,24 @@ class MainWindow(QMainWindow):
         enu = path.position_at(path.distance_for(s["progress.head"], s["progress.mode"]))
         if enu is None:
             return None
+        lat, lon, _ = self.session.frame.enu_to_geodetic(enu)
+        return float(lon), float(lat)
+
+    def lonlat_at_time(self, when) -> tuple[float, float] | None:
+        """(lon, lat) of the walked tracks at a time (naive: the project's local time)."""
+        from zoneinfo import ZoneInfo
+
+        renderer = self.viewport.renderer
+        if renderer is None or renderer.tracks.path is None or self.session is None:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=ZoneInfo(self.session.config.project.timezone))
+        path = renderer.tracks.path
+        t = path.time[np.isfinite(path.time)]
+        epoch = when.timestamp()
+        if not len(t) or not t[0] - 3600.0 <= epoch <= t[-1] + 3600.0:
+            return None  # (not during the tracks)
+        enu = path.position_at(path.distance_for_time(epoch))
         lat, lon, _ = self.session.frame.enu_to_geodetic(enu)
         return float(lon), float(lat)
 

@@ -14,8 +14,9 @@ import moderngl
 import numpy as np
 from PIL import Image, ImageOps
 
-from earthling.core.photos import Photo
+from earthling.core.photos import Photo, reached_alpha
 from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
+from earthling.render.progress import ReachTimes
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 
@@ -51,6 +52,23 @@ class PhotoLayer:
         self._textures: dict[tuple, tuple[moderngl.Texture, float] | None] = {}
         self._stream = DynamicBuffer(ctx, "2f", "in_local", min_bytes=0)
         self.last_drawn: list[str] = []  # ids drawn in the last frame (tests)
+        # photos shown when the drawn line reaches them: set by the renderer every frame
+        self.path = self.frame = self.animation = None
+        self.time = 0.0
+        self.reach = ReachTimes()
+        self._passed: dict[tuple, float] = {}
+
+    def _reached(self, photo: Photo, p: str, store) -> float:
+        """Opacity of a photo shown when the drawn line reaches where it was taken."""
+        path, frame, animation = self.path, self.frame, self.animation
+        if photo.lat is None or path is None or frame is None or animation is None:
+            return 0.0
+        key = (photo.id, photo.lat, photo.lon, id(path), path.total_m, id(frame))
+        if key not in self._passed:
+            enu = np.asarray(frame.geodetic_to_enu(photo.lat, photo.lon, 0.0), dtype=np.float64)
+            self._passed[key] = float(path.nearest_distances(enu.reshape(1, 3)[:, :2])[0])
+        t = self.reach.time_of(self._passed[key], path, animation, store)
+        return reached_alpha(self.time - t, float(store[p + "hold"]))
 
     def set_photos(self, photos: list[Photo], base_dir: Path | None = None) -> None:
         self.photos = list(photos)
@@ -88,7 +106,10 @@ class PhotoLayer:
             p = f"photo.{photo.id}."
             if p + "opacity" not in store.registry:
                 continue
-            alpha = float(store[p + "opacity"])
+            if store[p + "appear"] == "reached":
+                alpha = self._reached(photo, p, store)
+            else:
+                alpha = float(store[p + "opacity"])
             size = float(store[p + "height"]) * float(store[p + "scale"])
             if alpha <= 0.0 or size <= 0.0:
                 continue

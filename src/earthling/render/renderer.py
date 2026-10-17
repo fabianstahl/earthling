@@ -355,7 +355,10 @@ class Renderer:
         if self.tracks.visible and self.vehicles:
             self.pois.render_vehicles(fbo, camera, view_proj, self.vehicles, *output,
                                       self.target.depth, (width, height))  # fmt: skip
-        self.photos.render(fbo, *output, self.store)
+        photos = self.photos
+        photos.path, photos.frame, photos.animation = self.tracks.path, self.frame, self.animation
+        photos.time = self.animation_time
+        photos.render(fbo, *output, self.store)
         self.hud.frame = self.frame
         self._minimap_inputs()
         hud_path, hud_head = self.tracks.path, self.tracks.head_m
