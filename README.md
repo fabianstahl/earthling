@@ -100,6 +100,21 @@ Several track groups can have their own detail zones and styles. For example, yo
 can get full detail while a 3000 km planned route gets a coarse overview (`[[tracks]]`, see
 [ROADMAP.md](ROADMAP.md), phase 14).
 
+GPS watches often count a few kilometres too many. When you know the true distance at some
+points (km signs, photos taken at them), a group can correct the distance shown in the stats
+panel and the profile:
+
+```toml
+[[tracks]]
+name = "walk"
+gpx  = "gpx/race.gpx"
+distance_end_km = 100.0   # the true length
+distance_marks = [        # by position, or by time (e.g. a photo without GPS)
+  { km = 10, lat = 50.1377, lon = 8.5581 },
+  { km = 30, time = 2026-10-10T17:57:06+02:00 },
+]
+```
+
 ## Command line
 
 ```powershell

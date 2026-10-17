@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 import zoneinfo
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, Self
 
@@ -119,6 +120,27 @@ class SourcesSection(_Model):
     colour_reference_strength: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+class DistanceMark(_Model):
+    """A known distance on a track (``distance_marks``): e.g. a photo taken at "km 30". The
+    mark is placed by position (``lat``/``lon``: the nearest track point after the previous
+    mark) or by ``time`` (an ISO time with offset, e.g. a photo without GPS)."""
+
+    km: float = Field(ge=0)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
+    time: datetime | None = None
+
+    @model_validator(mode="after")
+    def _placed(self) -> Self:
+        if (self.lat is None) != (self.lon is None):
+            raise ValueError("a distance mark needs both lat and lon")
+        if self.lat is None and self.time is None:
+            raise ValueError("a distance mark needs lat/lon or a time")
+        if self.time is not None and self.time.tzinfo is None:
+            raise ValueError("the time of a distance mark needs a UTC offset")
+        return self
+
+
 class TrackGroupDef(_Model):
     """A group of GPX files (``[[tracks]]``), see ROADMAP step 14.1.
 
@@ -139,6 +161,11 @@ class TrackGroupDef(_Model):
     # split the tracks by the water mask: the parts on water get their own style (a canoe
     # trip: paddling and portages; trackgroup.<name>.water_*)
     water: bool = False
+    # correct the shown distance of each track (stats and profile; the drawn line is unchanged):
+    # piecewise linear between the marks, ``distance_end_km`` at the end of the track (without:
+    # the factor of the last stretch continues to the end)
+    distance_marks: list[DistanceMark] = Field(default_factory=list)
+    distance_end_km: float | None = Field(default=None, gt=0)
 
 
 class ProviderDef(_Model):

@@ -122,6 +122,8 @@ class Session:
                 track.spacing_m = d.spacing_m
                 track.elevation = d.elevation
                 track.split_water = d.water
+                track.distance_marks = list(d.distance_marks)
+                track.distance_end_km = d.distance_end_km
             area = d.area or config.area
             groups.append(TrackGroup(d, tracks, area, compute_aoi(tracks, area)))
         return groups

@@ -791,6 +791,13 @@ shadow, a rotation and a zoom inside the frame (`photo.<id>.*`: opacity, x, y, h
 rotation, border, shadow, zoom). Keys on the opacity fade it in and out.
 → The picture taken at a place, shown while the line passes there.
 
+**19.31 True distances**
+`distance_marks` (by position or by time) and `distance_end_km` on a `[[tracks]]` group correct
+the walked distance piecewise linearly: the stats panel, the profile and the speed show the
+true kilometres (e.g. from km photos), the drawn line stays as recorded. On a loop, a position
+mark is searched after the previous mark.
+→ "100 km" at the finish of a 100 km march when the watch counted 103.4 km.
+
 ---
 
 ## 5. Risks & notes

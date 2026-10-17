@@ -121,6 +121,8 @@ class Track:
     spacing_m: float | None = None  # geometry resampling override (default by role)
     elevation: str | None = None  # "dem" / "gpx" override of the height source (group setting)
     split_water: bool = False  # parts on water get their own style (group setting)
+    distance_marks: list = field(default_factory=list)  # config.DistanceMark (group setting)
+    distance_end_km: float | None = None  # true length of the track (group setting)
 
     @property
     def point_count(self) -> int:

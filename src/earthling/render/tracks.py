@@ -201,6 +201,52 @@ def build_track_positions(
     return result
 
 
+def calibrate_ground(ground: np.ndarray, enu: np.ndarray, time: np.ndarray, marks,
+                     end_km: float | None, frame: LocalFrame,
+                     tolerance_m: float = 30.0) -> np.ndarray:  # fmt: skip
+    """Walked metres corrected to known distances (config.DistanceMark): piecewise linear
+    between the marks, ``end_km`` at the last point (without it, the factor of the last
+    stretch continues). Position marks take the first point within ``tolerance_m`` of the
+    nearest track point after the previous mark (loops pass the same places twice); marks that
+    do not lie further along the track are ignored."""
+    ground = np.asarray(ground, dtype=np.float64)
+    if len(ground) < 2 or (not marks and end_km is None):
+        return ground
+    src, dst = [float(ground[0])], [float(ground[0])]
+    after = 0
+    t_ok = np.isfinite(time)
+    for mark in marks:
+        if mark.lat is not None:
+            p = np.asarray(frame.geodetic_to_enu(mark.lat, mark.lon, 0.0), dtype=np.float64)
+            gap = np.linalg.norm(enu[after:, :2] - p.reshape(3)[:2], axis=1)
+            near = gap <= gap.min() + tolerance_m
+            first = int(np.argmax(near))  # the first pass near the mark ...
+            last = first + (int(np.argmax(~near[first:])) if (~near[first:]).any() else len(near))
+            i = after + first + int(np.argmin(gap[first:last]))  # ... its closest point
+            g = float(ground[i])
+        elif t_ok.sum() >= 2:
+            g = float(np.interp(mark.time.timestamp(), time[t_ok], ground[t_ok]))
+            i = int(np.searchsorted(ground, g))
+        else:
+            continue
+        if g <= src[-1] or mark.km * 1000.0 <= dst[-1]:
+            continue
+        src.append(g)
+        dst.append(mark.km * 1000.0)
+        after = min(i, len(ground) - 1)
+    if end_km is not None and ground[-1] > src[-1] and end_km * 1000.0 > dst[-1]:
+        src.append(float(ground[-1]))
+        dst.append(end_km * 1000.0)
+    if len(src) < 2:
+        return ground
+    out = np.interp(ground, src, dst)
+    beyond = ground > src[-1]  # (no end distance) the last factor continues
+    if beyond.any():
+        factor = (dst[-1] - dst[-2]) / (src[-1] - src[-2])
+        out[beyond] = dst[-1] + (ground[beyond] - src[-1]) * factor
+    return out
+
+
 VERTEX_FLOATS = 17
 
 
@@ -492,6 +538,15 @@ class TrackLayer:
                 continue
             origin = segments[0].enu[0].copy()
             all_time = np.concatenate([s.time for s in segments])
+            if getattr(track, "distance_marks", None) or getattr(track, "distance_end_km", None):
+                ground = calibrate_ground(np.concatenate([s.ground for s in segments]),
+                                          np.vstack([s.enu for s in segments]), all_time,
+                                          track.distance_marks, track.distance_end_km,
+                                          self.frame)  # fmt: skip
+                first = 0
+                for seg in segments:
+                    seg.ground = ground[first : first + len(seg.ground)]
+                    first += len(seg.ground)
             # gradients from the recorded elevations where the file has them (a draped DEM is
             # noisy where a road is cut into a slope, e.g. at hairpins)
             gpx_ele = np.concatenate([s.gpx_ele for s in segments])
