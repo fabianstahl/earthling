@@ -156,3 +156,26 @@ def tile_bounds_lonlat(z: int, x: int, y: int) -> tuple[float, float, float, flo
 def ground_resolution_m(lat: float, z: int, tile_size: int = 256) -> float:
     """Meters per pixel on the ground for a tile pixel at latitude ``lat``."""
     return math.cos(math.radians(lat)) * 2 * MERCATOR_HALF / (tile_size * 2**z)
+
+
+def great_circle(a: tuple[float, float], b: tuple[float, float],
+                 step_km: float = 20.0) -> list[tuple[float, float]]:  # fmt: skip
+    """(lat, lon) points from ``a`` to ``b`` (lat, lon) along the great circle (spherical
+    interpolation, about ``step_km`` apart)."""
+    la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    v1 = np.array([math.cos(la1) * math.cos(lo1), math.cos(la1) * math.sin(lo1), math.sin(la1)])
+    v2 = np.array([math.cos(la2) * math.cos(lo2), math.cos(la2) * math.sin(lo2), math.sin(la2)])
+    omega = math.acos(max(-1.0, min(1.0, float(v1 @ v2))))
+    n = max(2, int(omega * 6371.0 / step_km) + 1)
+    out = []
+    for f in np.linspace(0.0, 1.0, n + 1):
+        if omega < 1e-9:
+            w1, w2 = 1.0 - f, f
+        else:
+            w1, w2 = (
+                math.sin((1 - f) * omega) / math.sin(omega),
+                math.sin(f * omega) / math.sin(omega),
+            )
+        x, y, z = w1 * v1 + w2 * v2
+        out.append((math.degrees(math.atan2(z, math.hypot(x, y))), math.degrees(math.atan2(y, x))))
+    return out

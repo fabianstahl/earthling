@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
         self.recent_menu = self.file_menu.addMenu("Open &Recent")
         self._add_action(self.file_menu, "Re&load Project", self._reload_project, "F5")
         self._add_action(self.file_menu, "Project Se&ttings…", self.edit_settings, "Ctrl+,")
+        self._add_action(self.file_menu, "New &Line…", self.new_line)
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "Open &Scene…", self._open_scene_dialog)
         self._add_action(
@@ -671,6 +672,40 @@ class MainWindow(QMainWindow):
             return
         if scene is not None and scene.exists() and scene != self.scene.path:
             self.load_scene(scene)
+
+    def new_line(self) -> None:
+        """A line between two places (straight, a flight, a road route) as a GPX track."""
+        from earthling.app.line_dialog import LineDialog, add_group_text, group_folder
+        from earthling.data.lines import make_line
+
+        if self.session is None:
+            return
+        session = self.session
+        groups = [g.name for g in session.groups]
+        dialog = LineDialog(groups, session.config.project.timezone, self.choose_place,
+                            session.first_local_start(), self)  # fmt: skip
+        if not dialog.exec():
+            return
+        name, group = dialog.name.text().strip() or "line", dialog.group_name()
+        folder = group_folder(session, group)
+        if folder is None:
+            QMessageBox.warning(self, "New line", f"Track group '{group}' is a single GPX file: "
+                                "choose another group or a new one.")  # fmt: skip
+            return
+        start, end = dialog.times()
+        (a, b), kind = dialog.places.values(), dialog.kind.currentData()
+        try:
+            make_line(folder / f"{dialog.file_name()}.gpx", name, kind, a, b, start, end,
+                      session.cache.root)  # fmt: skip
+        except Exception as exc:  # (the road route needs the internet)
+            QMessageBox.warning(self, "New line", f"Cannot make the line: {exc}")
+            return
+        if session.group(group) is None:
+            path = session.project.config_path
+            text = add_group_text(path.read_text(encoding="utf-8"), session, group,
+                                  kind == "flight")  # fmt: skip
+            path.write_text(text, encoding="utf-8")
+        self._reload_project()
 
     def edit_settings(self) -> None:
         """The project's earthling.toml in a checking editor; saving reloads the project."""

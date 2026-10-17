@@ -357,3 +357,28 @@ def load_gpx_folder(folder: Path) -> tuple[list[Track], list[str]]:
             errors.append(f"{path.name}: {exc}")
     tracks.sort(key=lambda t: (t.stats.start_time or datetime.max, t.name))
     return tracks, errors
+
+
+def write_gpx(path: Path, name: str, points, elevations=None, start: datetime | None = None,
+              end: datetime | None = None) -> Path:  # fmt: skip
+    """A GPX file with one track through ``points`` (lat, lon); ``elevations`` per point
+    (None: none); with ``start`` and ``end`` (aware) the times are spread by distance."""
+    lat = np.array([p[0] for p in points], dtype=np.float64)
+    lon = np.array([p[1] for p in points], dtype=np.float64)
+    along = np.concatenate([[0.0], np.cumsum(haversine_m(lat[:-1], lon[:-1], lat[1:], lon[1:]))])
+    total = float(along[-1]) or 1.0
+    track = gpxpy.gpx.GPXTrack(name=name)
+    segment = gpxpy.gpx.GPXTrackSegment()
+    track.segments.append(segment)
+    for i in range(len(lat)):
+        time = None
+        if start is not None and end is not None:
+            time = (start + (end - start) * (along[i] / total)).astimezone(UTC)
+        ele = None if elevations is None else float(elevations[i])
+        segment.points.append(gpxpy.gpx.GPXTrackPoint(lat[i], lon[i], elevation=ele, time=time))
+    doc = gpxpy.gpx.GPX()
+    doc.tracks.append(track)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(doc.to_xml(), encoding="utf-8")
+    return path
