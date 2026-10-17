@@ -244,6 +244,7 @@ class MainWindow(QMainWindow):
         self.data_menu = bar.addMenu("&Data")
         self._add_action(self.data_menu, "Download &Plan…", self._show_plan)
         self._add_action(self.data_menu, "&Download Data…", self._show_download, "Ctrl+D")
+        self._add_action(self.data_menu, "&Test a Source…", self._test_source)
         self.data_menu.addAction(self.on_demand_action)
 
         help_menu = bar.addMenu("&Help")
@@ -640,6 +641,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, title, "Open a project with tracks first.")
             return None
         return self.session
+
+    def _test_source(self) -> None:
+        from earthling.app.source_dialog import SourceDialog
+
+        if self.session is not None:
+            SourceDialog(self.session, self.choose_place, self).exec()
 
     def _show_plan(self) -> None:
         if (session := self._planned_session("Download plan")) is not None:

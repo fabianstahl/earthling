@@ -76,7 +76,7 @@ def cmd_check_source(args) -> int:
     from pathlib import Path
 
     from earthling.core.config import ConfigError, Project
-    from earthling.data.check import check_dem, check_imagery
+    from earthling.data.check import check_dem, check_imagery, default_location
     from earthling.data.dem import DEM_SOURCES
     from earthling.data.providers import PROVIDERS, TileProvider
     from earthling.session import Session
@@ -94,7 +94,7 @@ def cmd_check_source(args) -> int:
     if args.at:
         lon, lat = (float(v) for v in args.at.split(","))
     else:
-        lon, lat = _default_location(session, source)
+        lon, lat = default_location(session, source)
     if isinstance(source, TileProvider):
         out = Path(args.out) if args.out else None
         report = check_imagery(source, lon, lat, out_dir=out)
@@ -102,26 +102,6 @@ def cmd_check_source(args) -> int:
         report = check_dem(source, lon, lat, session.cache)
     print(report.text())
     return 0 if report.ok else 1
-
-
-def _default_location(session, source) -> tuple[float, float]:
-    """The track point farthest inside the source's coverage (or the first track point)."""
-    import numpy as np
-    import shapely
-
-    coverage = source.coverage_area
-    points = [np.column_stack([s.lon, s.lat]) for t in session.tracks for s in t.segments]
-    points = np.concatenate(points) if points else np.zeros((0, 2))
-    if coverage is None:
-        return (float(points[0, 0]), float(points[0, 1])) if len(points) else (7.0, 46.0)
-    points = points[:: max(1, len(points) // 5000)]
-    inside = points[shapely.contains_xy(coverage.lonlat, points[:, 0], points[:, 1])]
-    if len(inside):
-        depth = shapely.distance(coverage.lonlat.boundary, shapely.points(inside))
-        lon, lat = inside[int(np.argmax(depth))]
-        return float(lon), float(lat)
-    point = coverage.lonlat.representative_point()
-    return point.x, point.y
 
 
 def cmd_render(args) -> int:

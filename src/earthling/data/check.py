@@ -16,6 +16,7 @@ from pathlib import Path
 
 import httpx
 import numpy as np
+import shapely
 from PIL import Image
 
 from earthling.core.geo import lonlat_to_tile, tile_bounds_lonlat
@@ -271,3 +272,20 @@ def check_dem(
         if abs(mean) > 1.0:
             report.warn(f"LOD levels are biased by {mean:+.1f} m (visible popping)")
     return report
+
+
+def default_location(session, source) -> tuple[float, float]:
+    """The track point farthest inside the source's coverage (or the first track point)."""
+    coverage = source.coverage_area
+    points = [np.column_stack([s.lon, s.lat]) for t in session.tracks for s in t.segments]
+    points = np.concatenate(points) if points else np.zeros((0, 2))
+    if coverage is None:
+        return (float(points[0, 0]), float(points[0, 1])) if len(points) else (7.0, 46.0)
+    points = points[:: max(1, len(points) // 5000)]
+    inside = points[shapely.contains_xy(coverage.lonlat, points[:, 0], points[:, 1])]
+    if len(inside):
+        depth = shapely.distance(coverage.lonlat.boundary, shapely.points(inside))
+        lon, lat = inside[int(np.argmax(depth))]
+        return float(lon), float(lat)
+    point = coverage.lonlat.representative_point()
+    return point.x, point.y
