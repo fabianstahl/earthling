@@ -17,9 +17,9 @@ from PyQt6.QtWidgets import (
 )
 
 from earthling.core.aoi import AVG_TILE_BYTES, format_bytes
-from earthling.core.session import Session
 from earthling.data.downloader import DownloadProgress
 from earthling.data.jobs import DownloadJob
+from earthling.session import Session
 
 
 class _Worker(QObject):

@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, fields
 from typing import Any
 
 from earthling.core.easing import smooth01
+from earthling.core.properties import boolean, enum, flt, section
 
 EFFECTS = [
     ("none", "None"),
@@ -58,8 +59,6 @@ def slug(text: str, taken: set[str]) -> str:
 
 def poi_properties(poi: Poi) -> list:
     """Keyframeable properties of one POI ("poi.<id>.*")."""
-    from earthling.render.parameters import boolean, enum, flt, section
-
     p = f"poi.{poi.id}."
     return section(
         f"POI: {poi.name}",

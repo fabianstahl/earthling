@@ -44,6 +44,8 @@ def migrate(doc: dict[str, Any]) -> dict[str, Any]:
 
 class Scene:
     def __init__(self) -> None:
+        # the scene's schema is the renderer's property declarations (the only place where
+        # core reaches into render; imported here so core stays importable on its own)
         from earthling.render.parameters import build_registry
 
         self.registry = build_registry()

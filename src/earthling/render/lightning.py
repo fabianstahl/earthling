@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import moderngl
 import numpy as np
 
+from earthling.core.properties import boolean, color, flt, integer, section
 from earthling.render.scale import pixel_scale
 
 SLOT_S = 0.05
@@ -315,8 +316,6 @@ def _animated(animation) -> bool:
 
 
 def lightning_properties() -> list:
-    from earthling.render.parameters import boolean, color, flt, integer, section
-
     return section(
         "Weather: Rain & Thunder",
         flt("lightning.rate", "Lightning", 0.0, 0.0, 120.0, step=1.0, decimals=0,

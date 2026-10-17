@@ -117,7 +117,7 @@ def test_hud_draws_panel_and_attribution(gl_ctx):
 
 def test_session_attribution():
     from earthling.core.config import Project
-    from earthling.core.session import Session
+    from earthling.session import Session
 
     text = Session(Project.load(Path("examples/alps_demo"))).attribution()
     assert "Esri" in text and "Copernicus" in text and "OpenStreetMap" in text

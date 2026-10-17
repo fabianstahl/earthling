@@ -23,9 +23,9 @@ from sc_common import RENDERS, SHOWCASE  # noqa: E402
 
 from earthling.core.config import Project  # noqa: E402
 from earthling.core.scene import Scene  # noqa: E402
-from earthling.core.session import Session  # noqa: E402
 from earthling.export.frames import FrameRenderer, parse_resolution, save_png  # noqa: E402
 from earthling.render.renderer import Renderer  # noqa: E402
+from earthling.session import Session  # noqa: E402
 
 
 def main() -> int:

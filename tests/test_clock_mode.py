@@ -23,8 +23,8 @@ def run(group: str, start: str, seconds: float) -> Track:
 
 
 def setup(gl_ctx):
+    from earthling.core.properties import flt
     from earthling.core.scene import Scene
-    from earthling.render.parameters import flt
     from earthling.render.renderer import Renderer
 
     renderer = Renderer(gl_ctx)

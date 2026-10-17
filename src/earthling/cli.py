@@ -42,10 +42,10 @@ def cmd_check_source(args) -> int:
     from pathlib import Path
 
     from earthling.core.config import ConfigError, Project
-    from earthling.core.session import Session
     from earthling.data.check import check_dem, check_imagery
     from earthling.data.dem import DEM_SOURCES
     from earthling.data.providers import PROVIDERS, TileProvider
+    from earthling.session import Session
 
     try:
         session = Session(Project.load(args.project))
@@ -160,7 +160,7 @@ def cmd_render(args) -> int:
 
 def _load_session(project_dir: str):
     from earthling.core.config import ConfigError, Project
-    from earthling.core.session import Session
+    from earthling.session import Session
 
     try:
         session = Session(Project.load(project_dir))

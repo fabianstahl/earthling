@@ -32,9 +32,9 @@ from earthling.core.camera_path import camera_path_lines
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
 from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
-from earthling.core.session import Session
 from earthling.data.jobs import download_jobs
 from earthling.render.camera_rig import CameraRig
+from earthling.session import Session
 from earthling.ui.dope_sheet import KeyButton
 from earthling.ui.property_panel import PropertyPanel
 from earthling.ui.timeline_widget import TimelineWidget

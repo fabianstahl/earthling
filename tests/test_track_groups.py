@@ -7,7 +7,7 @@ import pytest
 from earthling.core.config import Config, ConfigError, Project
 from earthling.core.gpx import load_gpx_file
 from earthling.core.scene import Scene
-from earthling.core.session import Session
+from earthling.session import Session
 
 DEMO_GPX = Path("examples/alps_demo/gpx").resolve()
 

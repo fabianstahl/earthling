@@ -9,8 +9,8 @@ import pytest
 from earthling.core.aoi import compute_aoi, plan_tiles_multi
 from earthling.core.config import Config, ConfigError, Project
 from earthling.core.scene import Scene
-from earthling.core.session import Session
 from earthling.render.camera import far_for_height
+from earthling.session import Session
 from test_aoi import AREA, straight_track
 
 DEMO = Path(__file__).parents[1] / "examples" / "alps_demo"

@@ -16,8 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from earthling.core.properties import PropertyDef, PType
-from earthling.render.parameters import boolean, color, enum, flt, section
+from earthling.core.properties import PropertyDef, PType, boolean, color, enum, flt, section
 
 RAMPS = [("hypsometric", "Hypsometric"), ("viridis", "Viridis"), ("turbo", "Turbo"),
          ("grayscale", "Grayscale")]  # fmt: skip

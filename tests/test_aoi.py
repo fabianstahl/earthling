@@ -76,7 +76,7 @@ def test_format_bytes():
 
 def test_session_outlines():
     from earthling.core.config import Project
-    from earthling.core.session import Session
+    from earthling.session import Session
 
     session = Session(Project.load(Path(__file__).parents[1] / "examples" / "alps_demo"))
     lines = session.outline_lines()

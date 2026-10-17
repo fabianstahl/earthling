@@ -145,6 +145,38 @@ class PropertyRegistry:
         return list(out.items())
 
 
+# --- declaration shortcuts (used by every module that declares properties) ------------------
+def flt(pid, label, default, lo, hi, step=0.01, decimals=2, unit="", **kw) -> PropertyDef:
+    return PropertyDef(pid, label, PType.FLOAT, default, minimum=lo, maximum=hi, step=step,
+                       decimals=decimals, unit=unit, **kw)  # fmt: skip
+
+
+def integer(pid, label, default, lo, hi, step=1, unit="", **kw) -> PropertyDef:
+    return PropertyDef(pid, label, PType.INT, default, minimum=lo, maximum=hi, step=step,
+                       unit=unit, **kw)  # fmt: skip
+
+
+def boolean(pid, label, default, **kw) -> PropertyDef:
+    return PropertyDef(pid, label, PType.BOOL, default, **kw)
+
+
+def enum(pid, label, default, options: list[tuple[str, str]], **kw) -> PropertyDef:
+    return PropertyDef(pid, label, PType.ENUM, default, options=tuple(options), **kw)
+
+
+def color(pid, label, default: tuple[float, float, float], **kw) -> PropertyDef:
+    return PropertyDef(pid, label, PType.COLOR, default, **kw)
+
+
+def section(title: str, *defs: PropertyDef) -> list[PropertyDef]:
+    """Assign the UI section title to a group of definitions."""
+    out = []
+    for d in defs:
+        fields: dict[str, Any] = {**d.__dict__, "section": title}
+        out.append(PropertyDef(**fields))
+    return out
+
+
 Listener = Callable[[str, Any], None]
 
 

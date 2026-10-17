@@ -6,9 +6,9 @@ import pytest
 
 from earthling.core.config import Project
 from earthling.core.scene import Scene
-from earthling.core.session import Session
 from earthling.render.camera import Camera
 from earthling.render.renderer import Renderer
+from earthling.session import Session
 
 
 def test_sun_follows_the_gpx_time(gl_ctx):

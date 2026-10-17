@@ -403,9 +403,9 @@ def test_tracks_coloured_by_gradient(gl_ctx):
 
 def test_tracks_split_by_water(gl_ctx):
     """Step 19.11: the parts of a track on water take the group's water style."""
+    from earthling.core.properties import boolean, color, flt
     from earthling.core.scene import Scene
     from earthling.render.camera import Camera
-    from earthling.render.parameters import boolean, color, flt
     from earthling.render.renderer import Renderer
 
     track = straight_track()  # 46.0 .. 46.01 N

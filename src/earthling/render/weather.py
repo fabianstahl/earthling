@@ -13,6 +13,7 @@ import math
 import moderngl
 import numpy as np
 
+from earthling.core.properties import boolean, enum, flt, section
 from earthling.render.shader_library import ShaderLibrary
 
 CLOUD_NOISE_UNIT = 12
@@ -362,8 +363,6 @@ def layer_defaults() -> list[dict]:
 
 
 def weather_properties() -> list:
-    from earthling.render.parameters import boolean, flt, section
-
     defs = [
         boolean("weather.enabled", "Weather", False,
                 tooltip="Volumetric cloud and fog layers, rain and thunderstorms"),
@@ -401,8 +400,6 @@ def weather_properties() -> list:
 
 
 def rain_properties() -> list:
-    from earthling.render.parameters import boolean, enum, flt, section
-
     return section(
         "Weather: Rain & Thunder",
         boolean("rain.enabled", "Rain", False),

@@ -6,7 +6,7 @@ from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QPlainTextEdit, QVBoxLayout
 
 from earthling.core.aoi import plan_report
-from earthling.core.session import Session
+from earthling.session import Session
 
 
 class PlanDialog(QDialog):

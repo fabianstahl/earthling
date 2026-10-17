@@ -96,9 +96,9 @@ def test_esri_placeholder_and_registry():
 def test_download_dialog_runs_jobs(qtbot, tmp_path):
     from earthling.app.download_dialog import DownloadDialog
     from earthling.core.config import Project
-    from earthling.core.session import Session
     from earthling.data.downloader import DownloadProgress
     from earthling.data.jobs import DownloadJob
+    from earthling.session import Session
 
     session = Session(
         Project.load(__import__("pathlib").Path(__file__).parents[1] / "examples" / "alps_demo")

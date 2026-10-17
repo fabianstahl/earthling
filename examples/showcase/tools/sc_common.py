@@ -18,8 +18,8 @@ import numpy as np
 from earthling.core.animation import Interp
 from earthling.core.config import Project
 from earthling.core.scene import Scene
-from earthling.core.session import Session
 from earthling.render.camera_rig import look_orientation
+from earthling.session import Session
 
 TOOLS = Path(__file__).resolve().parent
 SHOWCASE = TOOLS.parent

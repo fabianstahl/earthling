@@ -166,8 +166,8 @@ def test_shipped_coverages():
 
 def test_session_plans_tiles_per_provider(tmp_path):
     from earthling.core.config import Config, Project, ProjectSection, SourcesSection
-    from earthling.core.session import Session
     from earthling.data.providers import register
+    from earthling.session import Session
 
     register(TileProvider("test_ch", "Test CH", "imagery", max_zoom=19, coverage="switzerland"))
     config = Config(
@@ -197,8 +197,8 @@ def test_needed_tiles_skips_sources_not_used_at_a_zoom():
 def test_fine_file_dem_sources_leave_coarse_zooms_to_the_fallback(tmp_path):
     from earthling.core.config import Config, Project, ProjectSection, SourcesSection
     from earthling.core.geo import ground_resolution_m
-    from earthling.core.session import Session
     from earthling.data.dem import SOURCE_DETAIL_FACTOR
+    from earthling.session import Session
 
     config = Config(
         project=ProjectSection(cache_dir=tmp_path),

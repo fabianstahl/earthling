@@ -16,7 +16,7 @@ from pathlib import Path
 from earthling.core.animation import Interp
 from earthling.core.config import Project
 from earthling.core.scene import Scene
-from earthling.core.session import Session
+from earthling.session import Session
 
 DEMO = Path(__file__).resolve().parents[1] / "examples" / "alps_demo"
 

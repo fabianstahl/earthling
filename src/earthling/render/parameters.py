@@ -7,41 +7,22 @@ order of the UI sections stable.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
-from earthling.core.properties import PropertyDef, PropertyRegistry, PType
-
-
-def flt(pid, label, default, lo, hi, step=0.01, decimals=2, unit="", **kw) -> PropertyDef:
-    return PropertyDef(pid, label, PType.FLOAT, default, minimum=lo, maximum=hi, step=step,
-                       decimals=decimals, unit=unit, **kw)  # fmt: skip
-
-
-def integer(pid, label, default, lo, hi, step=1, unit="", **kw) -> PropertyDef:
-    return PropertyDef(pid, label, PType.INT, default, minimum=lo, maximum=hi, step=step,
-                       unit=unit, **kw)  # fmt: skip
-
-
-def boolean(pid, label, default, **kw) -> PropertyDef:
-    return PropertyDef(pid, label, PType.BOOL, default, **kw)
-
-
-def enum(pid, label, default, options: list[tuple[str, str]], **kw) -> PropertyDef:
-    return PropertyDef(pid, label, PType.ENUM, default, options=tuple(options), **kw)
-
-
-def color(pid, label, default: tuple[float, float, float], **kw) -> PropertyDef:
-    return PropertyDef(pid, label, PType.COLOR, default, **kw)
-
-
-def section(title: str, *defs: PropertyDef) -> list[PropertyDef]:
-    """Assign the UI section title to a group of definitions."""
-    out = []
-    for d in defs:
-        fields: dict[str, Any] = {**d.__dict__, "section": title}
-        out.append(PropertyDef(**fields))
-    return out
-
+from earthling.core.properties import (  # noqa: F401 (factories re-exported for scripts)
+    PropertyDef,
+    PropertyRegistry,
+    PType,
+    boolean,
+    color,
+    enum,
+    flt,
+    integer,
+    section,
+)
+from earthling.render.layers import layer_properties
+from earthling.render.tracks import track_color
+from earthling.render.vehicles import MARKER_OPTIONS
+from earthling.render.weather import weather_properties
 
 VIEW = section(
     "View",
@@ -413,9 +394,63 @@ MINIMAP = section(
 )  # fmt: skip
 
 
-def build_registry() -> PropertyRegistry:
-    from earthling.render.layers import layer_properties
+def track_group_properties(groups) -> list[PropertyDef]:
+    """Keyframeable style properties of every track group ("trackgroup.<name>.*"); ``groups``:
+    the session's TrackGroups."""
+    defs = []
+    for g in groups:
+        planned = g.role == "planned"
+        p = f"trackgroup.{g.name}."
+        members = [("none", "None")] + [(t.name, t.name) for t in g.tracks]
+        defs += section(
+            f"Tracks: {g.label}",
+            boolean(p + "visible", "Show", True),
+            flt(p + "opacity", "Opacity", 0.9 if planned else 1.0, 0.0, 1.0),
+            enum(p + "color_mode", "Colours", "per_track" if planned else "auto",
+                 [("auto", "As in the Tracks section"), ("per_track", "One colour per track"),
+                  ("single", "Group colour")]),
+            color(p + "color", "Group colour",
+                  (0.95, 0.95, 0.95) if planned else (1.0, 0.35, 0.15)),
+            flt(p + "width", "Width factor", 0.6 if planned else 1.0, 0.05, 5.0, step=0.05),
+            flt(p + "dash", "Dashes", 10.0 if planned else 0.0, 0.0, 100.0, step=1.0,
+                decimals=0, unit="px", tooltip="Dash length on screen (0 = solid line)"),
+            boolean(p + "dots", "Dotted", False,
+                    tooltip="Round dots instead of dashes; Dashes sets their spacing"),
+            flt(p + "glow", "Glow factor", 0.3 if planned else 1.0, 0.0, 5.0),
+            enum(p + "highlight", "Highlight", "none", members,
+                 tooltip="Show one track in the highlight colour and dim the others"),
+            color(p + "highlight_color", "Highlight colour", (0.25, 0.95, 0.35)),
+            flt(p + "dim", "Others while highlighting", 0.35, 0.0, 1.0),
+            enum(p + "marker", "Head marker", "dot", MARKER_OPTIONS,
+                 tooltip="The glowing dot, or a vehicle (turned to the direction of travel) "
+                         "while the head is on this group's tracks"),
+            flt(p + "marker_size", "Vehicle size", 46.0, 8.0, 200.0, step=1.0, decimals=0,
+                unit="px"),
+            color(p + "marker_tint", "Vehicle colour", (1.0, 1.0, 1.0),
+                  tooltip="Multiplies the vehicle icon (e.g. gold and silver runners)"),
+            PropertyDef(p + "marker_label", "Vehicle label", PType.TEXT, "",
+                        tooltip="A caption moving with the vehicle, e.g. the year of a run"),
+            color(p + "water_color", "On water: colour", (0.35, 0.75, 1.0),
+                  tooltip="Groups split by the water mask (water = true): the parts on "
+                          "water"),
+            flt(p + "water_dash", "On water: dashes", 0.0, 0.0, 100.0, step=1.0,
+                decimals=0, unit="px"),
+            boolean(p + "water_dots", "On water: dotted", False),
+            flt(p + "time_offset", "Time shift", 0.0, -1e6, 1e6, step=0.01, decimals=4,
+                unit="h", animatable=False,
+                tooltip="Progress by clock: shift the group's times (e.g. start last year's "
+                        "run together with this year's)"),
+        )  # fmt: skip
+        # one colour per track (used with "One colour per track")
+        defs += section(
+            f"Tracks: {g.label} – colours",
+            *(color(p + f"track{i}.color", t.name, track_color(i))
+              for i, t in enumerate(g.tracks)),
+        )  # fmt: skip
+    return defs
 
+
+def build_registry() -> PropertyRegistry:
     registry = PropertyRegistry()
     for group in (
         VIEW,
@@ -439,7 +474,5 @@ def build_registry() -> PropertyRegistry:
     ):
         registry.extend(group)
     registry.extend(layer_properties())
-    from earthling.render.weather import weather_properties
-
     registry.extend(weather_properties())
     return registry

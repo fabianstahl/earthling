@@ -33,9 +33,9 @@ def test_vehicle_replaces_the_dot(gl_ctx):
     track = straight_track()
     renderer.set_scene(FRAME, [track])
     scene = Scene()
-    from earthling.core.session import Session  # noqa: F401  (properties below)
-    from earthling.render.parameters import enum, flt
+    from earthling.core.properties import enum, flt
     from earthling.render.vehicles import MARKER_OPTIONS
+    from earthling.session import Session  # noqa: F401  (properties below)
 
     scene.set_dynamic(
         "groups",
@@ -69,10 +69,9 @@ def test_vehicle_replaces_the_dot(gl_ctx):
 
 def test_vehicle_tint_and_label(gl_ctx):
     """Step 19.18: a tinted vehicle with a caption moving with it."""
-    from earthling.core.properties import PropertyDef, PType
+    from earthling.core.properties import PropertyDef, PType, color, enum, flt
     from earthling.core.scene import Scene
     from earthling.render.camera import Camera
-    from earthling.render.parameters import color, enum, flt
     from earthling.render.renderer import Renderer
     from earthling.render.vehicles import MARKER_OPTIONS
     from test_tracks import FRAME, straight_track

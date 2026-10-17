@@ -21,10 +21,10 @@ from earthling.core.animation import Interp
 from earthling.core.config import Project
 from earthling.core.pois import Poi
 from earthling.core.scene import Scene
-from earthling.core.session import Session
 from earthling.export.frames import FrameRenderer
 from earthling.render.camera_rig import look_orientation
 from earthling.render.renderer import Renderer
+from earthling.session import Session
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "images"

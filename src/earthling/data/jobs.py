@@ -8,9 +8,9 @@ from dataclasses import dataclass
 
 import shapely
 
-from earthling.core.session import Session
 from earthling.data.dem import SOURCE_DETAIL_FACTOR, DemBaker, download_sources
 from earthling.data.downloader import DownloadProgress, ProgressCallback, TileDownloader
+from earthling.session import Session
 
 
 @dataclass

@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 from typing import Any
 
+from earthling.core.properties import flt, section
+
 
 @dataclass
 class Photo:
@@ -30,8 +32,6 @@ class Photo:
 
 def photo_properties(photo: Photo) -> list:
     """Keyframeable properties of one photo ("photo.<id>.*")."""
-    from earthling.render.parameters import flt, section
-
     p = f"photo.{photo.id}."
     return section(
         f"Photo: {photo.name}",
