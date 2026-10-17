@@ -25,9 +25,10 @@ From the repository root:
 uv run python examples/showcase/tools/gen_tracks.py s03        # (re)generate GPX (network)
 uv run earthling fetch examples/showcase/s03_stelvio            # download the data
 uv run python examples/showcase/tools/s03_stelvio.py            # write s03_stelvio/scenes/s03_stelvio.json
-uv run python examples/showcase/tools/stills.py s03_stelvio/scenes/s03_stelvio.json 5 12   # preview
+uv run earthling stills examples/showcase/s03_stelvio --scene scenes/s03_stelvio.json 5 12 --out renders/showcase/stills   # preview
 bash examples/showcase/tools/render_all.sh s03_stelvio          # 1080p60 video + QA into renders/showcase
 ```
 
-`tools/sc_common.py` holds the camera helpers shared by the scene scripts (smooth chase,
-orbit and calm map shots, holds, POIs), `tools/qa_video.py` makes a contact sheet and finds jumps in a video.
+The scene scripts use the scene kit (`earthling.scenekit`: smooth chase, orbit and calm map
+shots, holds, POIs); `tools/sc_common.py` only adds where the scene projects live and English
+stats. `earthling qa <video>` makes a contact sheet and finds jumps and flashes in a video.

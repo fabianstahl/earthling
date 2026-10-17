@@ -15,5 +15,5 @@ for name in "$@"; do
     --preset h264 --resolution "$res" --out "$OUT/${name}_1080p60${V}.mp4" 2>&1 \
     | tr '\r' '\n' | grep -v "^  frame" > "$OUT/${name}${V}_render_log.txt"
   echo "$name: $(grep wrote "$OUT/${name}${V}_render_log.txt" | tail -1)"
-  python -m uv run python examples/showcase/tools/qa_video.py "$OUT/${name}_1080p60${V}.mp4"
+  python -m uv run earthling qa "$OUT/${name}_1080p60${V}.mp4"
 done
