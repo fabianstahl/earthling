@@ -15,8 +15,9 @@ import moderngl
 import numpy as np
 from PIL import Image
 
-from earthling.core.pois import Poi, visibility_state
+from earthling.core.pois import Poi, pop_in, visibility_state
 from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
+from earthling.render.progress import ReachTimes
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
 from earthling.render.text import BASE_PX, SPREAD, FontAtlas
@@ -136,6 +137,9 @@ class PoiLayer:
         self._stream = DynamicBuffer(ctx, "3f 2f 2f 3f", "in_anchor", "in_offset", "in_uv",
                                      "in_params", min_bytes=1 << 14)  # fmt: skip
         self.last_drawn: list[str] = []  # ids drawn in the last frame (tests)
+        self.path = None  # the drawn journey (POIs that appear when it reaches them)
+        self.reach = ReachTimes()
+        self._passed: dict[tuple, float] = {}
 
     def set_pois(self, pois: list[Poi], base_dir: Path | None = None) -> None:
         self.pois = list(pois)
@@ -212,7 +216,14 @@ class PoiLayer:
             if p + "visible" not in store.registry:
                 continue
             pop, since = visibility_state(animation, poi.id, time, store[p + "visible"])
-            if not store[p + "pop"]:
+            anchor = self._anchor(poi, frame, terrain_data, exaggeration)
+            if store[p + "appear"] == "reached" and pop > 0.0:
+                reached = self._reached_since(poi, anchor, time, animation, store)
+                if reached is None:
+                    continue
+                since = min(since, reached)
+                pop = min(pop, pop_in(reached))
+            if not store[p + "pop"]:  # (not reached yet: skipped above)
                 pop = 1.0 if store[p + "visible"] else 0.0
             opacity = store[p + "opacity"] * min(1.0, pop * 1.5)
             if opacity <= 0.0 or pop <= 0.0:
@@ -220,7 +231,6 @@ class PoiLayer:
             icon = self._icon(poi)
             if icon is None:
                 continue
-            anchor = self._anchor(poi, frame, terrain_data, exaggeration)
             rel = anchor - np.asarray(camera.position, dtype=np.float64)
             vertices = self._geometry(poi, icon, rel, store, since, pop, opacity, k, atlas)
             if not len(vertices):
@@ -228,6 +238,17 @@ class PoiLayer:
             self._draw(program, fbo, icon, atlas, vertices, camera, view_proj, width, height,
                        depth, depth_size, k)  # fmt: skip
             self.last_drawn.append(poi.id)
+
+    def _reached_since(self, poi, anchor, time, animation, store) -> float | None:
+        """Seconds since the drawn line reached the POI, None before (or without a line)."""
+        path = self.path
+        if path is None or animation is None:
+            return None
+        key = (poi.id, poi.lon, poi.lat, id(path), path.total_m)
+        if key not in self._passed:
+            self._passed[key] = float(path.nearest_distances(anchor[None, :2])[0])
+        t = self.reach.time_of(self._passed[key], path, animation, store)
+        return time - t if time >= t else None
 
     def render_vehicles(self, fbo, camera, view_proj, markers, width, height, depth,
                         depth_size) -> None:  # fmt: skip

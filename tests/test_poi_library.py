@@ -72,3 +72,31 @@ def test_new_poi_of_a_kind_and_by_place(qtbot, monkeypatch):
     dock.lat.setValue(46.5)
     dock.lat.editingFinished.emit()
     assert window.scene.pois[-1].lat == 46.5
+
+
+def test_pois_appear_when_the_line_reaches_them(gl_ctx):
+    from types import SimpleNamespace
+
+    from earthling.core.animation import Interp
+    from earthling.core.scene import Scene
+    from earthling.render.pois import PoiLayer
+    from earthling.render.progress import ReachTimes
+    from earthling.render.shader_library import ShaderLibrary
+
+    scene = Scene()
+    anim = scene.animation
+    anim.duration = 10.0
+    anim.set_key("progress.head", 0.0, 0.0, Interp.LINEAR)
+    anim.set_key("progress.head", 10.0, 1.0, Interp.LINEAR)
+    path = SimpleNamespace(total_m=1000.0, distance_for=lambda head, mode: head * 1000.0,
+                           nearest_distances=lambda xy: xy[:, 0])  # fmt: skip
+    reach = ReachTimes()
+    assert reach.time_of(500.0, path, anim, scene.store) == pytest.approx(5.0, abs=0.02)
+    assert reach.time_of(2000.0, path, anim, scene.store) == float("inf")
+    layer = PoiLayer(gl_ctx, ShaderLibrary(gl_ctx), None)
+    layer.path = path
+    poi = Poi("hut", "Hut", 7.0, 46.0)
+    anchor = np.array([250.0, 40.0, 0.0])
+    assert layer._reached_since(poi, anchor, 2.0, anim, scene.store) is None
+    since = layer._reached_since(poi, anchor, 3.0, anim, scene.store)
+    assert since == pytest.approx(0.5, abs=0.02)

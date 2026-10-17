@@ -167,6 +167,22 @@ class ProgressPath:
         g = self.tracks[index]
         return g.offset_m, g.offset_m + g.length_m
 
+    def nearest_distances(self, xy: np.ndarray) -> np.ndarray:
+        """Global distance of the nearest path point (in the ENU plane) for every row of ``xy``
+        (n, 2): where the head passes these places."""
+        pts = [g.enu[:, :2] for g in self.tracks if g.enu is not None]
+        if not pts or not len(xy):
+            return np.full(len(xy), -np.inf)
+        path_xy = np.vstack(pts)
+        dist = np.concatenate([g.dist + g.offset_m for g in self.tracks if g.enu is not None])
+        step = max(1, len(path_xy) // 20000)  # (metres apart: plenty for a label or a POI)
+        path_xy, dist = path_xy[::step], dist[::step]
+        out = np.empty(len(xy))
+        for a in range(0, len(xy), 256):
+            chunk = xy[a : a + 256, None, :2] - path_xy[None, :, :]
+            out[a : a + 256] = dist[np.argmin((chunk**2).sum(axis=2), axis=1)]
+        return out
+
     def time_at(self, distance: float) -> float | None:
         valid = self._valid
         if not valid.any():
@@ -190,3 +206,36 @@ def _start_time(g: BuiltTrack) -> float:
     """First timestamp of a built track (tracks without time keep their order, at the end)."""
     t = g.time[np.isfinite(g.time)] if g.time is not None else ()
     return float(t[0]) if len(t) else float("inf")
+
+
+class ReachTimes:
+    """When the head first reaches a path distance, in timeline seconds: the progress keys
+    sampled at 60 per second (resampled only when the keys change)."""
+
+    STEP = 1.0 / 60.0
+
+    def __init__(self) -> None:
+        self._key: tuple | None = None
+        self._times = np.zeros(0)
+        self._reached = np.zeros(0)  # the farthest distance reached up to each sample
+
+    def time_of(self, distance: float, path: ProgressPath, animation, store) -> float:
+        self._sample(path, animation, store)
+        if not len(self._reached) or distance > self._reached[-1]:
+            return float("inf")
+        return float(self._times[np.searchsorted(self._reached, distance)])
+
+    def _sample(self, path, animation, store) -> None:
+        curves = [animation.curves.get(pid) for pid in ("progress.head", "progress.mode")]
+        keys = [tuple((k.time, k.value) for k in c.keys) if c else () for c in curves]
+        key = (id(path), path.total_m, animation.duration, store["progress.head"],
+               store["progress.mode"], *keys)  # fmt: skip
+        if key == self._key:
+            return
+        self._key = key
+        self._times = np.arange(0.0, animation.duration + self.STEP / 2, self.STEP)
+        head, mode = curves
+        d = [path.distance_for(head.evaluate(t) if head and head.keys else store["progress.head"],
+                               mode.evaluate(t) if mode and mode.keys else store["progress.mode"])
+             for t in self._times]  # fmt: skip
+        self._reached = np.maximum.accumulate(np.asarray(d, dtype=np.float64))

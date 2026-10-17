@@ -24,6 +24,8 @@ EFFECTS = [
     ("float", "Float"),
 ]
 
+APPEAR = [("keys", "By the Show keys"), ("reached", "When the line reaches it")]
+
 
 @dataclass
 class Poi:
@@ -64,6 +66,9 @@ def poi_properties(poi: Poi) -> list:
         f"POI: {poi.name}",
         boolean(p + "visible", "Show", True,
                 tooltip="Keys on this property drive the pop-in / pop-out animation"),
+        enum(p + "appear", "Appear", "keys", APPEAR, animatable=False,
+             tooltip="Pop in when the drawn line reaches the POI (the nearest point of the "
+                     "line) instead of only by the Show keys"),
         flt(p + "opacity", "Opacity", 1.0, 0.0, 1.0),
         flt(p + "scale", "Scale", 1.0, 0.0, 5.0, step=0.05),
         boolean(p + "pop", "Pop in / out", True,

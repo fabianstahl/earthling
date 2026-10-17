@@ -176,20 +176,7 @@ class LabelLayer:
         path = self.path
         key = (id(path), getattr(path, "total_m", 0.0), self._anchor_key)
         if key != self._passed_key:
-            tracks = getattr(path, "tracks", None) or []
-            pts = [g.enu[:, :2] for g in tracks if g.enu is not None]
-            if pts and len(anchors):
-                xy = np.vstack(pts)
-                dist = np.concatenate([g.dist + g.offset_m for g in tracks if g.enu is not None])
-                step = max(1, len(xy) // 20000)  # (metres apart: plenty for a label)
-                xy, dist = xy[::step], dist[::step]
-                passed = np.empty(len(anchors))
-                for a in range(0, len(anchors), 256):
-                    chunk = anchors[a : a + 256, None, :2] - xy[None, :, :]
-                    passed[a : a + 256] = dist[np.argmin((chunk**2).sum(axis=2), axis=1)]
-                self._passed = passed
-            else:
-                self._passed = np.full(len(anchors), -np.inf)
+            self._passed = path.nearest_distances(anchors[:, :2])
             self._passed_key = key
         return self._passed
 
