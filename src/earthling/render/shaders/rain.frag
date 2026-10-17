@@ -77,7 +77,12 @@ void main() {
         return;
     }
     float az = atan(dir.y, dir.x);
-    vec2 tangent = vec2(-sin(az), cos(az));
+    // the lanes slant with the wind across the *view*, one value for the frame: taken across
+    // each pixel's own azimuth it changes over the screen, and with the wind along the view the
+    // lanes fold over above the horizon (flakes smeared into streaks, fanning out sideways)
+    vec2 view_h = u_cam_forward.xy;
+    vec2 across = length(view_h) > 1e-3 ? normalize(vec2(-view_h.y, view_h.x))
+                                         : vec2(-sin(az), cos(az));
     bool snow = u_snow != 0;
     float FALL = snow ? 1.1 : 8.0;              // m/s
     const float EXPOSURE = 1.0 / 60.0;          // motion blur of one video frame
@@ -92,7 +97,7 @@ void main() {
         float cell = (snow ? 0.035 : 0.02) * r;  // lane spacing: constant on screen
         // the lanes slant with the wind (snow at most ~50 degrees: lanes running almost
         // horizontally break the flakes into streaks)
-        float shear = dot(u_rain_wind, tangent) / FALL;
+        float shear = dot(u_rain_wind, across) / FALL;
         if (snow) shear = clamp(shear, -1.2, 1.2);
         float u = az * r + p.z * shear;
         float lane_id = floor(u / cell) + float(layer) * 1013.0;
