@@ -349,6 +349,7 @@ class Renderer:
         bloom = self._render_glow(camera, view_proj, width, height)
         self._tonemap(fbo, *output, bloom)
         self.labels.veil = self.target.veil
+        self.labels.path, self.labels.head_m = self.tracks.path, self.tracks.head_m
         self.labels.render(fbo, camera, view_proj, self.frame, self.terrain.exaggeration,
                            *output, self.target.depth, (width, height), self.store)  # fmt: skip
         self.pois.render(fbo, camera, view_proj, self.frame, self.terrain.data,

@@ -284,3 +284,23 @@ def test_city_and_country_labels_are_drawn(gl_ctx, tmp_path):
     assert renderer.labels.last_drawn == 0
     renderer, img = render_labels(gl_ctx, tmp_path, [country], labels__countries=True)
     assert renderer.labels.last_drawn == 1 and white_pixels(img) > 30
+
+
+def test_labels_appear_when_passed(gl_ctx, tmp_path):
+    from types import SimpleNamespace
+
+    from earthling.render.labels import LabelLayer
+    from earthling.render.shader_library import ShaderLibrary
+
+    # a straight path along x: 0 .. 10 km, a second track continuing from 10 km
+    xs = np.linspace(0.0, 5000.0, 51)
+    first = SimpleNamespace(enu=np.c_[xs, np.zeros(51), np.zeros(51)], dist=xs, offset_m=0.0)
+    second = SimpleNamespace(enu=np.c_[xs + 5000.0, np.zeros(51), np.zeros(51)], dist=xs,
+                             offset_m=5000.0)  # fmt: skip
+    layer = LabelLayer(gl_ctx, ShaderLibrary(gl_ctx))
+    layer.path = SimpleNamespace(tracks=[first, second], total_m=10_000.0)
+    anchors = np.array([[1000.0, 800.0, 0.0], [7000.0, -300.0, 0.0]])
+    assert layer._passed_at(anchors) == pytest.approx([1000.0, 7000.0])
+    # without a drawn track the option changes nothing
+    renderer, _ = render_labels(gl_ctx, tmp_path, [peak("P")], labels__follow_progress=True)
+    assert renderer.labels.last_drawn == 1

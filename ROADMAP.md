@@ -806,6 +806,11 @@ ball).
 The stats panel shows the time of day also when the date is switched off (a race through the
 night: "23:40 Uhr" under the distance, no date).
 
+**19.34 Labels that appear when passed**
+`labels.follow_progress`: a label appears once the head passes the nearest point of the drawn
+track (fading in over `labels.progress_fade` metres of track). With `labels.max_track_distance`
+the video names the towns and villages of the way so far.
+
 ---
 
 ## 5. Risks & notes

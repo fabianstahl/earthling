@@ -328,6 +328,11 @@ LABELS = section(
         tooltip="Hide minor peaks (estimated drop to the nearest higher peak)"),
     flt("labels.max_track_distance", "Maximum distance to the track", 0.0, 0.0, 50.0, step=0.5,
         decimals=1, unit="km", tooltip="Only features near the tracks (0 = no limit)"),
+    boolean("labels.follow_progress", "Appear when passed", False,
+            tooltip="Labels near the drawn track appear once the head passes them (the towns "
+                    "and villages of the way so far)"),
+    flt("labels.progress_fade", "Appear over", 500.0, 0.0, 20000.0, step=50.0, decimals=0,
+        unit="m", tooltip="Track distance over which a passed label fades in"),
     flt("labels.max_distance", "Fade-out distance", 30.0, 1.0, 5000.0, step=1.0, decimals=0,
         unit="km", tooltip="Labels fade out towards this distance from the camera"),
     integer("labels.max_count", "Maximum labels", 40, 1, 300),

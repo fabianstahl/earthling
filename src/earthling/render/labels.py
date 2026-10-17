@@ -221,6 +221,11 @@ class LabelLayer:
         self._buffer: moderngl.Buffer | None = None
         self._vaos: dict[int, moderngl.VertexArray] = {}
         self.enricher = None  # callable(features) run once after loading (DEM, tracks)
+        # the drawn track (labels.follow_progress): set by the renderer every frame
+        self.path = None  # ProgressPath of the walked tracks
+        self.head_m = math.inf  # global distance of the head
+        self._passed_key: tuple | None = None
+        self._passed = np.zeros(0)
         self.last_drawn = 0  # labels drawn in the last frame (tests, status)
 
     def get_atlas(self) -> FontAtlas:
@@ -288,6 +293,29 @@ class LabelLayer:
             self._anchor_key = key
         return self._anchors
 
+    def _passed_at(self, anchors: np.ndarray) -> np.ndarray:
+        """Per feature: the global track distance of the nearest point of the drawn path (the
+        head passes the label there)."""
+        path = self.path
+        key = (id(path), getattr(path, "total_m", 0.0), self._anchor_key)
+        if key != self._passed_key:
+            tracks = getattr(path, "tracks", None) or []
+            pts = [g.enu[:, :2] for g in tracks if g.enu is not None]
+            if pts and len(anchors):
+                xy = np.vstack(pts)
+                dist = np.concatenate([g.dist + g.offset_m for g in tracks if g.enu is not None])
+                step = max(1, len(xy) // 20000)  # (metres apart: plenty for a label)
+                xy, dist = xy[::step], dist[::step]
+                passed = np.empty(len(anchors))
+                for a in range(0, len(anchors), 256):
+                    chunk = anchors[a : a + 256, None, :2] - xy[None, :, :]
+                    passed[a : a + 256] = dist[np.argmin((chunk**2).sum(axis=2), axis=1)]
+                self._passed = passed
+            else:
+                self._passed = np.full(len(anchors), -np.inf)
+            self._passed_key = key
+        return self._passed
+
     # --- rendering ----------------------------------------------------------------------
     def _filter(self, store) -> np.ndarray:
         n = len(self.features)
@@ -347,6 +375,10 @@ class LabelLayer:
         distance = np.linalg.norm(rel, axis=1)
         max_distance = store["labels.max_distance"] * 1000.0
         fade = 1.0 - smoothstep(0.7 * max_distance, max_distance, distance)
+        if store["labels.follow_progress"] and self.path is not None:
+            passed = self._passed_at(anchors)[idx]
+            reveal = max(store["labels.progress_fade"], 1e-3)
+            fade = fade * np.clip((self.head_m - passed) / reveal, 0.0, 1.0)
         sel = on_screen & (fade > 0.01)
         if not sel.any():
             return

@@ -20,7 +20,8 @@ timeline and export 4K video.
   (for example "walked" and "official route"). Vehicles at the head (a ship, a plane, a
   cyclist ...), lines coloured by gradient, speed or heart rate, and several heads at once
   (a race against last year's run).
-- **Overlays:** peak, pass and place labels (OpenStreetMap), country names and large cities
+- **Overlays:** peak, pass and place labels (OpenStreetMap; optionally appearing as the
+  line passes them), country names and large cities
   (Natural Earth) for journeys across a continent, a stats panel with distance, ascent, speed
   or pace, gradient, heart rate, the gap in a race, elevation profile and time of day (in
   English or German), a mini-map of the whole journey with the head on it, photos faded in on
