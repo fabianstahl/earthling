@@ -343,6 +343,46 @@ def draw_finish() -> Image.Image:
     return finish(shadow(img))
 
 
+def draw_aid() -> Image.Image:
+    """Aid station (food and drinks on the way): a cup of water and a banana."""
+    img, d = badge((40, 150, 110))
+    ink = (30, 60, 50, 255)
+    cup = [p(0.27, 0.36), p(0.5, 0.36), p(0.47, 0.74), p(0.3, 0.74)]
+    d.polygon(cup, fill=(235, 245, 250, 255), outline=ink, width=5 * SS)
+    d.polygon([p(0.285, 0.47), p(0.485, 0.47), p(0.47, 0.72), p(0.305, 0.72)],
+              fill=(90, 170, 230, 255))  # fmt: skip
+    d.line([p(0.27, 0.36), p(0.5, 0.36)], fill=ink, width=6 * SS)
+    # the banana: a crescent (a yellow disc minus a shifted one) with a dark tip
+    banana = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    b = ImageDraw.Draw(banana)
+    b.ellipse((*p(0.4, 0.22), *p(0.8, 0.7)), fill=(150, 110, 20, 255))
+    b.ellipse((*p(0.415, 0.235), *p(0.785, 0.685)), fill=(250, 210, 50, 255))
+    b.ellipse((*p(0.36, 0.12), *p(0.76, 0.6)), fill=(0, 0, 0, 0))
+    b.rectangle((*p(0.0, 0.0), *p(0.52, 1.0)), fill=(0, 0, 0, 0))
+    img.alpha_composite(banana)
+    d.ellipse((*p(0.765, 0.43), *p(0.8, 0.47)), fill=(90, 60, 20, 255))
+    return finish(shadow(img))
+
+
+def draw_beerpong() -> Image.Image:
+    """Beer pong: red party cups in a triangle and a ping-pong ball."""
+    img, d = badge((200, 45, 45))
+    ink = (90, 20, 20, 255)
+    w, h = 0.13, 0.15
+    rows = ((0.5, 0.36, 1), (0.5, 0.52, 2), (0.5, 0.68, 3))
+    for cx, top, n in rows:
+        for k in range(n):
+            x = cx + (k - (n - 1) / 2.0) * (w + 0.015)
+            d.polygon([p(x - w / 2, top), p(x + w / 2, top), p(x + w * 0.36, top + h),
+                       p(x - w * 0.36, top + h)], fill=(220, 40, 40, 255), outline=ink,
+                      width=3 * SS)  # fmt: skip
+            d.rectangle((*p(x - w / 2, top), *p(x + w / 2, top + 0.025)),
+                        fill=(250, 250, 250, 255))  # fmt: skip
+    d.ellipse((*p(0.64, 0.24), *p(0.77, 0.37)), fill=(255, 250, 235, 255), outline=(90, 90, 90,
+              255), width=3 * SS)  # fmt: skip
+    return finish(shadow(img))
+
+
 def draw_peak() -> Image.Image:
     """Summit: a mountain with a flag on top."""
     img, d = badge((70, 125, 75))
@@ -515,6 +555,8 @@ def main() -> None:
     draw_attraction().save(OUT / "attraction.png")
     draw_finish().save(OUT / "finish.png")
     draw_peak().save(OUT / "peak.png")
+    draw_aid().save(OUT / "aid.png")
+    draw_beerpong().save(OUT / "beerpong.png")
     storm = [draw_storm_frame(i / 30) for i in range(30)]
     storm[0].save(OUT / "storm.png", save_all=True, append_images=storm[1:], duration=60,
                   loop=0, disposal=0, blend=0, format="PNG")  # fmt: skip

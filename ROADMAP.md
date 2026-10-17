@@ -798,6 +798,10 @@ true kilometres (e.g. from km photos), the drawn line stays as recorded. On a lo
 mark is searched after the previous mark.
 → "100 km" at the finish of a 100 km march when the watch counted 103.4 km.
 
+**19.32 Aid station and beer pong icons**
+Two more built-in POI icons: `aid` (a cup of water and a banana) and `beerpong` (red cups and a
+ball).
+
 ---
 
 ## 5. Risks & notes
