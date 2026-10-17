@@ -84,7 +84,7 @@ def render_poi(gl_ctx, poi, time=1.0, **props):
     from earthling.render import lod
     from earthling.render.camera import Camera, OrbitController
     from earthling.render.renderer import Renderer
-    from test_terrain import FRAME, FakeTerrainData
+    from helpers import FRAME, FakeTerrainData
 
     renderer = Renderer(gl_ctx)
     renderer.set_scene(FRAME, [])
@@ -172,7 +172,7 @@ def test_hiker_marker_does_not_write_depth(gl_ctx):
     """While we stop at a break, the marker stands exactly at the break's POI: its depth would
     hide the POI (the occlusion test reads the scene depth)."""
     renderer, _ = render_poi(gl_ctx, Poi("camp", "Camp", 7.0, 46.0, "builtin:turnaround"))
-    from test_terrain import FRAME
+    from helpers import FRAME
 
     anchor = np.asarray(FRAME.geodetic_to_enu(46.0, 7.0, 1503.0), dtype=np.float64)  # plateau
     camera = Camera(position=anchor + np.array([0.0, -800.0, 400.0]))

@@ -14,6 +14,7 @@ from earthling.core.animation import (
 )
 from earthling.core.properties import PropertyDef, PropertyRegistry, PropertyStore, PType
 from earthling.core.scene import Scene
+from helpers import DEMO
 
 F = PropertyDef("a.f", "F", PType.FLOAT, 0.0, minimum=-100, maximum=100)
 INT = PropertyDef("a.i", "I", PType.INT, 0)
@@ -157,11 +158,10 @@ def test_layer_switch_warnings():
 
 
 def test_showcase_scene_loads_and_is_clean():
-    from pathlib import Path
 
     from earthling.core.animation import layer_switch_warnings
 
-    path = Path(__file__).parents[1] / "examples" / "alps_demo" / "showcase.json"
+    path = DEMO / "showcase.json"
     scene = Scene()
     assert scene.load(path) == []
     anim = scene.animation

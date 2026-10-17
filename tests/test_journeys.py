@@ -1,7 +1,6 @@
 """Step 18.1: whole-world pyramid, scene origins and far planes for views from space."""
 
 import shutil
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -11,9 +10,8 @@ from earthling.core.config import Config, ConfigError, Project
 from earthling.core.scene import Scene
 from earthling.render.camera import far_for_height
 from earthling.session import Session
+from helpers import DEMO
 from test_aoi import AREA, straight_track
-
-DEMO = Path(__file__).parents[1] / "examples" / "alps_demo"
 
 
 def test_world_pyramid_covers_the_globe_from_zoom_0():

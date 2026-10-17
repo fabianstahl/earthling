@@ -8,6 +8,7 @@ from earthling.core.aoi import compute_aoi, format_bytes, plan_report, plan_tile
 from earthling.core.config import AreaSection, Zone
 from earthling.core.geo import tile_bounds_lonlat
 from earthling.core.gpx import Segment, Track, load_gpx_folder
+from helpers import DEMO
 
 AREA = AreaSection(
     border_km=5.0,
@@ -60,7 +61,7 @@ def test_plan_pyramid_properties():
 
 
 def test_demo_project_plan():
-    tracks, _ = load_gpx_folder(Path(__file__).parents[1] / "examples" / "alps_demo" / "gpx")
+    tracks, _ = load_gpx_folder(DEMO / "gpx")
     aoi = compute_aoi(tracks, AREA)
     assert aoi is not None and plan_tiles(aoi, AREA).count("dem") > 0
 
@@ -78,7 +79,7 @@ def test_session_outlines():
     from earthling.core.config import Project
     from earthling.session import Session
 
-    session = Session(Project.load(Path(__file__).parents[1] / "examples" / "alps_demo"))
+    session = Session(Project.load(DEMO))
     lines = session.outline_lines()
     assert len(lines) == 3  # two inner zones + AOI
     assert session.plan.count("imagery") > 0

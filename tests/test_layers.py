@@ -34,7 +34,7 @@ def test_every_layer_renders_differently(gl_ctx):
     from earthling.render import lod
     from earthling.render.camera import Camera, OrbitController
     from earthling.render.renderer import Renderer
-    from test_terrain import SlopeTerrainData
+    from helpers import SlopeTerrainData
 
     renderer = Renderer(gl_ctx)
     renderer.set_scene(LocalFrame(46.0, 7.0, 0.0), [])
@@ -77,7 +77,7 @@ def test_border_map_has_sea_and_land_colours(gl_ctx):
     from earthling.render import lod
     from earthling.render.camera import Camera, OrbitController
     from earthling.render.renderer import Renderer
-    from test_terrain import FakeTerrainData
+    from helpers import FakeTerrainData
 
     def centre(height):
         data = FakeTerrainData()

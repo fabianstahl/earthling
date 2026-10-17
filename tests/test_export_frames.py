@@ -5,7 +5,7 @@ from earthling.core.scene import Scene
 from earthling.export.frames import FrameRenderer, parse_resolution, save_png
 from earthling.render import lod
 from earthling.render.renderer import Renderer
-from test_terrain import SlopeTerrainData
+from helpers import SlopeTerrainData
 
 FRAME = LocalFrame(46.0, 7.0, 0.0)
 

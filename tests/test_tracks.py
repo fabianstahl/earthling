@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Segment, Track
 from earthling.render.tracks import (
     PRIMITIVE_RESTART,
@@ -15,9 +14,7 @@ from earthling.render.tracks import (
     ribbon_vertices,
     smooth,
 )
-
-FRAME = LocalFrame(46.0, 7.0, 0.0)
-
+from helpers import FRAME
 
 # pixel sizes are given for 1080p and scale with the image height; the test images are 200 px
 PX = 1080 / 200
@@ -289,7 +286,7 @@ def test_depth_bias_keeps_tracks_above_coarse_terrain(gl_ctx):
     from earthling.render import lod
     from earthling.render.camera import Camera
     from earthling.render.renderer import Renderer
-    from test_terrain import FakeTerrainData
+    from helpers import FakeTerrainData
 
     def red_pixels(bias):
         renderer = Renderer(gl_ctx)

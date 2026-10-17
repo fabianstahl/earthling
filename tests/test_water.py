@@ -99,7 +99,7 @@ def test_water_surface_reflects_and_glints(gl_ctx):
     from earthling.render import lod
     from earthling.render.camera import Camera, OrbitController
     from earthling.render.renderer import Renderer
-    from test_terrain import FRAME, FakeTerrainData
+    from helpers import FRAME, FakeTerrainData
 
     class Sea(FakeTerrainData):
         def texture_for(self, key, source="imagery"):

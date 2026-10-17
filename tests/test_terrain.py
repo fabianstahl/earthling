@@ -2,15 +2,15 @@ import moderngl
 import numpy as np
 import pytest
 
-from earthling.core.geo import LocalFrame, lonlat_to_tile, tile_to_lonlat
+from earthling.core.geo import lonlat_to_tile, tile_to_lonlat
 from earthling.data.dem import HEIGHTMAP_SAMPLES
 from earthling.data.terrain_data import HeightmapRef
 from earthling.render import lod
 from earthling.render.camera import Camera, OrbitController
 from earthling.render.renderer import Renderer
 from earthling.render.terrain import MESH_GRID, grid_indices, shared_grid_attributes, tile_geometry
+from helpers import FRAME, FakeTerrainData, SlopeTerrainData
 
-FRAME = LocalFrame(46.0, 7.0, 0.0)
 N = MESH_GRID + 1
 
 
@@ -42,25 +42,6 @@ def test_tangent_frame_and_width():
     assert north == pytest.approx([0, 1, 0], abs=0.01)
     assert up == pytest.approx([0, 0, 1], abs=0.01)
     assert g.width_m == pytest.approx(9783.9 * np.cos(np.radians(46.0)), rel=0.01)
-
-
-class FakeTerrainData:
-    """Constant plateau with a bump; imagery only at z >= 11."""
-
-    def __init__(self):
-        self.heights = np.full((HEIGHTMAP_SAMPLES, HEIGHTMAP_SAMPLES), 1500.0, dtype=np.float32)
-        self.heights[100:150, 100:150] = 2500.0
-
-    def heightmap_for(self, key):
-        return HeightmapRef(key, self.heights, 256.0, (0.0, 0.0))
-
-    def texture_for(self, key, source="imagery"):
-        return self.imagery_for(key) if source == "imagery" else None
-
-    def imagery_for(self, key):
-        rgb = np.zeros((64, 64, 3), dtype=np.uint8)
-        rgb[..., 1] = 200
-        return rgb
 
 
 def test_render_lod_terrain(gl_ctx):
@@ -103,18 +84,6 @@ def test_pick_depth_hits_terrain(gl_ctx):
     assert depth is not None and depth < 1.0
     hit = unproject_log_depth(camera, 64, 64, 128, 128, depth)
     assert 1400 < hit[2] < 2600  # on the plateau or the bump (z ~ up near the origin)
-
-
-class SlopeTerrainData(FakeTerrainData):
-    """Height rises towards the east -> the slope faces west."""
-
-    def __init__(self):
-        super().__init__()
-        cols = np.arange(HEIGHTMAP_SAMPLES, dtype=np.float32)
-        self.heights = np.tile(1000.0 + cols * 40.0, (HEIGHTMAP_SAMPLES, 1))
-
-    def imagery_for(self, key):
-        return np.full((64, 64, 3), 128, dtype=np.uint8)
 
 
 def test_sun_direction_lights_facing_slopes(gl_ctx):

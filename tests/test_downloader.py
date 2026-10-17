@@ -6,6 +6,7 @@ import pytest
 from earthling.data.cache import TileCache
 from earthling.data.downloader import RateLimiter, TileDownloader, http_client
 from earthling.data.providers import ESRI_WORLD_IMAGERY, TileProvider, get_provider
+from helpers import DEMO
 
 PROVIDER = TileProvider(
     id="test",
@@ -100,9 +101,7 @@ def test_download_dialog_runs_jobs(qtbot, tmp_path):
     from earthling.data.jobs import DownloadJob
     from earthling.session import Session
 
-    session = Session(
-        Project.load(__import__("pathlib").Path(__file__).parents[1] / "examples" / "alps_demo")
-    )
+    session = Session(Project.load(DEMO))
     ran = []
 
     def run(cb):

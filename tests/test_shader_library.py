@@ -3,6 +3,7 @@ import pytest
 
 from earthling.render.renderer import Renderer
 from earthling.render.shader_library import ShaderError, ShaderLibrary, preprocess
+from helpers import DEMO
 
 
 def test_preprocess_resolves_includes(tmp_path):
@@ -36,13 +37,12 @@ def test_hot_reload_keeps_old_program_on_error(gl_ctx, tmp_path):
 
 
 def test_renderer_draws_tracks(gl_ctx):
-    from pathlib import Path
 
     from earthling.core.geo import LocalFrame
     from earthling.core.gpx import load_gpx_folder
     from earthling.render.camera import Camera, OrbitController
 
-    tracks, _ = load_gpx_folder(Path(__file__).parents[1] / "examples" / "alps_demo" / "gpx")
+    tracks, _ = load_gpx_folder(DEMO / "gpx")
     renderer = Renderer(gl_ctx)
     renderer.set_scene(LocalFrame(46.0, 6.99, 0.0), tracks)
     camera = Camera()

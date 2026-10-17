@@ -1,14 +1,12 @@
 """Step 18.6: imagery colours matched to a consistent reference mosaic."""
 
-import io
-
 import numpy as np
-from PIL import Image
 
 from earthling.data.cache import TileCache
 from earthling.data.harmonize import ColourReference
 from earthling.data.imagery import compose_tile_texture
 from earthling.data.providers import TileProvider
+from helpers import png
 
 SOURCE = TileProvider(id="src", name="source", kind="imagery", ext="png")
 REFERENCE = TileProvider(id="ref", name="reference", kind="imagery", ext="png", max_zoom=4)
@@ -17,12 +15,6 @@ REFERENCE = TileProvider(id="ref", name="reference", kind="imagery", ext="png", 
 def finer(key):
     """The imagery zoom of every node: one level finer than the node."""
     return key[0] + 1
-
-
-def png(rgb: np.ndarray) -> bytes:
-    buf = io.BytesIO()
-    Image.fromarray(rgb.astype(np.uint8)).save(buf, format="PNG")
-    return buf.getvalue()
 
 
 def fill(cache, provider, z, colour_of, span=range(8, 18)):

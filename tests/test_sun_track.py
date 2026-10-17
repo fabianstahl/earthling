@@ -1,5 +1,4 @@
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,10 +8,11 @@ from earthling.core.scene import Scene
 from earthling.render.camera import Camera
 from earthling.render.renderer import Renderer
 from earthling.session import Session
+from helpers import DEMO
 
 
 def test_sun_follows_the_gpx_time(gl_ctx):
-    session = Session(Project.load(Path("examples/alps_demo")))
+    session = Session(Project.load(DEMO))
     renderer = Renderer(gl_ctx)
     renderer.set_scene(session.frame, session.all_tracks)
     scene = Scene()
@@ -42,7 +42,7 @@ def test_sun_follows_the_gpx_time(gl_ctx):
 
 
 def test_progress_path_inverse_helpers(gl_ctx):
-    session = Session(Project.load(Path("examples/alps_demo")))
+    session = Session(Project.load(DEMO))
     renderer = Renderer(gl_ctx)
     renderer.set_scene(session.frame, session.all_tracks)
     renderer.store = Scene().store

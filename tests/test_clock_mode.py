@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from earthling.core.gpx import Segment, Track
-from test_tracks import FRAME
+from helpers import FRAME
 
 N = 101
 

@@ -1,5 +1,4 @@
 import io
-from pathlib import Path
 
 import httpx
 import numpy as np
@@ -13,6 +12,7 @@ from earthling.data.check import check_dem, check_imagery
 from earthling.data.dem import DEM_SOURCES, StacDemSource, WmsDemSource
 from earthling.data.project_sources import register_project_sources
 from earthling.data.providers import PROVIDERS
+from helpers import DEMO
 from test_wms_dem import RampWms, ramp_server
 
 TOML = """
@@ -136,5 +136,5 @@ def test_check_dem_alignment_and_lod(tmp_path):
 def test_check_source_cli_rejects_unknown_ids(capsys):
     from earthling.cli import main
 
-    assert main(["check-source", str(Path("examples/alps_demo")), "nope"]) == 2
+    assert main(["check-source", str(DEMO), "nope"]) == 2
     assert "unknown source 'nope'" in capsys.readouterr().err

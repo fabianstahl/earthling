@@ -1,14 +1,12 @@
 import datetime as dt
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 from earthling import scenekit as sk
 from earthling.session import Session
-
-DEMO = Path(__file__).parents[1] / "examples" / "alps_demo"
+from helpers import DEMO
 
 
 class FlatTerrain:

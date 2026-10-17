@@ -6,15 +6,9 @@ from PIL import Image
 from earthling.data.cache import TileCache
 from earthling.data.imagery import compose_tile_texture, load_tile_rgb
 from earthling.data.providers import TileProvider
+from helpers import png
 
 P = TileProvider(id="img", name="img", kind="imagery", ext="png", max_zoom=14)
-
-
-def png(color):
-    img = Image.new("RGB", (256, 256), color)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
 
 
 def quadrant_png():

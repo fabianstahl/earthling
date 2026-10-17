@@ -9,7 +9,7 @@ from earthling.render import lod
 from earthling.render.camera import Camera, OrbitController
 from earthling.render.renderer import Renderer
 from earthling.render.weather import equalize, wind_vector
-from test_terrain import FRAME, FakeTerrainData
+from helpers import FRAME, FakeTerrainData
 
 
 def test_helpers():

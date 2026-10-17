@@ -6,8 +6,7 @@ import numpy as np
 import pytest
 
 from earthling.core.scene import MIGRATIONS, SCENE_VERSION, Scene, SceneError, migrate
-
-DEMO = Path(__file__).parents[1] / "examples" / "alps_demo"
+from helpers import DEMO
 
 
 def test_roundtrip(tmp_path):

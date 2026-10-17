@@ -1,4 +1,3 @@
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -8,8 +7,9 @@ from earthling.core.config import Config, ConfigError, Project
 from earthling.core.gpx import load_gpx_file
 from earthling.core.scene import Scene
 from earthling.session import Session
+from helpers import DEMO
 
-DEMO_GPX = Path("examples/alps_demo/gpx").resolve()
+DEMO_GPX = DEMO / "gpx"
 
 PLANNED_GPX = """<?xml version="1.0"?>
 <gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">

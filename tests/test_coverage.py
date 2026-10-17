@@ -1,10 +1,6 @@
-import io
-from pathlib import Path
-
 import numpy as np
 import pytest
 import shapely
-from PIL import Image
 
 from earthling.core.aoi import TilePlan
 from earthling.core.geo import lonlat_to_mercator, lonlat_to_tile, tile_bounds_mercator
@@ -13,6 +9,7 @@ from earthling.data.coverage import get_coverage, needed_tiles, register_coverag
 from earthling.data.dem import DEM_SOURCES, DemSource, encode_heightmap
 from earthling.data.providers import TileProvider
 from earthling.data.terrain_data import TerrainData
+from helpers import DEMO, png
 
 SQUARE = shapely.box(7.0, 46.0, 7.2, 46.2)
 register_coverage("test_square", SQUARE, feather_m=300.0)
@@ -21,12 +18,6 @@ REGIONAL = TileProvider("test_regional", "Regional", "imagery", ext="png", max_z
                         coverage="test_square")  # fmt: skip
 GLOBAL = TileProvider("test_global", "Global", "imagery", ext="png", max_zoom=14)
 RED, BLUE = (255, 0, 0), (0, 0, 255)
-
-
-def png(color):
-    buf = io.BytesIO()
-    Image.new("RGB", (256, 256), color).save(buf, format="PNG")
-    return buf.getvalue()
 
 
 def metres_east(lon, lat, m):
@@ -174,7 +165,7 @@ def test_session_plans_tiles_per_provider(tmp_path):
         project=ProjectSection(cache_dir=tmp_path),
         sources=SourcesSection(imagery=("test_ch", "esri_world_imagery")),
     )
-    session = Session(Project(Path("examples/alps_demo").resolve(), config))
+    session = Session(Project(DEMO, config))
     (ch, ch_tiles), (esri, esri_tiles) = session.provider_tiles("imagery")
     total = session.plan.count("imagery")
     n_ch = sum(len(t) for t in ch_tiles.values())
@@ -204,7 +195,7 @@ def test_fine_file_dem_sources_leave_coarse_zooms_to_the_fallback(tmp_path):
         project=ProjectSection(cache_dir=tmp_path),
         sources=SourcesSection(dem=("swisstopo_alti3d", "aws_terrarium")),
     )
-    session = Session(Project(Path("examples/alps_demo").resolve(), config))
+    session = Session(Project(DEMO, config))
     (swiss, swiss_tiles), (world, world_tiles) = session.provider_tiles("dem")
     lat = sum(session.aoi.bounds[1::2]) / 2.0
     limit = swiss.native_resolution_m * SOURCE_DETAIL_FACTOR

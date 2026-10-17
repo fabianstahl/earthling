@@ -21,7 +21,7 @@ from earthling.render import lod
 from earthling.render.camera import Camera, OrbitController
 from earthling.render.labels import FontAtlas, signed_distance
 from earthling.render.renderer import Renderer
-from test_terrain import FRAME, FakeTerrainData
+from helpers import FRAME, FakeTerrainData
 
 OVERPASS = {
     "elements": [

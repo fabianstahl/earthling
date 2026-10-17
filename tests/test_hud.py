@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -10,6 +9,7 @@ from earthling.core.scene import Scene
 from earthling.render.hud import HikeStats, HudLayer, format_date, format_number
 from earthling.render.labels import FontAtlas
 from earthling.render.shader_library import ShaderLibrary
+from helpers import DEMO
 
 
 def fake_path(with_time=True):
@@ -119,7 +119,7 @@ def test_session_attribution():
     from earthling.core.config import Project
     from earthling.session import Session
 
-    text = Session(Project.load(Path("examples/alps_demo"))).attribution()
+    text = Session(Project.load(DEMO)).attribution()
     assert "Esri" in text and "Copernicus" in text and "OpenStreetMap" in text
 
 

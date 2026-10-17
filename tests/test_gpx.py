@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from earthling.core.gpx import ascent_descent, haversine_m, load_gpx_file, load_gpx_folder
+from helpers import DEMO
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -52,7 +53,7 @@ def test_missing_folder():
 
 
 def test_demo_project_loads():
-    folder = Path(__file__).parents[1] / "examples" / "alps_demo" / "gpx"
+    folder = DEMO / "gpx"
     tracks, errors = load_gpx_folder(folder)
     assert not errors and len(tracks) == 2
     assert 10_000 < tracks[0].stats.distance_m < 40_000
