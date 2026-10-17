@@ -1,31 +1,42 @@
 """GPS tracks as screen-space extruded ribbons with tube shading.
 
-Geometry pipeline (CPU, float64):
-
-1. resample every segment to a minimum point spacing and smooth it,
-2. take heights from the DEM (plus a height offset) or from the GPX file,
-3. convert to ENU (curvature correct) and expand every point into two vertices (left/right).
-
-The vertex shader extrudes the ribbon perpendicular to the projected line, either with a
-constant screen width or a width in metres, with miter joins. Every vertex also carries the
-cumulative distance along its track, which drives the animated progress in later steps.
+The geometry is built on the CPU (:mod:`earthling.render.track_geometry`), the journey axis
+lives in :mod:`earthling.render.progress`; both are re-exported here. The vertex shader
+extrudes the ribbon perpendicular to the projected line, either with a constant screen width or
+a width in metres, with miter joins. Every vertex also carries the cumulative distance along
+its track, which drives the animated progress.
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass, replace
 
 import moderngl
 import numpy as np
 
 from earthling.core.geo import LocalFrame
-from earthling.core.gpx import Track, haversine_m
+from earthling.core.gpx import Track
 from earthling.render.camera import Camera
 from earthling.render.gl_util import set_uniform
+from earthling.render.progress import ProgressPath, journey_path
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
-
-PRIMITIVE_RESTART = 0xFFFFFFFF
+from earthling.render.track_geometry import (  # noqa: F401 (re-exported)
+    GRADIENT_WINDOW_M,
+    PRIMITIVE_RESTART,
+    SPEED_WINDOW_S,
+    VALUE_KINDS,
+    VERTEX_FLOATS,
+    BuiltTrack,
+    TrackGeometryOptions,
+    TrackSegmentGeometry,
+    build_track_positions,
+    build_tracks,
+    calibrate_ground,
+    motion_values,
+    resample,
+    resample_indices,
+    ribbon_vertices,
+    smooth,
+)
 
 # Distinct, saturated colors for tracks / days (sRGB).
 PALETTE = [
@@ -44,438 +55,11 @@ def track_color(index: int) -> tuple[float, float, float]:
     return PALETTE[index % len(PALETTE)]
 
 
-def resample(lat: np.ndarray, lon: np.ndarray, ele: np.ndarray, spacing_m: float):
-    """Drop points closer than ``spacing_m`` to the previously kept one (keeps the ends)."""
-    idx = resample_indices(lat, lon, spacing_m)
-    return lat[idx], lon[idx], ele[idx]
-
-
-def resample_indices(lat: np.ndarray, lon: np.ndarray, spacing_m: float) -> np.ndarray:
-    if len(lat) < 3 or spacing_m <= 0:
-        return np.arange(len(lat))
-    steps = haversine_m(lat[:-1], lon[:-1], lat[1:], lon[1:])
-    cumulative = np.concatenate([[0.0], np.cumsum(steps)])
-    keep = [0]
-    last = 0.0
-    for i in range(1, len(lat) - 1):
-        if cumulative[i] - last >= spacing_m:
-            keep.append(i)
-            last = cumulative[i]
-    keep.append(len(lat) - 1)
-    return np.array(keep)
-
-
-def smooth(values: np.ndarray, window: int) -> np.ndarray:
-    """Centred moving average with shrinking windows at the ends (NaN-free input): point i
-    averages the min(half, i, n - 1 - i) points on either side, so the first and the last point
-    stay where they are. (Padding with the end values pulled both ends inwards, by kilometres
-    on sparse lines such as a flight with a point every 10 km.)"""
-    n = len(values)
-    if window <= 1 or n < 3:
-        return values
-    half = window // 2
-    r = np.minimum(half, np.minimum(np.arange(n), n - 1 - np.arange(n)))
-    cum = np.concatenate([[0.0], np.cumsum(np.asarray(values, dtype=np.float64))])
-    i = np.arange(n)
-    return (cum[i + r + 1] - cum[i - r]) / (2 * r + 1)
-
-
-GRADIENT_WINDOW_M = 60.0  # gradient over +- this distance (DEM noise at hairpins)
-SPEED_WINDOW_S = 15.0  # speed over +- this time
-# per-vertex values the tracks can be coloured by (tracks.color_by), in this order
-VALUE_KINDS = ("elevation", "gradient", "speed", "heart_rate")
-
-
-def motion_values(ground: np.ndarray, ele: np.ndarray, time: np.ndarray,
-                  hr: np.ndarray | None = None) -> np.ndarray:  # fmt: skip
-    """(n, 4): elevation (m), gradient (%), speed (km/h) and heart rate (bpm) per point, NaN
-    where unknown. ``ground``: metres walked (non-decreasing), ``time``: epoch seconds."""
-    n = len(ground)
-    out = np.full((n, 4), np.nan)
-    if n == 0:
-        return out
-    ground = np.asarray(ground, dtype=np.float64)
-    ele = np.asarray(ele, dtype=np.float64)
-    ok = np.isfinite(ele)
-    if ok.sum() >= 2:
-        e = np.interp(ground, ground[ok], ele[ok])
-        lo = np.clip(ground - GRADIENT_WINDOW_M, ground[0], ground[-1])
-        hi = np.clip(ground + GRADIENT_WINDOW_M, ground[0], ground[-1])
-        span = np.maximum(hi - lo, 1e-6)
-        out[:, 0] = e
-        rise = np.interp(hi, ground, e) - np.interp(lo, ground, e)
-        out[:, 1] = np.where(hi - lo > 1.0, 100.0 * rise / span, 0.0)
-    t = np.asarray(time, dtype=np.float64)
-    ok = np.isfinite(t)
-    if ok.sum() >= 2 and np.all(np.diff(t[ok]) >= 0):
-        tt, gg = t[ok], ground[ok]
-        lo = np.clip(t - SPEED_WINDOW_S, tt[0], tt[-1])
-        hi = np.clip(t + SPEED_WINDOW_S, tt[0], tt[-1])
-        span = hi - lo
-        with np.errstate(invalid="ignore", divide="ignore"):
-            speed = 3.6 * (np.interp(hi, tt, gg) - np.interp(lo, tt, gg)) / span
-        out[:, 2] = np.where(ok & (span > 0.5), speed, np.nan)
-    if hr is not None:
-        out[:, 3] = np.asarray(hr, dtype=np.float64)
-    return out
-
-
-@dataclass
-class TrackGeometryOptions:
-    elevation_source: str = "dem"  # "dem" or "gpx"
-    height_offset_m: float = 3.0
-    exaggeration: float = 1.0
-    spacing_m: float = 5.0
-    smoothing: int = 5  # moving-average window in points
-
-
-@dataclass
-class TrackSegmentGeometry:
-    enu: np.ndarray  # (n, 3) float64
-    dist: np.ndarray  # (n,) metres along the drawn (exaggerated) track
-    time: np.ndarray  # (n,) seconds since the epoch, NaN where unknown
-    ele: np.ndarray | None = None  # (n,) true elevation (no exaggeration / offset)
-    ground: np.ndarray | None = None  # (n,) metres actually walked (3D, true heights)
-    hr: np.ndarray | None = None  # (n,) heart rate (bpm), NaN where unknown
-    water: np.ndarray | None = None  # (n,) 1 on water, 0 on land (groups split by water)
-    gpx_ele: np.ndarray | None = None  # (n,) the file's (smoothed) elevations, NaN if none
-
-
-def build_track_positions(
-    track: Track, frame: LocalFrame, options: TrackGeometryOptions, heights_at=None,
-    water_at=None,
-) -> list[TrackSegmentGeometry]:  # fmt: skip
-    """Per segment: ENU positions, cumulative distance along the track and timestamps.
-
-    ``heights_at(lon, lat) -> heights`` (vectorised, NaN where unknown) provides DEM heights,
-    ``water_at(lon, lat) -> coverage`` the water mask (tracks split by water).
-    """
-    result = []
-    distance_offset = 0.0
-    ground_offset = 0.0
-    for seg in track.segments:
-        idx = resample_indices(seg.lat, seg.lon, options.spacing_m)
-        lat, lon, ele = seg.lat[idx], seg.lon[idx], seg.ele[idx]
-        times = seg.time[idx]
-        hr = seg.hr[idx] if getattr(seg, "hr", None) is not None else np.full(len(idx), np.nan)
-        seconds = np.where(
-            np.isnat(times), np.nan, times.astype("datetime64[ms]").astype(np.float64) / 1000.0
-        )
-        if len(lat) < 2:
-            continue
-        gpx_h = np.nan_to_num(ele, nan=np.nanmean(ele) if np.isfinite(ele).any() else 0.0)
-        if options.elevation_source == "dem" and heights_at is not None:
-            dem_h = heights_at(lon, lat)
-            h = np.where(np.isfinite(dem_h), dem_h, gpx_h)
-        else:
-            h = gpx_h
-        lat = smooth(lat, options.smoothing)
-        lon = smooth(lon, options.smoothing)
-        if options.elevation_source != "dem":
-            h = smooth(h, options.smoothing)
-        true_h = h
-        h = h * options.exaggeration + options.height_offset_m
-        enu = frame.geodetic_to_enu(lat, lon, h)
-        steps = np.linalg.norm(np.diff(enu, axis=0), axis=1)
-        dist = distance_offset + np.concatenate([[0.0], np.cumsum(steps)])
-        distance_offset = float(dist[-1])
-        if options.exaggeration != 1.0:
-            true_steps = np.linalg.norm(
-                np.diff(frame.geodetic_to_enu(lat, lon, true_h), axis=0), axis=1
-            )
-        else:
-            true_steps = steps
-        ground = ground_offset + np.concatenate([[0.0], np.cumsum(true_steps)])
-        ground_offset = float(ground[-1])
-        water = None
-        if water_at is not None and getattr(track, "split_water", False):
-            water = (np.asarray(water_at(lon, lat), dtype=np.float64) > 0.5).astype(np.float64)
-            water = (smooth(water, 3) > 0.5).astype(np.float64)  # no single-point flicker
-        gpx_ele = np.full(len(ele), np.nan)
-        if np.isfinite(ele).all():
-            gpx_ele = smooth(ele, options.smoothing)
-        result.append(
-            TrackSegmentGeometry(
-                enu, dist, seconds, np.asarray(true_h, float), ground, hr, water, gpx_ele
-            )  # fmt: skip
-        )
-    return result
-
-
-def calibrate_ground(ground: np.ndarray, enu: np.ndarray, time: np.ndarray, marks,
-                     end_km: float | None, frame: LocalFrame,
-                     tolerance_m: float = 30.0) -> np.ndarray:  # fmt: skip
-    """Walked metres corrected to known distances (config.DistanceMark): piecewise linear
-    between the marks, ``end_km`` at the last point (without it, the factor of the last
-    stretch continues). Position marks take the first point within ``tolerance_m`` of the
-    nearest track point after the previous mark (loops pass the same places twice); marks that
-    do not lie further along the track are ignored."""
-    ground = np.asarray(ground, dtype=np.float64)
-    if len(ground) < 2 or (not marks and end_km is None):
-        return ground
-    src, dst = [float(ground[0])], [float(ground[0])]
-    after = 0
-    t_ok = np.isfinite(time)
-    for mark in marks:
-        if mark.lat is not None:
-            p = np.asarray(frame.geodetic_to_enu(mark.lat, mark.lon, 0.0), dtype=np.float64)
-            gap = np.linalg.norm(enu[after:, :2] - p.reshape(3)[:2], axis=1)
-            near = gap <= gap.min() + tolerance_m
-            first = int(np.argmax(near))  # the first pass near the mark ...
-            last = first + (int(np.argmax(~near[first:])) if (~near[first:]).any() else len(near))
-            i = after + first + int(np.argmin(gap[first:last]))  # ... its closest point
-            g = float(ground[i])
-        elif t_ok.sum() >= 2:
-            g = float(np.interp(mark.time.timestamp(), time[t_ok], ground[t_ok]))
-            i = int(np.searchsorted(ground, g))
-        else:
-            continue
-        if g <= src[-1] or mark.km * 1000.0 <= dst[-1]:
-            continue
-        src.append(g)
-        dst.append(mark.km * 1000.0)
-        after = min(i, len(ground) - 1)
-    if end_km is not None and ground[-1] > src[-1] and end_km * 1000.0 > dst[-1]:
-        src.append(float(ground[-1]))
-        dst.append(end_km * 1000.0)
-    if len(src) < 2:
-        return ground
-    out = np.interp(ground, src, dst)
-    beyond = ground > src[-1]  # (no end distance) the last factor continues
-    if beyond.any():
-        factor = (dst[-1] - dst[-2]) / (src[-1] - src[-2])
-        out[beyond] = dst[-1] + (ground[beyond] - src[-1]) * factor
-    return out
-
-
-VERTEX_FLOATS = 17
-
-
-def ribbon_vertices(segments: list[TrackSegmentGeometry], origin: np.ndarray,
-                    values: np.ndarray | None = None, t0: float = 0.0):  # fmt: skip
-    """Vertex array (pos, prev, next, side, dist, values[4], time) and strip indices with
-    primitive restart. ``values``: per point (all segments, see motion_values), ``time``
-    is relative to ``t0`` (float32 keeps it exact to milliseconds over days)."""
-    verts, indices = [], []
-    base = 0
-    first = 0
-    for geometry in segments:
-        enu, dist = geometry.enu, geometry.dist
-        n = len(enu)
-        rel = enu - origin
-        prev = np.vstack([2 * rel[0] - rel[1], rel[:-1]])  # mirror the ends
-        nxt = np.vstack([rel[1:], 2 * rel[-1] - rel[-2]])
-        block = np.empty((n, 2, VERTEX_FLOATS), dtype=np.float64)
-        vals = values[first : first + n] if values is not None else np.zeros((n, 4))
-        rel_t = geometry.time - t0 if geometry.time is not None else np.full(n, np.nan)
-        for k, side in enumerate((-1.0, 1.0)):
-            block[:, k, 0:3] = rel
-            block[:, k, 3:6] = prev
-            block[:, k, 6:9] = nxt
-            block[:, k, 9] = side
-            block[:, k, 10] = dist
-            block[:, k, 11:15] = np.nan_to_num(vals, nan=0.0)
-            block[:, k, 15] = np.nan_to_num(rel_t, nan=-1e9)
-            block[:, k, 16] = geometry.water if geometry.water is not None else 0.0
-        verts.append(block.reshape(-1, VERTEX_FLOATS))
-        first += n
-        indices.append(np.arange(base, base + 2 * n, dtype=np.uint32))
-        indices.append(np.array([PRIMITIVE_RESTART], dtype=np.uint32))
-        base += 2 * n
-    if not verts:
-        return np.zeros((0, VERTEX_FLOATS), dtype="f4"), np.zeros(0, dtype=np.uint32)
-    return np.vstack(verts).astype("f4"), np.concatenate(indices)
-
-
-@dataclass
-class _GpuTrack:
-    track: Track
-    index: int
-    origin: np.ndarray
-    vbo: moderngl.Buffer
-    ibo: moderngl.Buffer
-    length_m: float
-    vaos: dict[int, moderngl.VertexArray]
-    offset_m: float = 0.0  # start of this track on the global (all tracks) distance axis
-    enu: np.ndarray | None = None  # all points (float64), for head positions
-    dist: np.ndarray | None = None
-    time: np.ndarray | None = None
-    ele: np.ndarray | None = None  # true elevations
-    ground: np.ndarray | None = None  # walked distance within the track
-    hr: np.ndarray | None = None  # heart rate (bpm, NaN where unknown)
-    t0: float = 0.0  # epoch seconds the vertex times are relative to
-    values: np.ndarray | None = None  # (n, 4) elevation, gradient, speed, heart rate
-
-
-class ProgressPath:
-    """The whole hike as one path: global distance (m) <-> position <-> time."""
-
-    def __init__(self, tracks: list[_GpuTrack]) -> None:
-        self.tracks = tracks
-        self.total_m = tracks[-1].offset_m + tracks[-1].length_m if tracks else 0.0
-        dists, times, eles, grounds, owners, hrs = [], [], [], [], [], []
-        ground_offset = 0.0
-        for g in tracks:
-            dists.append(g.dist + g.offset_m)
-            times.append(g.time)
-            n = len(g.dist)
-            eles.append(g.ele if g.ele is not None else np.full(n, np.nan))
-            ground = g.ground if g.ground is not None else g.dist
-            grounds.append(ground + ground_offset)
-            ground_offset += float(ground[-1]) if n else 0.0
-            owners.append(np.full(n, g.index))
-            hrs.append(g.hr if g.hr is not None else np.full(n, np.nan))
-        self.dist = np.concatenate(dists) if dists else np.zeros(0)
-        self.time = np.concatenate(times) if times else np.zeros(0)
-        self.ele = np.concatenate(eles) if eles else np.zeros(0)  # true elevation per point
-        self.ground = np.concatenate(grounds) if grounds else np.zeros(0)  # walked metres
-        self.track_index = np.concatenate(owners) if owners else np.zeros(0, dtype=int)
-        self.hr = np.concatenate(hrs) if hrs else np.zeros(0)  # heart rate per point
-        # elevation, gradient, speed, heart rate per point (as the tracks are coloured)
-        values = [g.values for g in tracks if g.values is not None]
-        self.values = np.vstack(values) if len(values) == len(tracks) and values else None
-        # clock mode (several heads at once): a time shift per group (seconds) and the group
-        # whose head leads the camera, the sun and the stats (set by the renderer)
-        self.time_offsets: dict[str, float] = {}
-        self.lead_group: str | None = None
-        valid = np.isfinite(self.time)
-        # time mode needs monotonic timestamps; otherwise fall back to distance
-        self.has_time = bool(valid.sum() >= 2) and bool(np.all(np.diff(self.time[valid]) >= 0))
-        self._valid = valid
-
-    # --- clock mode: every track drawn up to the same (shifted) clock time ----------------------
-    def _times(self, g) -> np.ndarray | None:
-        t = g.time
-        if t is None or not np.isfinite(t).any():
-            return None
-        return t + self.time_offsets.get(g.track.group, 0.0)
-
-    def clock_range(self) -> tuple[float, float]:
-        """First and last (shifted) time of all tracks (epoch seconds)."""
-        lo, hi = np.inf, -np.inf
-        for g in self.tracks:
-            t = self._times(g)
-            if t is not None:
-                lo, hi = min(lo, np.nanmin(t)), max(hi, np.nanmax(t))
-        return (float(lo), float(hi)) if np.isfinite(lo) else (0.0, 1.0)
-
-    def clock_at(self, progress: float) -> float:
-        lo, hi = self.clock_range()
-        return lo + min(max(progress, 0.0), 1.0) * (hi - lo)
-
-    def head_on(self, g, clock: float) -> float | None:
-        """Distance along track ``g`` at the (shifted) clock time, None before its start."""
-        t = self._times(g)
-        if t is None:
-            return None
-        ok = np.isfinite(t)
-        if clock < t[ok][0]:
-            return None
-        return float(np.interp(clock, t[ok], g.dist[ok]))
-
-    def only(self, g) -> ProgressPath:
-        """A path of track ``g`` alone (cached): the stats of one runner in clock mode."""
-        cache = self.__dict__.setdefault("_single", {})
-        if id(g) not in cache:
-            cache[id(g)] = ProgressPath([replace(g, offset_m=0.0)])
-        return cache[id(g)]
-
-    def gap_at(self, clock: float) -> float | None:
-        """Clock mode: seconds the second track needs to reach the lead track's head (negative:
-        the lead is behind), None without a second track."""
-        lead = self.lead()
-        other = next((g for g in self.tracks if g is not lead), None)
-        if lead is None or other is None:
-            return None
-        d_lead, d_other = self.head_on(lead, clock), self.head_on(other, clock)
-        if d_lead is None or d_other is None:
-            return None
-        if d_other <= d_lead:  # the other one still has to get here
-            t = self._times(other)
-            ok = np.isfinite(t)
-            return float(np.interp(d_lead, other.dist[ok], t[ok]) - clock)
-        t = self._times(lead)
-        ok = np.isfinite(t)
-        return -float(np.interp(d_other, lead.dist[ok], t[ok]) - clock)
-
-    def lead(self):
-        """The track that leads in clock mode: the first of the lead group (or of all)."""
-        for g in self.tracks:
-            if g.track.group == self.lead_group:
-                return g
-        return self.tracks[0] if self.tracks else None
-
-    def distance_for(self, progress: float, mode: str = "distance") -> float:
-        progress = min(max(progress, 0.0), 1.0)
-        if mode == "clock" and self.tracks:
-            g = self.lead()
-            d = self.head_on(g, self.clock_at(progress))
-            return g.offset_m + (d if d is not None else 0.0)
-        if mode == "time" and self.has_time:
-            t = self.time[self._valid]
-            d = self.dist[self._valid]
-            target = t[0] + progress * (t[-1] - t[0])
-            return float(np.interp(target, t, d))
-        return progress * self.total_m
-
-    def position_at(self, distance: float) -> np.ndarray | None:
-        for g in self.tracks:
-            if g.enu is None or g.dist is None or len(g.dist) == 0:
-                continue
-            if distance <= g.offset_m + g.length_m or g is self.tracks[-1]:
-                local = min(max(distance - g.offset_m, 0.0), g.length_m)
-                return np.array([np.interp(local, g.dist, g.enu[:, k]) for k in range(3)])
-        return None
-
-    def distance_for_time(self, seconds: float) -> float:
-        """Distance of the recorded point at ``seconds`` (UTC epoch), clamped to the hike."""
-        valid = self._valid
-        if not valid.any():
-            return 0.0
-        return float(np.interp(seconds, self.time[valid], self.dist[valid]))
-
-    def progress_for_distance(self, distance: float, mode: str = "distance") -> float:
-        """Inverse of :meth:`distance_for` (the progress value that puts the head there)."""
-        if self.total_m <= 0:
-            return 0.0
-        if mode == "clock" and self.tracks:
-            g = self.lead()
-            t = self._times(g)
-            if t is not None:
-                ok = np.isfinite(t)
-                seconds = float(np.interp(distance - g.offset_m, g.dist[ok], t[ok]))
-                lo, hi = self.clock_range()
-                return (seconds - lo) / max(hi - lo, 1e-9)
-        if mode == "time" and self.has_time:
-            t = self.time[self._valid]
-            seconds = float(np.interp(distance, self.dist[self._valid], t))
-            return (seconds - t[0]) / max(t[-1] - t[0], 1e-9)
-        return min(max(distance / self.total_m, 0.0), 1.0)
-
-    def track_at(self, distance: float):
-        """The (built) track the global distance lies on."""
-        for g in self.tracks:
-            if distance <= g.offset_m + g.length_m:
-                return g
-        return self.tracks[-1] if self.tracks else None
-
-    def track_range(self, index: int) -> tuple[float, float]:
-        """(start, end) distance of walked track ``index`` on the global axis."""
-        g = self.tracks[index]
-        return g.offset_m, g.offset_m + g.length_m
-
-    def time_at(self, distance: float) -> float | None:
-        valid = self._valid
-        if not valid.any():
-            return None
-        return float(np.interp(distance, self.dist[valid], self.time[valid]))
-
-
 class TrackLayer:
     def __init__(self, ctx: moderngl.Context, shaders: ShaderLibrary) -> None:
         self.ctx = ctx
         self.shaders = shaders
-        self._gpu: list[_GpuTrack] = []
+        self._gpu: list[BuiltTrack] = []
         self.bounds: tuple[np.ndarray, np.ndarray] | None = None
         self.visible = True
         self.tracks: list[Track] = []
@@ -523,68 +107,11 @@ class TrackLayer:
         if key == self._built_key or self.frame is None:
             return
         self.release()
-        offset = 0.0
-        group_index: dict[str, int] = {}
-        for track in self.tracks:
-            index = group_index.get(track.group, 0)
-            group_index[track.group] = index + 1
-            spacing = track.spacing_m or (options.spacing_m if track.role == "walked" else 25.0)
-            track_options = replace(options, spacing_m=spacing)
-            if getattr(track, "elevation", None) == "gpx":  # e.g. a flight: heights as recorded
-                track_options = replace(track_options, elevation_source="gpx", height_offset_m=0.0,
-                                        exaggeration=1.0)  # fmt: skip
-            segments = build_track_positions(track, self.frame, track_options, self.heights_at,
-                                             self.water_at)  # fmt: skip
-            if not segments:
-                continue
-            origin = segments[0].enu[0].copy()
-            all_time = np.concatenate([s.time for s in segments])
-            if getattr(track, "distance_marks", None) or getattr(track, "distance_end_km", None):
-                ground = calibrate_ground(np.concatenate([s.ground for s in segments]),
-                                          np.vstack([s.enu for s in segments]), all_time,
-                                          track.distance_marks, track.distance_end_km,
-                                          self.frame)  # fmt: skip
-                first = 0
-                for seg in segments:
-                    seg.ground = ground[first : first + len(seg.ground)]
-                    first += len(seg.ground)
-            # gradients from the recorded elevations where the file has them (a draped DEM is
-            # noisy where a road is cut into a slope, e.g. at hairpins)
-            gpx_ele = np.concatenate([s.gpx_ele for s in segments])
-            if not np.isfinite(gpx_ele).all():
-                gpx_ele = np.concatenate([s.ele for s in segments])
-            values = motion_values(np.concatenate([s.ground for s in segments]), gpx_ele, all_time,
-                                   np.concatenate([s.hr for s in segments]))  # fmt: skip
-            t_ok = all_time[np.isfinite(all_time)]
-            t0 = float(t_ok[0]) if len(t_ok) else 0.0
-            verts, indices = ribbon_vertices(segments, origin, values, t0)
-            gpu = _GpuTrack(
-                track,
-                index,
-                origin,
-                self.ctx.buffer(verts.tobytes()),
-                self.ctx.buffer(indices.tobytes()),
-                float(segments[-1].dist[-1]),
-                {},
-                offset_m=0.0,
-                enu=np.vstack([s.enu for s in segments]),
-                dist=np.concatenate([s.dist for s in segments]),
-                time=np.concatenate([s.time for s in segments]),
-                ele=np.concatenate([s.ele for s in segments]),
-                ground=np.concatenate([s.ground for s in segments]),
-                hr=np.concatenate([s.hr for s in segments]),
-                t0=t0,
-                values=values,
-            )
-            self._gpu.append(gpu)
-        # progress runs along the walked tracks only, in time order: several walked groups
-        # (e.g. hikes, bus rides, flights) form one journey
-        walked = [g for g in self._gpu if g.track.role == "walked"]
-        walked.sort(key=_start_time)
-        for g in walked:
-            g.offset_m = offset
-            offset += g.length_m
-        self.path = ProgressPath(walked)
+        self._gpu = build_tracks(self.tracks, self.frame, options, self.heights_at, self.water_at)
+        for g in self._gpu:
+            g.vbo, g.ibo = self.ctx.buffer(g.verts.tobytes()), self.ctx.buffer(g.indices.tobytes())
+            g.verts = g.indices = None
+        self.path = journey_path(self._gpu)
         self._built_key = key
 
     def render(
@@ -796,7 +323,4 @@ def line_m_per_px(enu: np.ndarray, dist: np.ndarray, camera_position, m: np.ndar
     return float(2.0 ** (np.sum(weight * log_mpp) / weight.sum()) * 4.0 / np.pi)
 
 
-def _start_time(g: _GpuTrack) -> float:
-    """First timestamp of a built track (tracks without time keep their order, at the end)."""
-    t = g.time[np.isfinite(g.time)] if g.time is not None else ()
-    return float(t[0]) if len(t) else float("inf")
+_GpuTrack = BuiltTrack  # (old name)

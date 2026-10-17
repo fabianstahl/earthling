@@ -148,7 +148,8 @@ def timed_track(name, start, n=100, lat0=46.0, minutes=60):
 
 
 def build_path(tracks):
-    from earthling.render.tracks import ProgressPath, _GpuTrack
+    from earthling.render.progress import ProgressPath
+    from earthling.render.track_geometry import BuiltTrack
 
     gpus, offset = [], 0.0
     for i, t in enumerate(tracks):
@@ -156,7 +157,7 @@ def build_path(tracks):
         enu = np.vstack([s.enu for s in segs])
         dist = np.concatenate([s.dist for s in segs])
         time = np.concatenate([s.time for s in segs])
-        g = _GpuTrack(t, i, enu[0], None, None, float(dist[-1]), {}, offset, enu, dist, time)
+        g = BuiltTrack(t, i, enu[0], float(dist[-1]), offset, enu, dist, time)
         offset += g.length_m
         gpus.append(g)
     return ProgressPath(gpus)

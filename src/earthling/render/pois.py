@@ -17,9 +17,9 @@ from PIL import Image
 
 from earthling.core.pois import Poi, visibility_state
 from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
-from earthling.render.labels import BASE_PX, SPREAD, FontAtlas
 from earthling.render.scale import pixel_scale
 from earthling.render.shader_library import ShaderLibrary
+from earthling.render.text import BASE_PX, SPREAD, FontAtlas
 
 ICON_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons"
 MAX_ICON_PX = 256
