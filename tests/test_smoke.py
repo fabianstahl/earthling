@@ -32,3 +32,5 @@ def test_demo_project_shows_tracks(qtbot):
     assert window.open_project(DEMO)
     assert len(window.tracks) == 2
     assert window.tracks_dock.tree.topLevelItemCount() == 3  # two tracks + total
+    tree = window.tracks_dock.tree
+    assert [tree.topLevelItem(i).text(1) for i in range(2)] == ["1", "2"]  # journey numbers

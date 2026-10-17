@@ -8,7 +8,17 @@ from PyQt6.QtWidgets import QDockWidget, QTreeWidget, QTreeWidgetItem
 
 from earthling.core.gpx import Track
 
-COLUMNS = ["Track", "Date", "Distance", "Ascent", "Descent", "Max ele.", "Duration", "Points"]
+COLUMNS = ["Track", "#", "Date", "Distance", "Ascent", "Descent", "Max ele.", "Duration",
+           "Points"]  # fmt: skip
+
+
+def journey_numbers(tracks: list[Track]) -> dict[int, int]:
+    """Index in ``tracks`` -> number on the journey (1 = the first walked track in time; the
+    numbering of Draw Tracks); tracks without times come last."""
+    walked = [i for i, t in enumerate(tracks) if t.role == "walked"]
+    walked.sort(key=lambda i: (tracks[i].stats.start_time is None,
+                               tracks[i].stats.start_time or 0))  # fmt: skip
+    return {i: n + 1 for n, i in enumerate(walked)}
 
 
 def fmt_km(m: float) -> str:
@@ -48,6 +58,7 @@ class TracksDock(QDockWidget):
         self.tree.blockSignals(True)
         self.tree.clear()
         total_dist = total_up = total_down = 0.0
+        numbers = journey_numbers(tracks)
         for index, track in enumerate(tracks):
             s = track.stats
             total_dist += s.distance_m
@@ -56,6 +67,7 @@ class TracksDock(QDockWidget):
             item = QTreeWidgetItem(
                 [
                     track.name,
+                    str(numbers[index]) if index in numbers else "–",
                     s.start_time.strftime("%Y-%m-%d") if s.start_time else "–",
                     fmt_km(s.distance_m),
                     fmt_m(s.ascent_m),
@@ -76,6 +88,7 @@ class TracksDock(QDockWidget):
             total = QTreeWidgetItem(
                 [
                     f"Total ({len(tracks)})",
+                    "",
                     "",
                     fmt_km(total_dist),
                     fmt_m(total_up),
