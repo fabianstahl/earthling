@@ -204,10 +204,6 @@ def format_number(value: float, decimals: int = 0, lang: str = "en") -> str:
     return s.replace(",", " ")  # thin space as thousands separator
 
 
-def _segment(batch, pts, thickness, color, alpha) -> None:
-    _polyline(batch, pts, thickness, color, alpha)
-
-
 def _polyline(batch, pts, thickness, color, alpha) -> None:
     """A line of quads through the points (pixels)."""
     pts = np.asarray(pts, dtype=np.float64)
@@ -457,7 +453,7 @@ class HudLayer:
         if len(geo.water):
             batch.triangles(at(geo.water), store["minimap.water_color"], alpha)
         for a, b in geo.borders:
-            _segment(batch, at(np.array([a, b])), 1.0 * s, (0.75, 0.78, 0.82), 0.7 * alpha)
+            _polyline(batch, at(np.array([a, b])), 1.0 * s, (0.75, 0.78, 0.82), 0.7 * alpha)
         heads = self.map_heads
         for index, xy, dist in geo.routes:
             color = self.map_colors.get(index)

@@ -86,10 +86,6 @@ vec3 layer_albedo(vec3 rel) {
     return w > 0.0 ? albedo / w : vec3(0.9);
 }
 
-float total_density(vec3 rel, out float hf_out) {
-    return total_density_lod(rel, 0.0, 1.0, hf_out);
-}
-
 void main() {
     if (u_layer_count == 0) {
         f_color = vec4(0.0, 0.0, 0.0, 1.0);

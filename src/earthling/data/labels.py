@@ -29,7 +29,6 @@ log = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 ATTRIBUTION = "Labels: © OpenStreetMap contributors (ODbL)"
-KINDS = ("peak", "pass", "place", "hut", "city", "country")
 NE_BASE_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson"
 NE_DATASETS = {"countries": "ne_50m_admin_0_countries", "cities": "ne_10m_populated_places_simple"}
 NE_MIN_POPULATION = 100_000  # smaller towns come from OpenStreetMap

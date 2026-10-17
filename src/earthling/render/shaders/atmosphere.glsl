@@ -19,7 +19,6 @@ const float OZONE_HALF_WIDTH = 15e3;
 
 uniform float u_rayleigh_scale = 1.0;  // air density multiplier
 uniform float u_mie_scale = 1.0;       // haze / aerosol multiplier
-uniform sampler2D u_optical_depth;     // RGB: Rayleigh / Mie / ozone optical depth to the sky
 
 // (near, far) intersection distances of a ray with a sphere; far < near means miss.
 vec2 ray_sphere(vec3 origin, vec3 dir, float radius) {
@@ -50,17 +49,3 @@ float ozone_density(float h) {
     return max(0.0, 1.0 - abs(h - OZONE_CENTER) / OZONE_HALF_WIDTH);
 }
 
-// Optical depth (Rayleigh, Mie, ozone) from a point at height h towards the top of the
-// atmosphere along a ray whose zenith angle has cosine mu.
-vec3 optical_depth_to_sky(float h, float mu) {
-    float v = sqrt(clamp(h / ATMOSPHERE_HEIGHT, 0.0, 1.0));
-    float s = clamp(mu, -1.0, 1.0);
-    float u = 0.5 + 0.5 * sign(s) * sqrt(abs(s));
-    return texture(u_optical_depth, vec2(u, v)).rgb;
-}
-
-vec3 extinction(vec3 od) {
-    return exp(-min(RAYLEIGH_BETA * u_rayleigh_scale * od.x
-                    + MIE_BETA * MIE_EXTINCTION * u_mie_scale * od.y
-                    + OZONE_BETA * u_rayleigh_scale * od.z, vec3(80.0)));
-}

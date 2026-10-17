@@ -309,13 +309,9 @@ class PropertyPanel(QScrollArea):
         self.editors: dict[str, PropertyEditor] = {}
         self.sections: dict[str, CollapsibleSection] = {}
         self._unsubscribe = None
-        self._build()
+        self.rebuild()
 
-    def set_store(self, store: PropertyStore) -> None:
-        self.store = store
-        self._build()
-
-    def _build(self) -> None:
+    def rebuild(self) -> None:
         if self._unsubscribe is not None:
             self._unsubscribe()
         container = QWidget()

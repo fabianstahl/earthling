@@ -647,14 +647,6 @@ class TerrainLayer:
             self._collect(None)
         return False
 
-    def render(self, camera: Camera, view_proj, viewport_height: int) -> None:
-        if not self.visible:
-            return
-        sel = self.update(camera, view_proj, viewport_height)
-        if sel is None:
-            return
-        self.draw(camera, view_proj, sel.draw)
-
     def _vao(self, node: _Node, program: moderngl.Program) -> moderngl.VertexArray:
         vao = node.vaos.get(program.glo)
         if vao is None:

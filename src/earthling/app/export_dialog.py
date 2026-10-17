@@ -6,7 +6,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer, pyqtSignal
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -36,8 +36,6 @@ def _resolutions() -> list[tuple[str, str]]:
 
 
 class ExportDialog(QDialog):
-    finished_export = pyqtSignal(str)
-
     def __init__(self, window, parent=None) -> None:
         super().__init__(parent or window)
         self.window = window
@@ -132,7 +130,6 @@ class ExportDialog(QDialog):
         self.count = max(0, int(round(self.end.value() * self.fps)) - self.first)
         if self.count == 0:
             return
-        self.preset_obj = preset
         try:
             self._writer = VideoWriter(
                 Path(self.path.text()), self.width, self.height, self.fps, preset
@@ -208,7 +205,6 @@ class ExportDialog(QDialog):
             self.status.setText("Cancelled")
         else:
             self.status.setText(f"Done: {self.path.text()}")
-            self.finished_export.emit(self.path.text())
 
     def _cancel_or_close(self) -> None:
         if self.running:

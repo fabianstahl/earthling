@@ -104,10 +104,6 @@ class PropertyDef:
     def from_json(self, value: Any) -> Any:
         return self.coerce(value)
 
-    @property
-    def section_key(self) -> str:
-        return self.id.split(".", 1)[0]
-
 
 class PropertyRegistry:
     def __init__(self, defs: Iterable[PropertyDef] = ()) -> None:
@@ -190,11 +186,6 @@ class PropertyStore:
                 self._listeners.remove(listener)
 
         return unsubscribe
-
-    def section_values(self, prefix: str) -> dict[str, Any]:
-        """Values whose id starts with ``prefix.``, keyed by the remaining name."""
-        p = prefix + "."
-        return {k[len(p) :]: v for k, v in self.values.items() if k.startswith(p)}
 
     # --- serialisation ----------------------------------------------------------------
     def to_json(self) -> dict[str, Any]:

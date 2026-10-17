@@ -63,10 +63,6 @@ float cloud_density_lod(int i, vec2 xy, float h, float lod, float detail_amount)
     return d * shape.w;
 }
 
-float cloud_density(int i, vec2 xy, float h) {
-    return cloud_density_lod(i, xy, h, 0.0, 1.0);
-}
-
 float weather_height(vec3 rel, float camera_height) {
     // camera-relative ENU offset -> height above sea level (earth curvature included)
     vec3 l = u_atm_frame * rel;  // the camera's local vertical

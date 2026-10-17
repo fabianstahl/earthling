@@ -301,8 +301,3 @@ class PoiDock(QDockWidget):
 
     def _move_by_click(self) -> None:
         self.request_pick(self._move_to)
-
-    def select_poi(self, poi_id: str) -> None:
-        for i, poi in enumerate(self.scene.pois):
-            if poi.id == poi_id:
-                self.list.setCurrentRow(i)

@@ -696,7 +696,6 @@ class TrackLayer:
                 _set(program, "u_water_color", tuple(c**2.2 for c in store[p + "water_color"]))
                 _set(program, "u_water_dash_px", store[p + "water_dash"] * self.pixel_scale)
                 _set(program, "u_water_dots", int(store[p + "water_dots"]))
-            _set(program, "u_track_length", g.length_m)
             _set(program, "u_track_offset", g.offset_m)
             walked = g.track.role == "walked"  # planned routes are always drawn in full
             color_by = store["tracks.color_by"] if store is not None and walked else "none"

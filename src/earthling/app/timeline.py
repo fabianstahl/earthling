@@ -89,10 +89,6 @@ class TimelineController(QObject):
     def toggle(self) -> None:
         self.pause() if self._playing else self.play()
 
-    def stop(self) -> None:
-        self.pause()
-        self.set_time(0.0)
-
     def step(self, frames: int) -> None:
         self.pause()
         self.set_time(self.time + frames / self.fps)

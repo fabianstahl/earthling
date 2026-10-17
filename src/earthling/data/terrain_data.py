@@ -86,12 +86,10 @@ class TerrainData:
             sources = {"imagery": sources}
         self.cache = cache
         self.dem_ids = [dem_id] if isinstance(dem_id, str) else list(dem_id)
-        self.dem_id = self.dem_ids[0]
         self._dem_coverage = {sid: _dem_coverage(sid) for sid in self.dem_ids}
         self.stacks: dict[str, list[TileProvider]] = {
             name: [p] if isinstance(p, TileProvider) else list(p) for name, p in sources.items()
         }
-        self.sources = {name: stack[0] for name, stack in self.stacks.items()}
         self.plan = plan
         self._imagery_sets = {
             z: {(int(x), int(y)) for x, y in t} for z, t in plan.levels.get("imagery", {}).items()
@@ -116,10 +114,6 @@ class TerrainData:
                 cache, self.stacks["imagery"][0], provider, max_zoom, strength,
                 ensure_reference=self._ensurer(provider),
             )  # fmt: skip
-
-    @property
-    def imagery(self) -> TileProvider:
-        return self.sources["imagery"]
 
     def _heightmap(self, key: TileKey) -> np.ndarray | None:
         with self._lock:
@@ -201,9 +195,6 @@ class TerrainData:
             if tiles and ((x << d), (y << d)) in tiles:
                 return zi
         return min(z + TEXEL_ZOOM_OFFSET, provider.max_zoom)
-
-    def imagery_zoom_for(self, key: TileKey) -> int:
-        return self.texture_zoom_for(key, self.imagery)
 
     def close(self) -> None:
         """Stop on-demand downloads so pending worker tasks finish quickly."""
@@ -302,9 +293,6 @@ class TerrainData:
                 image, mask = _resize(image, size), _resize(mask, size)
             out += (image.astype(np.float32) - out) * mask[..., None]
         return np.clip(out + 0.5, 0, 255).astype(np.uint8)
-
-    def imagery_for(self, key: TileKey) -> np.ndarray | None:
-        return self.texture_for(key, "imagery")
 
     # --- height queries (CPU) ------------------------------------------------------------
     def height_at(self, lon: float, lat: float, z: int | None = None) -> float | None:

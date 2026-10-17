@@ -191,14 +191,6 @@ class Session:
         return next((g for g in self.groups if g.name == name), None)
 
     @property
-    def dem_source(self):
-        return self.dem_sources[0]
-
-    @property
-    def imagery_provider(self) -> TileProvider:
-        return self.imagery_providers[0]
-
-    @property
     def config(self):
         return self.project.config
 

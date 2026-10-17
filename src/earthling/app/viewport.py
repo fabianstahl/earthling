@@ -51,7 +51,6 @@ def configure_default_surface_format() -> None:
 
 
 class Viewport(QOpenGLWidget):
-    fps_changed = pyqtSignal(float)
     stats_changed = pyqtSignal(str)
     camera_changed = pyqtSignal(str)  # human readable camera position
     mode_changed = pyqtSignal(str)
@@ -556,7 +555,6 @@ class Viewport(QOpenGLWidget):
         self._frames += 1
         if now - self._fps_timer >= 0.5:
             fps = self._frames / (now - self._fps_timer)
-            self.fps_changed.emit(fps)
             text = f"{fps:5.1f} fps"
             if self.renderer is not None and self.renderer.terrain.nodes is not None:
                 t = self.renderer.terrain

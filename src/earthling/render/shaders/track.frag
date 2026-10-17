@@ -13,7 +13,6 @@ in float v_water;
 out vec4 f_color;
 
 uniform vec3 u_color = vec3(1.0, 0.2, 0.05);  // linear
-uniform float u_track_length;
 uniform float u_track_opacity = 1.0;
 uniform float u_track_emissive = 0.5;     // 0 lit by the scene .. 1 self-illuminated
 uniform float u_track_outline = 1.0;      // outline width in pixels

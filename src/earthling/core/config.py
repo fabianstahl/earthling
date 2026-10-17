@@ -96,10 +96,6 @@ class AreaSection(_Model):
     def max_imagery_zoom(self) -> int:
         return max(z.imagery_zoom for z in self.zones)
 
-    @property
-    def max_dem_zoom(self) -> int:
-        return max(z.dem_zoom for z in self.zones)
-
 
 class WorldSection(_Model):
     """A coarse pyramid of the whole globe (``[world]``): views from space never show holes

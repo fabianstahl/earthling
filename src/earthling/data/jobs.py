@@ -43,7 +43,6 @@ def download_jobs(
         labels = session.labels
 
         def fetch_labels(cb):
-            from earthling.data.downloader import DownloadProgress
             from earthling.data.labels import download_labels
 
             progress = DownloadProgress(total=1)

@@ -29,7 +29,6 @@ class Layer:
     label: str
     glsl: str  # body of `vec3 layer_<id>(LayerInput li)`
     properties: list[PropertyDef] = field(default_factory=list)
-    default_shading: float = 1.0
     tile_source: str | None = None  # "imagery" for layers sampling the node's imagery texture
 
     @property
@@ -48,7 +47,7 @@ def _layer(id_, label, glsl, *props, shading=1.0, gain=0.45, tile_source=None) -
     gain_def = flt(f"layer_{id_}.gain", "Brightness", gain, 0.0, 2.0, uniform=f"u_{id_}_gain",
                    tooltip="Linear albedo multiplier (maps are brighter than ground)")  # fmt: skip
     defs = section(f"Layer: {label}", shading_def, gain_def, *props)
-    return Layer(id_, label, glsl, defs, shading, tile_source)
+    return Layer(id_, label, glsl, defs, tile_source)
 
 
 LAYERS: list[Layer] = [

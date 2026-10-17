@@ -21,14 +21,12 @@ from pyglm import glm
 from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore, bind_uniforms
-from earthling.render.atmosphere import optical_depth_lut
 from earthling.render.bloom import Bloom
 from earthling.render.camera import Camera, far_for_height
 from earthling.render.hud import HudLayer
 from earthling.render.labels import LabelLayer
 from earthling.render.layers import generate_glsl, required_tile_sources
 from earthling.render.lighting import (
-    OPTICAL_DEPTH_UNIT,
     Lighting,
     compute_lighting,
     enu_to_celestial,
@@ -176,10 +174,6 @@ class Renderer:
         self.lightning = LightningLayer(ctx, self.shaders)
         self._atmosphere_uniforms: dict[str, object] = {}
         self.bloom = Bloom(ctx)
-        lut = optical_depth_lut()
-        self.optical_depth = ctx.texture((lut.shape[1], lut.shape[0]), 3, lut.tobytes(), dtype="f4")
-        self.optical_depth.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.optical_depth.repeat_x = self.optical_depth.repeat_y = False
 
     # --- scene setup ------------------------------------------------------------------
     def set_scene(self, frame: LocalFrame, tracks: list[Track]) -> None:
@@ -331,7 +325,6 @@ class Renderer:
         target.use()
         self._render_sky(camera, view_proj, height)
         self.ctx.enable(moderngl.DEPTH_TEST)
-        self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         if selection is not None:
             extra = {"u_camera_forward": tuple(float(v) for v in camera.forward), **shadow_uniforms,
                      **self._weather_uniforms(camera),
@@ -559,7 +552,6 @@ class Renderer:
         self.tracks.tail_m = tail
         self.marker.color = s["marker.color"]
         self.marker.position = path.position_at(head) if s["marker.visible"] else None
-        self.vehicles = []
         vehicle = self._vehicle_at(path, head) if s["marker.visible"] else None
         if vehicle is not None:  # a vehicle icon replaces the dot
             self.vehicles = [vehicle]
@@ -669,7 +661,6 @@ class Renderer:
             program["u_enu_to_ecef"].write(rows.astype("f4").tobytes())
         m = enu_to_celestial(self.lighting.when, self.frame.lat, self.frame.lon)
         program["u_to_celestial"].write(m.T.astype("f4").tobytes())  # column-major
-        self.optical_depth.use(OPTICAL_DEPTH_UNIT)
         if self.store is not None:
             bind_uniforms(program, self.store)
         self.fullscreen.draw("sky")

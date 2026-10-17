@@ -43,7 +43,6 @@ MAX_RECENT = 8
 
 
 class MainWindow(QMainWindow):
-    project_changed = pyqtSignal(object)
     tracks_changed = pyqtSignal()
     data_changed = pyqtSignal()  # new tiles in the cache
 
@@ -76,7 +75,7 @@ class MainWindow(QMainWindow):
             row_extra=lambda d: KeyButton(d.id, self.keys) if d.animatable else None,
         )
         # project specific properties (track groups, POIs) appear as their own sections
-        self.scene.dynamic_listeners.append(self.property_panel._build)
+        self.scene.dynamic_listeners.append(self.property_panel.rebuild)
         self.parameters_dock.setWidget(self.property_panel)
         self.parameters_dock.setMinimumWidth(340)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.parameters_dock)
@@ -405,7 +404,6 @@ class MainWindow(QMainWindow):
         )
         if session.load_errors:
             QMessageBox.warning(self, "GPX problems", "\n".join(session.load_errors))
-        self.project_changed.emit(project)
         self.tracks_changed.emit()
 
     def _init_new_scene(self, session: Session) -> None:

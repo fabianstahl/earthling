@@ -580,9 +580,6 @@ class Animation:
     def frame_count(self) -> int:
         return int(math.floor(self.duration * self.fps + 1e-9)) + 1
 
-    def frame_time(self, frame: int) -> float:
-        return frame / self.fps
-
     # --- serialisation ----------------------------------------------------------------
     def to_json(self) -> dict[str, Any]:
         return {

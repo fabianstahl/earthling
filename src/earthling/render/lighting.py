@@ -12,8 +12,6 @@ from earthling.core.properties import PropertyStore
 from earthling.core.sun import SunPosition, local_to_aware, solar_position
 from earthling.render.atmosphere import sun_transmittance
 
-OPTICAL_DEPTH_UNIT = 2  # texture unit of the optical depth LUT
-
 
 def srgb_to_linear(c) -> tuple[float, float, float]:
     return tuple(float(v) ** 2.2 for v in c)  # type: ignore[return-value]
@@ -153,7 +151,6 @@ def lighting_uniforms(lighting: Lighting) -> dict[str, object]:
         "u_fog_ambient": lighting.fog_ambient,
         "u_fog_sun": lighting.fog_sun,
         "u_fog_density": lighting.fog_density,
-        "u_optical_depth": OPTICAL_DEPTH_UNIT,
         "u_atm_frame": lighting.atm_frame,
         "u_sun_base": lighting.sun_base,
         "u_sky_day": lighting.sky_day,

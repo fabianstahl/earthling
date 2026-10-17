@@ -96,12 +96,6 @@ class LocalFrame:
     def enu_to_geodetic(self, enu):
         return ecef_to_geodetic(self.enu_to_ecef(enu))
 
-    def up_at(self, enu) -> np.ndarray:
-        """Local ellipsoid normal (approx. geocentric up) at an ENU position, in ENU coords."""
-        lat, lon, _ = self.enu_to_geodetic(enu)
-        up_ecef = geodetic_to_ecef(lat, lon, 1.0) - geodetic_to_ecef(lat, lon, 0.0)
-        return up_ecef @ self.rotation.T
-
 
 def frame_for_bbox(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> LocalFrame:
     return LocalFrame((min_lat + max_lat) / 2.0, (min_lon + max_lon) / 2.0, 0.0)
