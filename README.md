@@ -26,8 +26,13 @@ timeline and export 4K video.
   or pace, gradient, heart rate, the gap in a race, elevation profile and time of day (in
   English or German), a mini-map of the whole journey with the head on it, photos faded in on
   the screen (with a white frame, a shadow and a slow zoom), and data attribution.
-- **Points of interest:** icons (PNG, animated GIF or APNG, sprite sheets) with captions,
-  pop-in animations and effects.
+- **Points of interest:** a library of 40+ generic kinds (peak, viewpoint, pass, hut, tent,
+  water, town, toilet, parking, train ...), text badges ("10 km"), your own images (PNG,
+  animated GIF or APNG, sprite sheets), captions, pop-in animations and effects. Place them at
+  the hiker, with a click, at coordinates or at a point of a track (start, end, highest point,
+  a distance); let them pop in when the drawn line reaches them.
+- **Photos:** pictures on the screen, placed where they were taken (EXIF GPS or their time on
+  the tracks), shown when the line gets there.
 - **Weather:** volumetric fog and cloud layers (fields of cloud with clear gaps, bases and tops
   at varying heights) with shadows and gusting wind, rain with wet
   ground and reduced visibility, rainbows, snowfall and fresh snow above a snow line, and
@@ -42,6 +47,9 @@ timeline and export 4K video.
   slope classes, aspect, elevation, contour lines and hillshade. Crossfade between any two.
 - **Keyframe everything:** camera paths, sun, weather, layers and overlays on a timeline with
   a dope sheet and graph editor, undo/redo and auto-key. Scenes are saved as JSON.
+- **Generated animation:** chase, map-view, orbit and along-the-line cameras, the line drawn
+  from one track to another in its recorded time or at an even speed, the light from the
+  tracks' clock, still seconds at both ends - all as editable keys (Animation menu).
 - **Video export:** H.264, H.265, ProRes 4444 and DNxHR, up to 4K, landscape, portrait (9:16)
   or square, with anti-aliasing and motion blur. From the GUI or the command line.
 
@@ -130,7 +138,8 @@ uv run earthling check-source <project> ign_bdortho --out contact-sheet/   # tes
 
 ## Scene scripts
 
-Scenes can be built in the application or written by Python scripts with the scene kit
+Everything above can be done in the application (Animation menu, POI and Photos docks, File >
+New Line and Project Settings). Scenes can also be written by Python scripts with the scene kit
 (`earthling.scenekit`): load a project's journey, plan smooth chase, orbit or map cameras,
 draw the line along a day's track, add POIs, light and still seconds at both ends, and save
 `scenes/<name>.json` for `earthling render`. The showcase scenes in

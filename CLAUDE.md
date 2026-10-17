@@ -23,7 +23,10 @@ Where `uv` is not on PATH (e.g. Git Bash), use `.venv/Scripts/python.exe -m pyte
 - GL boilerplate: `render/gl_util.py` (`set_uniform(s)`, `DynamicBuffer`, `draw_overlay`).
 - Easing / interpolation: `core/easing.py`. Geodesy: `core/geo.py`.
 - Helpers for scene scripts: `earthling.scenekit`; project-specific bits stay in the
-  project's own helper module.
+  project's own helper module. The application's Animation menu (`app/generators.py`) calls
+  the same kit functions, so a new generator belongs in the kit plus a small dialog.
+- POI kinds: `core/poi_library.py`; built-in icons: `tools/make_poi_icons.py` (writes
+  `assets/icons/`). Docks for placed items (POIs, photos) derive from `app/item_dock.py`.
 - `core` imports neither `data` nor `render` (except `core.scene` for the property registry);
   `session.py` sits above `data`.
 

@@ -102,6 +102,11 @@ project's journey (`load_journey`, no GPU needed), plans smooth cameras (`follow
 places, track numbering, the look of a series) and usually starts with
 `from earthling.scenekit import *`; see `examples/showcase/tools/sc_common.py`.
 
+The application offers the same generators (`app/generators.py`, the Animation menu: camera,
+drawing the tracks, the sun, still seconds) as undoable keys, and the POI and Photos docks
+place items at coordinates, the hiker, a click or a track point (`app/item_dock.py`,
+`app/place_dialog.py`).
+
 The workflow for a video: run the scene script, check stills
 (`earthling stills <project> --scene scenes/x.json 0 5 12.5`), render
 (`earthling render <project> --scene scenes/x.json --preset h264`), check the video
