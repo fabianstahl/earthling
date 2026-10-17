@@ -73,3 +73,23 @@ def test_pose_levels_the_horizon_only_when_asked(journey):
     assert sk.orbit_eye(target, heading, pitch, np.linalg.norm(eye)) == pytest.approx(eye)
     journey.level_horizon = False
     assert sk.level_roll(eye, target, heading, pitch) == 0.0
+
+
+def test_moving_the_origin_keeps_the_cameras():
+    from earthling.core.geo import LocalFrame
+    from earthling.core.scene import Scene
+
+    old, new = LocalFrame(46.0, 7.0), LocalFrame(47.5, 9.0)
+    scene = Scene()
+    pose = (12000.0, -8000.0, 2500.0, 40.0, -20.0, 3.0)
+    scene.animation.set_key("camera.pose", 0.0, pose)
+    scene.store.set("camera.target", (1000.0, 2000.0, 500.0))
+    sk.move_origin(scene, old, new)
+    moved = scene.animation.curves["camera.pose"].keys[0].value
+    eye = new.enu_to_geodetic(np.array(moved[:3]))
+    assert np.allclose(
+        [float(v) for v in eye], [float(v) for v in old.enu_to_geodetic(np.array(pose[:3]))]
+    )
+    sk.move_origin(scene, new, old)
+    assert scene.animation.curves["camera.pose"].keys[0].value == pytest.approx(pose, abs=1e-5)
+    assert scene.store["camera.target"] == pytest.approx((1000.0, 2000.0, 500.0), abs=1e-6)

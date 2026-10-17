@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from PyQt6 import sip
 from PyQt6.QtCore import QByteArray, QSettings, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QUndoCommand, QUndoStack
 from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -42,6 +42,18 @@ from earthling.ui.property_panel import PropertyPanel
 from earthling.ui.timeline_widget import TimelineWidget
 
 MAX_RECENT = 8
+
+
+class SceneOriginCommand(QUndoCommand):
+    def __init__(self, window, before, after) -> None:
+        super().__init__("Scene frame")
+        self.window, self.before, self.after = window, before, after
+
+    def redo(self) -> None:
+        self.window._reframe(self.after)
+
+    def undo(self) -> None:
+        self.window._reframe(self.before)
 
 
 class MainWindow(QMainWindow):
@@ -213,6 +225,10 @@ class MainWindow(QMainWindow):
         self.view_menu.addAction(self.animated_camera_action)
         self._add_action(self.view_menu, "Add &Camera Key (K)", self.add_camera_key, "K")
         self._add_action(self.view_menu, "Pick Look-at &Target (T)", self.pick_look_at_target, "T")
+        self.view_menu.addSeparator()
+        self._add_action(self.view_menu, "Centre Scene &Frame on View",
+                         lambda: self.set_scene_origin(self._view_centre()))  # fmt: skip
+        self._add_action(self.view_menu, "&Reset Scene Frame", lambda: self.set_scene_origin(None))
         self.view_menu.addSeparator()
         self.view_menu.addAction(
             self._store_toggle("terrain.debug_lod", "Debug: Show Terrain &LOD")
@@ -509,6 +525,38 @@ class MainWindow(QMainWindow):
         if problems:
             QMessageBox.warning(self, "Scene problems", "\n".join(problems[:30]))
         return True
+
+    def _view_centre(self) -> tuple[float, float] | None:
+        """(lat, lon) of the terrain in the middle of the view (or of the orbit target)."""
+        if self.session is None:
+            return None
+        point = self.viewport.pick_center()
+        if point is None:
+            point = self.viewport.orbit.target
+        lat, lon, _ = self.session.frame.enu_to_geodetic(np.asarray(point, dtype=np.float64))
+        return float(lat), float(lon)
+
+    def set_scene_origin(self, origin: tuple[float, float] | None) -> None:
+        """Centre the scene's local frame on ``origin`` (lat, lon; None: the tracks' centre),
+        keeping every camera where it is. Far from the origin the frame's "up" tilts (5° at
+        600 km): a scene far away is level only in its own frame. Undoable."""
+        if self.session is None or origin == self.scene.origin:
+            return
+        self.undo_stack.push(SceneOriginCommand(self, self.scene.origin, origin))
+
+    def _reframe(self, origin: tuple[float, float] | None) -> None:
+        from earthling.scenekit import move_origin, reframe_pose
+
+        old = self.session.frame
+        self.session.set_origin(origin)
+        new = self.session.frame
+        move_origin(self.scene, old, new)
+        pose = reframe_pose(self.viewport.camera_pose(), old, new)
+        self.scene.origin = origin
+        self._show_session()
+        self.viewport.apply_pose(pose)
+        self.scene.mark_dirty()
+        self.animation_changed()
 
     def _apply_scene_origin(self) -> None:
         """Rebuild the 3D scene when the scene file has its own frame origin (or the previous

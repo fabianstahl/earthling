@@ -94,3 +94,23 @@ def test_generators_are_one_undo_step(qtbot):
     assert anim.duration == 10.0 and len(anim.curves["camera.pose"].keys) == 2
     window.undo_stack.redo()
     assert anim.duration == 12.0
+
+
+def test_scene_frame_origin_with_undo(qtbot):
+    from earthling.app.main_window import MainWindow
+    from helpers import DEMO
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window.open_project(DEMO)
+    pose = (1000.0, -3000.0, 2500.0, 20.0, -25.0, 0.0)
+    window.scene.animation.set_key("camera.pose", 0.0, pose)
+    window.set_scene_origin((46.2, 7.1))
+    assert window.scene.origin == (46.2, 7.1) and window.session.frame.lat == 46.2
+    moved = window.scene.animation.curves["camera.pose"].keys[0].value
+    assert moved[0] != pytest.approx(pose[0])
+    window.undo_stack.undo()
+    assert window.scene.origin is None
+    assert window.scene.animation.curves["camera.pose"].keys[0].value == pytest.approx(
+        pose, abs=1e-4
+    )

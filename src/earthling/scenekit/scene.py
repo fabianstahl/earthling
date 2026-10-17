@@ -14,6 +14,7 @@ from earthling.core.animation import Interp
 from earthling.core.easing import gaussian, smoother, smoother_soft
 from earthling.core.pois import Poi
 from earthling.core.scene import Scene
+from earthling.render.camera_rig import look_orientation
 from earthling.scenekit.camera import bearing, key_shots, orbit_eye
 from earthling.scenekit.journey import Journey, current, local, track_time_at
 
@@ -401,3 +402,46 @@ def sun_keys(scene: Scene, hike: Journey, times, head_of, *, earliest: float | N
         nxt = clocks[min(i + 1, len(clocks) - 1)]
         interp = Interp.STEP if nxt.date() != clock.date() else Interp.LINEAR
         key(scene, "sun.datetime", round(float(t), 4), clock, interp)
+
+
+# --- the frame origin --------------------------------------------------------------------------
+def _camera_axes(heading: float, pitch: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(forward, right, up at roll 0) of a camera in its ENU frame (float64; roll r turns the up
+    axis to up * cos r + right * sin r, as Camera.rotation_matrix does)."""
+    from earthling.render.camera import forward_vector
+
+    f = forward_vector(heading, pitch)
+    right = np.cross(f, [0.0, 0.0, 1.0])
+    n = float(np.linalg.norm(right))
+    right = right / n if n > 1e-9 else np.array([1.0, 0.0, 0.0])
+    return f, right, np.cross(right, f)
+
+
+def reframe_pose(pose, old, new) -> tuple:
+    """A camera pose (ENU of LocalFrame ``old``) as seen in LocalFrame ``new``: the same place
+    and view, so changing a scene's origin moves no camera."""
+    x, y, z, heading, pitch, roll = pose
+    eye = np.asarray(new.ecef_to_enu(old.enu_to_ecef(np.array([x, y, z]))), dtype=np.float64)
+    f, right, up0 = _camera_axes(heading, pitch)
+    a = math.radians(roll)
+    turn = old.rotation @ new.rotation.T  # (ENU directions: old -> ECEF -> new)
+    forward, up = f @ turn, (up0 * math.cos(a) + right * math.sin(a)) @ turn
+    h, p, _ = look_orientation(np.zeros(3), forward)
+    _, right2, up2 = _camera_axes(h, p)
+    r = math.degrees(math.atan2(float(np.dot(up, right2)), float(np.dot(up, up2))))
+    return (float(eye[0]), float(eye[1]), float(eye[2]), h, p, r)
+
+
+def move_origin(scene: Scene, old, new) -> None:
+    """Re-express the scene's ENU values (camera keys and pose, the look-at target) from
+    LocalFrame ``old`` in LocalFrame ``new`` (e.g. before setting ``scene.origin``)."""
+
+    def point(v) -> tuple:
+        return tuple(float(c) for c in new.ecef_to_enu(old.enu_to_ecef(np.asarray(v, float))))
+
+    for pid, convert in (("camera.pose", lambda v: reframe_pose(v, old, new)),
+                         ("camera.target", point)):  # fmt: skip
+        scene.store.set(pid, convert(scene.store[pid]), notify=False)
+        curve = scene.animation.curves.get(pid)
+        for k in curve.keys if curve is not None else ():
+            k.value = convert(k.value)
