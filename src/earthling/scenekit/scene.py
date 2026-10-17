@@ -100,7 +100,7 @@ def save(scene: Scene, name: str, holds: bool = False, hike: Journey | None = No
 
 def poi(pid: str, where, icon: str, size: float = 60.0, caption: str = "", hike=None) -> Poi:
     """A symbol at ``where``: (lat, lon), a named place of the journey (str) or an ENU point.
-    ``icon``: a builtin icon name."""
+    ``icon``: a builtin icon name, "badge" (the caption in a pill), "none" or an image file."""
     journey = hike or current()
     if isinstance(where, str):
         lat, lon = journey.places[where]
@@ -108,8 +108,10 @@ def poi(pid: str, where, icon: str, size: float = 60.0, caption: str = "", hike=
         lat, lon = where
     else:
         lon, lat = journey.lonlat(where)
-    return Poi(id=pid, name=pid, lon=float(lon), lat=float(lat), icon=f"builtin:{icon}",
-               size_px=size, caption=caption, lift_px=16.0)  # fmt: skip
+    if icon not in ("badge", "none") and "." not in icon and "/" not in icon:
+        icon = f"builtin:{icon}"
+    return Poi(id=pid, name=pid, lon=float(lon), lat=float(lat), icon=icon, size_px=size,
+               caption=caption, lift_px=16.0)  # fmt: skip
 
 
 def show(scene: Scene, pid: str, t_in: float | None, t_out: float | None = None) -> None:

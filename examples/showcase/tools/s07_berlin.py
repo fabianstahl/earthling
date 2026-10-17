@@ -145,21 +145,22 @@ def main() -> None:
     shots = blend_shots(heli, finish, RACE[1] - 2.5, RACE[1] + 1.5)
     key_shots(scene, shots)
 
-    # kilometre flags every 5 km on this year's course
+    # on this year's course: km signs every 10 km, water stations every 5 km (a little after
+    # the mark, so they do not hide the signs), the finish
     lead = path.lead()
-    pois = []
-    for km in range(5, 45, 5):
+
+    def at_km(km: float):
         i = int(np.searchsorted(lead.ground, km * 1000.0))
-        if i >= len(lead.enu):
-            break
-        pois.append(poi(f"km{km}", lead.enu[i], "flag", 34.0, caption=f"{km} km"))
+        return lead.enu[i] if i < len(lead.enu) else None
+
+    pois = [poi(f"km{km}", at_km(km), "badge", 34.0, caption=f"{km} km")
+            for km in range(10, 45, 10) if at_km(km) is not None]  # fmt: skip
+    pois += [poi(f"water{km}", at_km(km + 0.25), "water", 30.0)
+             for km in range(5, 45, 5) if at_km(km + 0.25) is not None]  # fmt: skip
     pois.append(poi("finish", lead.enu[-1], "finish", 46.0))
     scene.set_pois(pois)
     for p_ in pois:
         show(scene, p_.id, None)
-        s.set(f"poi.{p_.id}.caption", True)
-        s.set(f"poi.{p_.id}.caption_size", 18.0)
-    s.set("poi.finish.caption", False)
     save(scene, "s07_berlin")
 
 

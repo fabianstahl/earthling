@@ -1,4 +1,4 @@
-"""Showcase 6: eight days around Iceland - four seasons in a day (~44 s).
+"""Showcase 6: eight days around Iceland - four seasons in a day (~54 s).
 
 The ring road by camper (dotted, a car at the head) with short hikes in between (solid, a hiker),
 each hike given its own few seconds while the drives run by distance; at every change between
@@ -6,13 +6,15 @@ driving and hiking the head pauses briefly. A calm map camera, north up, with a 
 over the drives (the island's shape readable), closer at the hikes, the head and the next stop
 always in the picture. The cloud changes day by day: fair weather, a cloudy day at Skógafoss,
 low cloud in the canyon, sun on the glacier lagoon, cloud in the east fjords, a clear day at
-Dettifoss, low cloud in the north, cloud again back to Reykjavík.
+Dettifoss, low cloud in the north, cloud again back to Reykjavík. Photos of the sights (public
+domain, photos/CREDITS.md) appear when the line gets there; a still second at both ends.
 """
 
 from __future__ import annotations
 
 import numpy as np
 from sc_common import (
+    SHOWCASE,
     Interp,
     daylight_keys,
     gaussian,
@@ -25,6 +27,15 @@ from sc_common import (
     save,
     show,
 )
+
+from earthling.core.photos import Photo
+
+# (file in s06_iceland/photos, lat, lon): where they were taken, in the order of the trip
+PHOTOS = [("gullfoss", 64.3271, -20.1199), ("seljalandsfoss", 63.6156, -19.9886),
+          ("skogafoss", 63.5321, -19.5114), ("fjadrargljufur", 63.7714, -18.1717), ("jokulsarlon", 64.0784, -16.2306),
+          ("dettifoss", 65.8146, -16.3849), ("godafoss", 65.6828, -17.5502)]  # fmt: skip
+# alternating places on the screen: the stats panel is bottom left, the mini-map top right
+SLOTS = [(0.19, 0.27, -2.5), (0.81, 0.71, 2.0)]  # (x, y, rotation)
 
 DURATION = 52.0
 START, END = 1.0, 50.5
@@ -144,8 +155,9 @@ def main() -> None:
             key(scene, pid, t + 2.5, value)
 
     pois = []
-    for g in hikes:
-        pois.append(poi(f"hike_{g.track.source.stem}", g.enu[0], "attraction", 34.0))
+    for g in hikes:  # four waterfalls and the canyon of Fjaðrárgljúfur (day 3)
+        icon = "viewpoint" if "day3" in g.track.source.stem else "waterfall"
+        pois.append(poi(f"hike_{g.track.source.stem}", g.enu[0], icon, 34.0))
     pois.append(poi("reykjavik", tracks[0].enu[0], "flag", 40.0))
     scene.set_pois(pois)
     show(scene, "reykjavik", None)
@@ -155,7 +167,26 @@ def main() -> None:
             f"hike_{g.track.source.stem}",
             round(float(np.interp(g.offset_m, md, mt)) - 1.0, 3),
         )
-    save(scene, "s06_iceland")
+    # --- photos of the sights: shown when the line reaches the place -----------------------
+    folder = SHOWCASE / "s06_iceland" / "photos"
+    photos = [Photo(name, name.capitalize(), f"../photos/{name}.jpg", lat, lon)
+              for name, lat, lon in PHOTOS]  # fmt: skip
+    scene.set_photos(photos)
+    busy = [-1.0] * len(SLOTS)  # (until when a place on the screen is taken)
+    for photo in photos:
+        assert (folder / f"{photo.id}.jpg").exists(), photo.id
+        d = float(path.nearest_distances(np.asarray(hike.enu(photo.lat, photo.lon))[None, :2])[0])
+        t = float(np.interp(d, md, mt))
+        slot = min(range(len(SLOTS)), key=lambda i: (busy[i] > t, busy[i]))
+        busy[slot] = t + 3.0 + 2 * 0.6
+        x, y, rotation = SLOTS[slot]
+        p = f"photo.{photo.id}."
+        for pid, value in (("appear", "reached"), ("hold", 3.0), ("x", x), ("y", y),
+                           ("height", 0.3), ("rotation", rotation), ("border", 7.0),
+                           ("zoom", 1.05)):  # fmt: skip
+            s.set(p + pid, value)
+        print(f"  photo {photo.id:15s} at {t:5.1f} s, place {slot}")
+    save(scene, "s06_iceland", holds=True)
 
 
 if __name__ == "__main__":

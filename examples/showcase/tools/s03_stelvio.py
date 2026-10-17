@@ -118,7 +118,7 @@ def main() -> None:
     key_shots(scene, shots)
 
     start = hike.start(1)
-    scene.set_pois([poi("start", start, "flag", 40.0), poi("pass", pass_top, "finish", 46.0)])
+    scene.set_pois([poi("start", start, "flag", 40.0), poi("pass", pass_top, "pass", 46.0)])
     show(scene, "start", None)
     show(scene, "pass", T1 - 0.3)
     save(scene, "s03_stelvio")

@@ -121,7 +121,7 @@ def main() -> None:
     key(scene, "progress.head", 10.5, 0.0, Interp.LINEAR)
     key(scene, "progress.head", 15.3, 1.0, Interp.EASE_OUT)
     scene.set_pois([poi("hotel", (lat_s, lon_s), "hotel", 44.0),
-                    poi("mirador", (lat_m, lon_m), "peak", 44.0)])  # fmt: skip
+                    poi("mirador", (lat_m, lon_m), "viewpoint", 44.0)])  # fmt: skip
     show(scene, "hotel", 10.5)
     show(scene, "mirador", 15.0)
     save(scene, "s01_patagonia")

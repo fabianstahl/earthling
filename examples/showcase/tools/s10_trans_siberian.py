@@ -113,8 +113,8 @@ def main() -> None:
     key_shots(scene, shots)
 
     stations = [
-        ("moscow", path.tracks[0].enu[0], "flag"),
-        ("beijing", path.tracks[-1].enu[-1], "finish"),
+        ("moscow", path.tracks[0].enu[0], "train"),
+        ("beijing", path.tracks[-1].enu[-1], "train"),
     ]
     scene.set_pois([poi(pid, where, icon, 40.0) for pid, where, icon in stations])
     show(scene, "moscow", None)

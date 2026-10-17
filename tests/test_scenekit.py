@@ -93,3 +93,10 @@ def test_moving_the_origin_keeps_the_cameras():
     sk.move_origin(scene, new, old)
     assert scene.animation.curves["camera.pose"].keys[0].value == pytest.approx(pose, abs=1e-5)
     assert scene.store["camera.target"] == pytest.approx((1000.0, 2000.0, 500.0), abs=1e-6)
+
+
+def test_poi_icons():
+    assert sk.poi("a", (46.0, 7.0), "peak").icon == "builtin:peak"
+    assert sk.poi("b", (46.0, 7.0), "badge", caption="10 km").icon == "badge"
+    assert sk.poi("c", (46.0, 7.0), "none").icon == "none"
+    assert sk.poi("d", (46.0, 7.0), "../icons/hut.png").icon == "../icons/hut.png"

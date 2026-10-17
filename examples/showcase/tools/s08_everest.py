@@ -158,8 +158,8 @@ def main() -> None:
     lukla = path.position_at(d1)
     namche = hike.enu(27.8048, 86.7120, 3440.0)
     tengboche = hike.enu(27.8361, 86.7638, 3870.0)
-    scene.set_pois([poi("lukla", lukla, "airport", 44.0), poi("namche", namche, "hotel", 38.0),
-                    poi("tengboche", tengboche, "attraction", 38.0),
+    scene.set_pois([poi("lukla", lukla, "airport", 44.0), poi("namche", namche, "town", 38.0),
+                    poi("tengboche", tengboche, "church", 38.0),
                     poi("ebc", ebc, "tent", 44.0)])  # fmt: skip
     show(scene, "lukla", FLIGHT[1] - 0.5)
     show(scene, "namche", TREK[0] + 2.5)
