@@ -234,7 +234,10 @@ class StartScreen(QWidget):
         if not pixmap.isNull():
             fill = Qt.AspectRatioMode.KeepAspectRatioByExpanding
             smooth = Qt.TransformationMode.SmoothTransformation
-            picture.setPixmap(pixmap.scaled(420, 150, fill, smooth))
+            wide = pixmap.scaled(900, 150, fill, smooth)  # (wider than any card: it is cut)
+            picture.setPixmap(wide.copy((wide.width() - 900) // 2, (wide.height() - 150) // 2,
+                                        900, 150))  # fmt: skip
+            picture.setMinimumWidth(1)
         else:
             picture.setPixmap(theme.icon("mountains", theme.TEXT_3).pixmap(36, 36))
         title = QLabel(Path(folder).name)

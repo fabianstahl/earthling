@@ -67,3 +67,17 @@ def test_window_palette_reveals_a_setting(qtbot):
     assert "weather.layer3.base" in window.inspector.rows
     actions = [e.title for e in window.command_palette.entries if e.group == "Actions"]
     assert "Export Video…" in actions and "Command Palette…" in actions
+
+
+def test_every_palette_entry_has_an_icon(qtbot):
+    from earthling.app.main_window import MainWindow
+    from earthling.ui import theme
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show_palette("")
+    for entry in window.command_palette.entries:  # (raises for an icon that is missing)
+        if isinstance(entry.icon, str):
+            theme.icon(entry.icon)
+    window.command_palette.set_scope("Actions")
+    assert window.command_palette.shown
