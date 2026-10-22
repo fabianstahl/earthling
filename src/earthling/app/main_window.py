@@ -103,7 +103,11 @@ class MainWindow(QMainWindow):
             self.scene.store,
             on_edit=self._on_panel_edit,
             row_extra=lambda d: KeyButton(d.id, self.keys) if d.animatable else None,
+            key_state=self.key_state,
+            batch=self.undo_batch,
         )
+        self.keys.changed.connect(self.property_panel.refresh_key_states)
+        self.timeline.time_changed.connect(lambda t: self.property_panel.refresh_key_states())
         # project specific properties (track groups, POIs) appear as their own sections
         self.scene.dynamic_listeners.append(self.property_panel.rebuild)
         self.parameters_dock = self._add_dock(
@@ -479,6 +483,20 @@ class MainWindow(QMainWindow):
         """Panel edits: animated properties are keyed at the playhead (auto-key)."""
         if not self.keys.on_property_edited(pid, value, interactive):
             self.set_property(pid, value, interactive)
+
+    def key_state(self, pid: str) -> str:
+        """How the panel tints a value: "keyed" (a key at the playhead), "animated", "static"."""
+        if not self.scene.animation.is_animated(pid):
+            return "static"
+        return "keyed" if self.keys.has_key_now(pid) else "animated"
+
+    def undo_batch(self, label: str, fn) -> None:
+        """Run ``fn`` (several edits) as one undo step."""
+        self.undo_stack.beginMacro(label)
+        try:
+            fn()
+        finally:
+            self.undo_stack.endMacro()
 
     def set_property(self, pid: str, value, interactive: bool = False) -> None:
         """All interactive property edits go through the undo stack."""

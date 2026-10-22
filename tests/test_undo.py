@@ -47,7 +47,7 @@ def test_window_undo_marks_clean_again(qtbot):
     assert window.scene.store["view.fov"] == 50.0
     assert not window.scene.dirty
     # panel edits are undoable too
-    window.property_panel.editors["view.fov"].spin.setValue(40.0)
+    window.property_panel.editors["view.fov"].commit(40.0)
     assert window.undo_stack.count() == 1
     window.undo_stack.undo()
-    assert window.property_panel.editors["view.fov"].spin.value() == 50.0
+    assert window.property_panel.editors["view.fov"].field.value == 50.0

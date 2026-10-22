@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from earthling.core.properties import enum, flt, section
+from earthling.core.properties import enum, flt, section, shown_unless
 
 APPEAR = [("keys", "By the opacity keys"), ("reached", "When the line reaches where it was taken")]
 FADE_S = 0.6  # fade in / out of photos shown when the line reaches them
@@ -46,7 +46,8 @@ def photo_properties(photo: Photo) -> list:
              tooltip="Fade in when the drawn line reaches the place of the photo, stay for the "
                      "time below and fade out (instead of keys on the opacity)"),
         flt(p + "hold", "Shown for", 4.0, 0.5, 60.0, step=0.5, decimals=1, unit="s",
-            animatable=False, tooltip="With 'When the line reaches…': seconds on screen"),
+            animatable=False, when=shown_unless(p + "appear", "keys"),
+            tooltip="With 'When the line reaches…': seconds on screen"),
         flt(p + "opacity", "Opacity", 0.0, 0.0, 1.0,
             tooltip="Keys on the opacity fade the photo in and out (0: not drawn)"),
         flt(p + "x", "Centre x", 0.8, -0.5, 1.5, step=0.005, decimals=3,
@@ -55,12 +56,13 @@ def photo_properties(photo: Photo) -> list:
             tooltip="Vertical centre, fraction of the frame height (0 top, 1 bottom)"),
         flt(p + "height", "Height", 0.3, 0.02, 1.0, step=0.005, decimals=3,
             tooltip="Height of the picture, fraction of the frame height (width from the image)"),
-        flt(p + "scale", "Scale", 1.0, 0.0, 3.0, step=0.01,
+        flt(p + "scale", "Scale", 1.0, 0.0, 3.0, step=0.01, advanced=True,
             tooltip="Extra size factor (e.g. a grow-in together with the fade)"),
-        flt(p + "rotation", "Rotation", 0.0, -45.0, 45.0, step=0.5, decimals=1, unit="°"),
+        flt(p + "rotation", "Rotation", 0.0, -45.0, 45.0, step=0.5, decimals=1, unit="°",
+            advanced=True),
         flt(p + "border", "Border", 8.0, 0.0, 60.0, step=0.5, decimals=1, unit="px",
             tooltip="White frame around the picture (px at 1080p)"),
-        flt(p + "shadow", "Shadow", 0.5, 0.0, 1.0,
+        flt(p + "shadow", "Shadow", 0.5, 0.0, 1.0, advanced=True,
             tooltip="Soft drop shadow below the picture"),
         flt(p + "zoom", "Zoom", 1.0, 1.0, 3.0, step=0.01,
             tooltip="Zoom into the picture inside its frame (a slow push-in with keys)"),

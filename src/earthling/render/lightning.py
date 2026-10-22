@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import moderngl
 import numpy as np
 
-from earthling.core.properties import boolean, color, flt, integer, section
+from earthling.core.properties import boolean, color, flt, integer, section, shown_if
 from earthling.render.gl_util import DynamicBuffer, set_uniforms
 from earthling.render.scale import pixel_scale
 
@@ -288,16 +288,17 @@ def _animated(animation) -> bool:
 
 def lightning_properties() -> list:
     return section(
-        "Weather: Rain & Thunder",
+        "Weather: Thunderstorm",
         flt("lightning.rate", "Lightning", 0.0, 0.0, 120.0, step=1.0, decimals=0,
             unit="/min", tooltip="Strikes per minute (needs rain or weather on)"),
         flt("lightning.intensity", "Lightning brightness", 1.0, 0.0, 5.0),
         flt("lightning.radius_km", "Lightning distance", 12.0, 1.0, 50.0, step=0.5, unit="km",
-            tooltip="Strikes happen up to this far from the camera, mostly in view"),
-        integer("lightning.seed", "Lightning seed", 1, 0, 9999, animatable=False,
+            advanced=True, tooltip="Strikes happen up to this far from the camera, mostly in view"),
+        integer("lightning.seed", "Lightning seed", 1, 0, 9999, animatable=False, advanced=True,
                 tooltip="Another seed gives other strike times and bolt shapes"),
         boolean("lightning.bolts", "Show bolts", True),
-        flt("lightning.branching", "Bolt branching", 0.3, 0.0, 1.0,
+        flt("lightning.branching", "Bolt branching", 0.3, 0.0, 1.0, advanced=True,
+            when=shown_if("lightning.bolts"),
             tooltip="Few simple branches (0) up to richly forked bolts (1)"),
-        color("lightning.color", "Lightning colour", (0.78, 0.83, 1.0)),
+        color("lightning.color", "Lightning colour", (0.78, 0.83, 1.0), advanced=True),
     )  # fmt: skip

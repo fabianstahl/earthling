@@ -274,6 +274,28 @@ QStatusBar {{ background: #0F1216; color: {TEXT_3}; border-top: 1px solid {LINE}
 QStatusBar QLabel {{ color: {TEXT_3}; font-size: 12px; }}
 QGroupBox {{ border: 1px solid {LINE}; border-radius: 8px; margin-top: 14px; padding-top: 6px; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; color: {TEXT_3}; }}
+QLabel#dim {{ color: {TEXT_3}; font-size: 12px; }}
+QLabel#rowLabel {{ color: {TEXT_2}; font-size: 12.5px; }}
+#panelBody {{ background: {PANEL}; }}
+#section {{ border-bottom: 1px solid {LINE}; }}
+QToolButton#sectionTitle {{ font-weight: 600; color: {TEXT}; padding: 5px 4px; text-align: left; }}
+QToolButton#sectionTitle:checked {{ background: transparent; color: {TEXT}; }}
+QToolButton#sectionTitle:hover {{ background: {HOVER}; }}
+QToolButton#sectionTitle[off="true"] {{ color: {TEXT_3}; }}
+QToolButton#more {{ color: {TEXT_3}; font-size: 12px; padding: 4px 8px; margin-left: 6px; }}
+QToolButton#more:hover {{ color: {TEXT}; }}
+QFrame#segments, QFrame#corners {{ background: {FIELD}; border: 1px solid {LINE_STRONG};
+    border-radius: 7px; }}
+QToolButton[segment="true"] {{ color: {TEXT_3}; font-size: 12px; padding: 2px 6px;
+    border-radius: 5px; }}
+QToolButton[segment="true"]:hover {{ color: {TEXT}; background: transparent; }}
+QToolButton[segment="true"]:checked {{ background: #2D3B50; color: #FFFFFF; }}
+QToolButton[corner="true"] {{ background: #2B323D; border-radius: 2px; padding: 0; }}
+QToolButton[corner="true"]:hover {{ background: #3B4452; }}
+QToolButton[corner="true"]:checked {{ background: {ACCENT}; }}
+QToolButton#swatch {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 6px;
+    padding: 2px 8px 2px 3px; color: {TEXT_2}; font-size: 12px; text-align: left; }}
+QToolButton#swatch:hover {{ border-color: #4A5463; }}
 """
 
 

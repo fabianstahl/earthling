@@ -13,7 +13,7 @@ import math
 import moderngl
 import numpy as np
 
-from earthling.core.properties import boolean, enum, flt, section
+from earthling.core.properties import boolean, enum, flt, section, shown_if
 from earthling.render.gl_util import set_uniforms
 from earthling.render.shader_library import ShaderLibrary
 
@@ -364,34 +364,37 @@ def layer_defaults() -> list[dict]:
 
 def weather_properties() -> list:
     defs = [
-        boolean("weather.enabled", "Weather", False,
+        boolean("weather.enabled", "Weather", False, switch=True, keywords="clouds fog",
                 tooltip="Volumetric cloud and fog layers, rain and thunderstorms"),
         flt("weather.cloud_shadows", "Cloud shadows", 0.8, 0.0, 1.0),
-        flt("weather.gusts", "Gusts", 0.0, 0.0, 1.0,
+        flt("weather.gusts", "Gusts", 0.0, 0.0, 1.0, advanced=True,
             tooltip="The wind of all layers (and the rain) speeds up and calms down in gusts"),
         flt("weather.gust_period", "Gust period", 8.0, 1.0, 60.0, step=0.5, decimals=1, unit="s",
-            tooltip="Typical time between two gusts"),
+            advanced=True, tooltip="Typical time between two gusts"),
     ]  # fmt: skip
     names = ["Low layer (fog)", "Middle layer", "High layer"]
     for i, (name, d) in enumerate(zip(names, layer_defaults(), strict=True), start=1):
         p = f"weather.layer{i}."
+        on = shown_if(p + "enabled")  # (the inspector shows one layer at a time: "name: ...")
         defs += [
-            boolean(p + "enabled", f"{name}", d["enabled"]),
+            boolean(p + "enabled", f"{name}", d["enabled"], keywords="clouds"),
             flt(p + "base", f"{name}: base", d["base"], -500.0, 9000.0, step=50.0, decimals=0,
-                unit="m", tooltip="Metres above sea level"),
+                unit="m", when=on, tooltip="Metres above sea level"),
             flt(p + "thickness", f"{name}: thickness", d["thickness"], 10.0, 6000.0, step=50.0,
-                decimals=0, unit="m"),
-            flt(p + "coverage", f"{name}: coverage", d["coverage"], 0.0, 1.0),
-            flt(p + "density", f"{name}: density", d["density"], 0.0, 3.0),
+                decimals=0, unit="m", when=on),
+            flt(p + "coverage", f"{name}: coverage", d["coverage"], 0.0, 1.0, when=on),
+            flt(p + "density", f"{name}: density", d["density"], 0.0, 3.0, when=on),
             flt(p + "scale", f"{name}: size of the patches", d["scale"], 100.0, 30000.0,
-                step=100.0, decimals=0, unit="m", logarithmic=True),
+                step=100.0, decimals=0, unit="m", logarithmic=True, when=on, advanced=True),
             flt(p + "wind_speed", f"{name}: wind", d["wind_speed"], 0.0, 60.0, step=0.5,
-                unit="m/s"),
+                unit="m/s", when=on),
             flt(p + "wind_dir", f"{name}: wind towards", d["wind_dir"], 0.0, 360.0, step=5.0,
-                decimals=0, unit="°"),
-            flt(p + "detail", f"{name}: fraying", d["detail"], 0.0, 1.0),
-            flt(p + "brightness", f"{name}: brightness", d["brightness"], 0.0, 3.0),
-            flt(p + "variation", f"{name}: height variation", 0.5, 0.0, 1.0,
+                decimals=0, unit="°", when=on, advanced=True),
+            flt(p + "detail", f"{name}: fraying", d["detail"], 0.0, 1.0, when=on, advanced=True),
+            flt(p + "brightness", f"{name}: brightness", d["brightness"], 0.0, 3.0, when=on,
+                advanced=True),
+            flt(p + "variation", f"{name}: height variation", 0.5, 0.0, 1.0, when=on,
+                advanced=True,
                 tooltip="How much the base and the top of the clouds vary (0: one flat base)"),
         ]  # fmt: skip
     from earthling.render.lightning import lightning_properties
@@ -401,24 +404,25 @@ def weather_properties() -> list:
 
 def rain_properties() -> list:
     return section(
-        "Weather: Rain & Thunder",
-        boolean("rain.enabled", "Rain", False),
+        "Weather: Rain",
+        boolean("rain.enabled", "Rain", False, switch=True),
         enum("rain.type", "Falls as", "rain", [("rain", "Rain"), ("snow", "Snow")],
              tooltip="Snow: slow, tumbling flakes and no wet ground (see Snow cover)"),
         flt("rain.intensity", "Intensity", 0.7, 0.0, 1.0),
         flt("rain.cloud_base", "Rain clouds: base", 2200.0, 0.0, 8000.0, step=50.0, decimals=0,
-            unit="m"),
+            unit="m", advanced=True),
         flt("rain.cloud_thickness", "Rain clouds: thickness", 3000.0, 100.0, 8000.0, step=50.0,
-            decimals=0, unit="m"),
-        flt("rain.coverage", "Rain clouds: coverage", 0.85, 0.0, 1.0),
-        flt("rain.cloud_density", "Rain clouds: density", 1.0, 0.0, 3.0),
-        flt("rain.darkness", "Rain clouds: darkness", 0.6, 0.0, 1.0),
+            decimals=0, unit="m", advanced=True),
+        flt("rain.coverage", "Rain clouds: coverage", 0.85, 0.0, 1.0, advanced=True),
+        flt("rain.cloud_density", "Rain clouds: density", 1.0, 0.0, 3.0, advanced=True),
+        flt("rain.darkness", "Rain clouds: darkness", 0.6, 0.0, 1.0, advanced=True),
         flt("rain.wind", "Wind", 3.0, 0.0, 30.0, step=0.5, unit="m/s",
             tooltip="Slants the rain and moves the rain clouds"),
-        flt("rain.wind_dir", "Wind towards", 90.0, 0.0, 360.0, step=5.0, decimals=0, unit="°"),
+        flt("rain.wind_dir", "Wind towards", 90.0, 0.0, 360.0, step=5.0, decimals=0, unit="°",
+            advanced=True),
         flt("rain.visibility_km", "Visibility", 6.0, 0.2, 50.0, step=0.1, decimals=1, unit="km",
             logarithmic=True),
-        flt("rain.wetness", "Wet ground", 0.8, 0.0, 1.0),
+        flt("rain.wetness", "Wet ground", 0.8, 0.0, 1.0, when=shown_if("rain.type", "rain")),
         flt("rain.rainbow", "Rainbow", 0.0, 0.0, 3.0,
             tooltip="A rainbow opposite the sun where sunlit rain is in front of the scene "
                     "(needs a low sun: below 42 degrees)"),

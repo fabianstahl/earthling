@@ -107,13 +107,79 @@ def test_property_panel_two_way_binding(qtbot):
     panel = PropertyPanel(s)
     qtbot.addWidget(panel)
     editor = panel.editors["a.f"]
-    editor.spin.setValue(4.5)
+    editor.commit(4.5)
     assert s["a.f"] == 4.5
-    assert editor.slider.value() == 450
+    assert editor.field.fraction() == pytest.approx(0.45)
+    assert panel.rows["a.f"].changed  # differs from the default
     s.set("a.f", 7.0)
-    assert editor.spin.value() == 7.0
-    panel.editors["b.e"].combo.setCurrentIndex(1)
+    assert editor.field.value == 7.0
+    panel.editors["b.e"].segments.buttons[1].click()  # two short choices: segments
     assert s["b.e"] == "y"
     panel.editors["b.b"].box.setChecked(True)
     assert s["b.b"] is True
     assert set(panel.sections) == {"A", "B"}
+
+
+def test_drag_field_drags_types_and_steps(qtbot):
+    from PyQt6.QtCore import QPoint, Qt
+
+    from earthling.ui.property_panel import DragField
+
+    field = DragField(0.0, 10.0, step=0.5, decimals=1, unit="m")
+    qtbot.addWidget(field)
+    field.resize(200, 24)
+    field.set_value(2.0)
+    seen = []
+    field.edited.connect(lambda v, interactive: seen.append((v, interactive)))
+    qtbot.mousePress(field, Qt.MouseButton.LeftButton, pos=QPoint(50, 12))
+    qtbot.mouseMove(field, QPoint(90, 12))  # 40 of 200 px: a fifth of the range
+    qtbot.mouseRelease(field, Qt.MouseButton.LeftButton, pos=QPoint(90, 12))
+    assert seen[-2] == (4.0, True) and seen[-1] == (4.0, False)
+    assert field.text() == "4.0 m"
+    qtbot.keyClick(field, Qt.Key.Key_Up)
+    assert field.value == 4.5
+    field.start_typing()  # a click without moving types the value
+    field._edit.setText("7,25")
+    field._edit.editingFinished.emit()
+    assert field.value == 7.2 or field.value == 7.3  # one decimal
+    field.commit(99)
+    assert field.value == 10.0  # clamped
+
+
+def test_sections_follow_when_advanced_switch_and_tabs(qtbot):
+    from earthling.core.properties import boolean, flt, section, shown_if
+    from earthling.ui.property_panel import PropertyPanel
+
+    defs = section(
+        "Fog",
+        boolean("fog.on", "Fog", False, switch=True),
+        flt("fog.density", "Density", 0.3, 0.0, 1.0),
+        flt("fog.glow", "Glow", 0.5, 0.0, 1.0, advanced=True),
+    ) + section(
+        "Clouds",
+        boolean("low.on", "Low layer", True),
+        flt("low.base", "Low layer: base", 900.0, 0.0, 9000.0, when=shown_if("low.on")),
+        boolean("high.on", "High layer", False),
+        flt("high.base", "High layer: base", 7000.0, 0.0, 9000.0, when=shown_if("high.on")),
+        flt("cover", "Coverage", 0.5, 0.0, 1.0),
+    )
+    store = PropertyStore(PropertyRegistry(defs))
+    panel = PropertyPanel(store)
+    qtbot.addWidget(panel)
+    panel.show()
+    fog, clouds = panel.sections["Fog"], panel.sections["Clouds"]
+    assert not fog.body.isVisible() and fog.off_note.isVisible()  # switched off
+    fog.switch.click()
+    assert store["fog.on"] and fog.body.isVisible()
+    assert panel.rows["fog.density"].isVisible() and not panel.rows["fog.glow"].isVisible()
+    fog.more.click()
+    assert panel.rows["fog.glow"].isVisible()
+    assert clouds.tabs == ["Low layer", "High layer"]
+    assert panel.rows["low.base"].isVisible() and not panel.rows["high.base"].isVisible()
+    assert panel.rows["low.base"].label.text() == "Base"
+    clouds.tab_bar.buttons[1].click()
+    assert not panel.rows["high.base"].isVisible()  # the high layer is off
+    store.set("high.on", True)
+    assert panel.rows["high.base"].isVisible() and panel.rows["cover"].isVisible()
+    fog.reset_all()
+    assert not store["fog.on"]

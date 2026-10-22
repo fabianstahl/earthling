@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, fields
 from typing import Any
 
 from earthling.core.easing import smooth01
-from earthling.core.properties import boolean, enum, flt, section
+from earthling.core.properties import boolean, enum, flt, section, shown_if, shown_unless
 
 EFFECTS = [
     ("none", "None"),
@@ -62,6 +62,7 @@ def slug(text: str, taken: set[str]) -> str:
 def poi_properties(poi: Poi) -> list:
     """Keyframeable properties of one POI ("poi.<id>.*")."""
     p = f"poi.{poi.id}."
+    effect = shown_unless(p + "effect", "none")
     return section(
         f"POI: {poi.name}",
         boolean(p + "visible", "Show", True,
@@ -74,12 +75,14 @@ def poi_properties(poi: Poi) -> list:
         boolean(p + "pop", "Pop in / out", True,
                 tooltip="Grow in with a little overshoot when shown, shrink when hidden"),
         enum(p + "effect", "Effect", "none", EFFECTS),
-        flt(p + "effect_strength", "Effect strength", 1.0, 0.0, 5.0),
-        flt(p + "effect_speed", "Effect speed", 1.0, 0.0, 10.0, step=0.05, unit="Hz"),
-        flt(p + "anim_speed", "Animation speed", 1.0, 0.0, 10.0, step=0.05,
+        flt(p + "effect_strength", "Effect strength", 1.0, 0.0, 5.0, when=effect),
+        flt(p + "effect_speed", "Effect speed", 1.0, 0.0, 10.0, step=0.05, unit="Hz",
+            when=effect),
+        flt(p + "anim_speed", "Animation speed", 1.0, 0.0, 10.0, step=0.05, advanced=True,
             tooltip="Playback speed of animated icons (GIF, APNG, sprite sheets)"),
         boolean(p + "caption", "Show caption", True),
         flt(p + "caption_size", "Caption size", 20.0, 6.0, 72.0, step=0.5, decimals=1, unit="px",
+            when=shown_if(p + "caption"),
             tooltip="First caption line; further lines (\n) are a little smaller"),
         boolean(p + "pin", "Pin line", True),
     )  # fmt: skip

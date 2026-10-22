@@ -28,6 +28,19 @@ class PType(StrEnum):
     TEXT = "text"  # a line of text (keys switch it, like enums)
 
 
+Condition = tuple[str, tuple, bool]  # (property id, values, negate)
+
+
+def shown_if(pid: str, *values: Any) -> tuple[Condition, ...]:
+    """``when=``: show a property only while ``pid`` has one of ``values`` (default True)."""
+    return ((pid, values or (True,), False),)
+
+
+def shown_unless(pid: str, *values: Any) -> tuple[Condition, ...]:
+    """``when=``: hide a property while ``pid`` has one of ``values``."""
+    return ((pid, values, True),)
+
+
 @dataclass(frozen=True)
 class PropertyDef:
     id: str  # "section.name", unique
@@ -45,6 +58,15 @@ class PropertyDef:
     uniform: str | None = None  # shader uniform name bound automatically
     animatable: bool = True
     tooltip: str = ""
+    # how the inspector shows it (no effect on rendering)
+    advanced: bool = False  # behind the section's "More settings"
+    when: tuple[Condition, ...] = ()  # shown only while all conditions hold (shown_if ...)
+    switch: bool = False  # a boolean that is its section's on/off switch
+    keywords: str = ""  # extra search words
+
+    def shown(self, values: dict[str, Any]) -> bool:
+        """Whether the inspector shows this property for the current ``values``."""
+        return all((values.get(pid) in allowed) != negate for pid, allowed, negate in self.when)
 
     def coerce(self, value: Any) -> Any:
         """Convert/validate ``value``; raises ValueError for unusable input."""

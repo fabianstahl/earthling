@@ -16,7 +16,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from earthling.core.properties import PropertyDef, PType, boolean, color, enum, flt, section
+from earthling.core.properties import (
+    PropertyDef,
+    PType,
+    boolean,
+    color,
+    enum,
+    flt,
+    section,
+    shown_if,
+)
 
 RAMPS = [("hypsometric", "Hypsometric"), ("viridis", "Viridis"), ("turbo", "Turbo"),
          ("grayscale", "Grayscale")]  # fmt: skip
@@ -238,12 +247,13 @@ BORDERS = section(
         uniform="u_border_width"),
     color("borders.color", "Country line colour", (1.0, 0.6462, 0.0707), uniform="u_border_color"),
     flt("borders.glow", "Glow width", 8.0, 0.0, 80.0, step=1.0, decimals=0, unit="px",
-        uniform="u_border_glow"),
-    flt("borders.glow_strength", "Glow strength", 0.5, 0.0, 5.0, uniform="u_border_glow_strength"),
+        uniform="u_border_glow", advanced=True),
+    flt("borders.glow_strength", "Glow strength", 0.5, 0.0, 5.0, uniform="u_border_glow_strength",
+        advanced=True),
     flt("borders.region_width", "Region line width", 1.2, 0.3, 8.0, step=0.1, decimals=1,
-        unit="px", uniform="u_region_width"),
+        unit="px", uniform="u_region_width", when=shown_if("borders.regions")),
     color("borders.region_color", "Region line colour", (0.8324, 0.8324, 0.8324),
-          uniform="u_region_color"),
+          uniform="u_region_color", when=shown_if("borders.regions")),
 )  # fmt: skip
 
 CONTOURS = section(
