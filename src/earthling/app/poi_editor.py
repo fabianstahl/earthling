@@ -1,5 +1,6 @@
-"""Points of interest dock: add POIs of a kind from the library (at the hiker, by clicking the
-terrain or at a place), edit and remove them (see app/item_dock.py)."""
+"""Points of interest: the form of the selected POI (its kind from the library, name, caption,
+icon, size, position). New POIs are added from the scene list at the marker, by clicking the
+terrain or at a place, of the kind chosen last (see app/item_editor.py)."""
 
 from __future__ import annotations
 
@@ -13,13 +14,11 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QSpinBox,
-    QVBoxLayout,
     QWidget,
 )
 
-from earthling.app.item_dock import SceneItemDock
+from earthling.app.item_editor import SceneItemEditor
 from earthling.core.poi_library import KINDS, PoiKind, add_user_image, load_user_images
 from earthling.core.pois import Poi, slug
 from earthling.render.pois import BADGE, badge_image, builtin_icons, resolve_icon
@@ -47,35 +46,22 @@ def icon_for(ref: str, caption: str = "", base_dir: Path | None = None) -> QIcon
     return QIcon(QPixmap(str(path))) if path is not None else QIcon()
 
 
-class PoiDock(SceneItemDock):
+class PoiEditor(SceneItemEditor):
     ATTR, PREFIX, NOUN, ITEM = "pois", "poi.", "POI", Poi
-    NOTE = "Animate visibility, effects … in the POI's section of the parameter panel."
 
     def __init__(self, scene, undo_stack, hiker_position, request_pick, base_dir, parent=None,
                  choose_place=None) -> None:  # fmt: skip
-        super().__init__("Points of Interest", scene, undo_stack, hiker_position, request_pick,
-                         base_dir, parent, choose_place)  # fmt: skip
-        self.setObjectName("poi_dock")
+        super().__init__(scene, undo_stack, hiker_position, request_pick, base_dir, parent,
+                         choose_place)  # fmt: skip
+        self.setObjectName("poiEditor")
 
     # --- layout ---------------------------------------------------------------------------
-    def _top(self, layout: QVBoxLayout) -> None:
+    def _form_rows(self, form: QFormLayout) -> list[QWidget]:
         self.kind = QComboBox()
         self.kind.setIconSize(QSize(22, 22))
-        self.kind.setToolTip("What the new POI is: its icon, name and caption")
+        self.kind.setToolTip("What the POI is: its icon, name and caption (also the kind of "
+                             "the next new POI)")  # fmt: skip
         self._fill_kinds()
-        layout.addWidget(row(QLabel("New"), (self.kind, 1)))
-
-    def _add_buttons(self) -> list[QPushButton]:
-        self.add_hiker = QPushButton("+ At hiker")
-        self.add_hiker.setToolTip("New POI at the head of the drawn track")
-        self.add_click = QPushButton("+ On map…")
-        self.add_click.setToolTip("New POI where you click on the terrain")
-        self.add_place = QPushButton("+ At…")
-        self.add_place.setToolTip("New POI at coordinates or at a point of a track (start, end, "
-                                  "highest or lowest point, a distance)")  # fmt: skip
-        return [self.add_hiker, self.add_click, self.add_place]
-
-    def _form_rows(self, form: QFormLayout) -> list[QWidget]:
         self.name = QLineEdit()
         self.caption = QLineEdit()
         self.icon = QComboBox()
@@ -92,6 +78,8 @@ class PoiDock(SceneItemDock):
             spin.setRange(1, 64)
         self.fps = double_spin(0.5, 60.0)
         sprite = row(QLabel("cols"), self.cols, QLabel("rows"), self.rows, QLabel("fps"), self.fps)
+        sprite.setToolTip("Animated sprite sheets: columns, rows and frames per second")
+        form.addRow("Kind", self.kind)
         form.addRow("Name", self.name)
         form.addRow("Caption", self.caption)
         form.addRow("Icon", self.icon)
@@ -128,9 +116,6 @@ class PoiDock(SceneItemDock):
 
     def _connect_fields(self) -> None:
         self.kind.activated.connect(self._kind_chosen)
-        self.add_hiker.clicked.connect(self._add_at_hiker)
-        self.add_click.clicked.connect(lambda: self.request_pick(self.add_poi))
-        self.add_place.clicked.connect(self._add_at_place)
         self.icon.activated.connect(self._icon_chosen)
         for field, widget, value in (
             ("name", self.name, self.name.text),
@@ -163,6 +148,12 @@ class PoiDock(SceneItemDock):
         self.cols.setValue(poi.sprite_cols)
         self.rows.setValue(poi.sprite_rows)
         self.fps.setValue(poi.fps)
+        for i in range(self.kind.count()):
+            kind = self.kind.itemData(i)
+            if isinstance(kind, PoiKind) and kind.icon == poi.icon and \
+                    kind.caption == poi.caption:  # fmt: skip
+                self.kind.setCurrentIndex(i)
+                break
 
     def current_kind(self) -> PoiKind:
         kind = self.kind.currentData()
@@ -170,7 +161,7 @@ class PoiDock(SceneItemDock):
 
     def add_poi(self, lon: float, lat: float, name: str | None = None,
                 kind: PoiKind | None = None) -> Poi:  # fmt: skip
-        """A new POI of ``kind`` (default: the one chosen in the dock) at lon/lat."""
+        """A new POI of ``kind`` (default: the one chosen last) at lon/lat."""
         kind = kind or self.current_kind()
         name = name or kind.name
         poi = Poi(slug(name, {p.id for p in self.scene.pois}), name, float(lon), float(lat),
@@ -179,27 +170,49 @@ class PoiDock(SceneItemDock):
         self.add_item(poi)
         return poi
 
-    def _add_at_hiker(self) -> None:
+    def add_at_hiker(self) -> Poi | None:
         position = self.hiker_position()
-        if position is not None:
-            self.add_poi(*position)
+        return self.add_poi(*position) if position is not None else None
 
-    def _add_at_place(self) -> None:
+    def add_by_click(self) -> None:
+        self.request_pick(self.add_poi)
+
+    def add_at_place(self) -> None:
         if self.choose_place is not None:
             place = self.choose_place("New POI at…", self.hiker_position())
             if place is not None:
                 self.add_poi(*place)
 
-    # --- icons ----------------------------------------------------------------------------
+    # --- kinds and icons ------------------------------------------------------------------
     def _kind_chosen(self, index: int) -> None:
-        if self.kind.itemData(index) != ADD_IMAGE:
+        data = self.kind.itemData(index)
+        if data == ADD_IMAGE:
+            start = str(self.base_dir() or Path.home())
+            path, _ = QFileDialog.getOpenFileName(self, "POI image", start, IMAGE_FILTER)
+            if path:
+                self._fill_kinds(select=add_user_image(user_images_file(), Path(path)).icon)
+            else:
+                self._fill_kinds()
             return
-        start = str(self.base_dir() or Path.home())
-        path, _ = QFileDialog.getOpenFileName(self, "POI image", start, IMAGE_FILTER)
-        if path:
-            self._fill_kinds(select=add_user_image(user_images_file(), Path(path)).icon)
-        else:
-            self._fill_kinds()
+        if isinstance(data, PoiKind):
+            self.apply_kind(data)
+
+    def apply_kind(self, kind: PoiKind) -> None:
+        """Give the selected POI the icon, caption and size of ``kind`` (and its name while
+        it still has the name of a kind)."""
+        poi = self.current()
+        if poi is None or self._updating:
+            return
+        names = {k.name for k in [*KINDS, *load_user_images(user_images_file())]}
+
+        def mutate() -> None:
+            poi.icon, poi.caption = self._icon_ref(kind.icon), kind.caption
+            poi.size_px = kind.size_px
+            if poi.name in names:
+                poi.name = kind.name
+            self.set_items(self.items())
+
+        self._apply("POI kind", mutate)
 
     def _icon_ref(self, ref: str) -> str:
         """Image files relative to the scene folder where possible."""

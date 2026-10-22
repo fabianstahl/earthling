@@ -48,12 +48,12 @@ def test_reached_alpha():
     assert reached_alpha(2 * FADE_S + 4.0, 4.0) == 0.0
 
 
-def test_photo_dock_places_photos(qtbot, tmp_path):
+def test_photo_editor_places_photos(qtbot, tmp_path):
     from earthling.app.main_window import MainWindow
 
     window = MainWindow()
     qtbot.addWidget(window)
-    dock = window.photo_dock
+    dock = window.photo_editor
     dock.place_at_time = lambda when: (7.5, 46.5)
     with_gps = dock.add_photo(photo_file(tmp_path / "gps.jpg", (45.5, 6.5)))
     by_time = dock.add_photo(photo_file(tmp_path / "time.jpg", taken="2026:09:01 08:00:00"))

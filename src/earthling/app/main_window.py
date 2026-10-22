@@ -26,9 +26,10 @@ from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
 from earthling.app.goto_dialog import GoToDialog
 from earthling.app.keyframing import KeyframeEditor
-from earthling.app.photo_dock import PhotoDock
+from earthling.app.photo_editor import PhotoEditor
 from earthling.app.plan_dialog import PlanDialog
-from earthling.app.poi_dock import PoiDock
+from earthling.app.poi_editor import PoiEditor
+from earthling.app.scene_list import PHOTO_SUFFIXES, SceneList
 from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.undo import set_property
@@ -37,6 +38,7 @@ from earthling.core.animation import layer_switch_warnings
 from earthling.core.camera_path import camera_path_lines
 from earthling.core.config import ConfigError, Project
 from earthling.core.gpx import Track
+from earthling.core.poi_library import KINDS
 from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
 from earthling.data.jobs import download_jobs
 from earthling.render.camera_rig import CameraRig
@@ -136,21 +138,34 @@ class MainWindow(QMainWindow):
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
         self.tracks_changed.connect(self.viewport.request_render)
         self.tracks_dock.track_activated.connect(self._frame_track)
-        poi_dock = PoiDock(self.scene, self.undo_stack, self.hiker_lonlat, self._pick_lonlat,
-                           self._scene_dir, self, choose_place=self.choose_place)  # fmt: skip
-        self.poi_dock = self._add_dock(right, poi_dock)
-        self.tabifyDockWidget(self.parameters_dock, self.poi_dock)
-        self.parameters_dock.raise_()
-        self.poi_dock.changed.connect(self._pois_changed)
-        self.poi_dock.list.currentRowChanged.connect(lambda i: self.show_scene_item("poi", i))
-        photo_dock = PhotoDock(self.scene, self.undo_stack, self.hiker_lonlat, self._pick_lonlat,
-                               self._scene_dir, self, choose_place=self.choose_place,
-                               place_at_time=self.lonlat_at_time)  # fmt: skip
-        self.photo_dock = self._add_dock(right, photo_dock)
-        self.tabifyDockWidget(self.poi_dock, self.photo_dock)
-        self.parameters_dock.raise_()
-        self.photo_dock.changed.connect(self._pois_changed)
-        self.photo_dock.list.currentRowChanged.connect(lambda i: self.show_scene_item("photo", i))
+        # the forms of the selected POI / photo (shown in the inspector)
+        self.poi_editor = PoiEditor(self.scene, self.undo_stack, self.hiker_lonlat,
+                                    self._pick_lonlat, self._scene_dir, self,
+                                    choose_place=self.choose_place)  # fmt: skip
+        self.photo_editor = PhotoEditor(self.scene, self.undo_stack, self.hiker_lonlat,
+                                        self._pick_lonlat, self._scene_dir, self,
+                                        choose_place=self.choose_place,
+                                        place_at_time=self.lonlat_at_time)  # fmt: skip
+        for kind, editor in (("poi", self.poi_editor), ("photo", self.photo_editor)):
+            editor.hide()
+            editor.changed.connect(self._pois_changed)
+            editor.current_changed.connect(lambda i, k=kind: self._select_item(k, i))
+        self.scene_list = SceneList(self)
+        self.scene_list.selected.connect(self._scene_selected)
+        self.scene_dock = self._add_dock(area.LeftDockWidgetArea, QDockWidget("Scene", self),
+                                         "SceneDock", self.scene_list)  # fmt: skip
+        self.scene_dock.setTitleBarWidget(QWidget())
+        self.scene_dock.setMinimumWidth(250)
+        self.tracks_changed.connect(self.scene_list.refresh)
+        self.keys.changed.connect(self.scene_list.refresh)
+        self.scene.dynamic_listeners.append(self.scene_list.refresh)
+        watched = {"layers.a", "layers.b", "layers.mix", "borders.overlay", "contours.overlay"}
+
+        def store_changed(pid: str, value) -> None:
+            if pid in watched or (pid.startswith("trackgroup.") and pid.endswith(".visible")):
+                self.scene_list.refresh()
+
+        self.scene.store.subscribe(store_changed)
 
     def _add_dock(self, area, dock: QDockWidget, name: str = "", widget=None) -> QDockWidget:
         """Dock ``dock`` (optionally naming it and setting its widget) and list it in View."""
@@ -402,17 +417,101 @@ class MainWindow(QMainWindow):
         self.viewport.set_pois(self.scene.pois, self._scene_dir(), self.scene.animation)
         self.viewport.set_photos(self.scene.photos, self._scene_dir())
 
+    def _select_item(self, kind: str, index: int) -> None:
+        """An item was added or removed: select it (or its neighbour) in the scene list."""
+        self.scene_list.refresh()
+        if index >= 0:
+            self.scene_list.select((kind, index))
+        elif self.inspector.item is not None:
+            self.inspector.show_category(self.inspector.category)
+
+    def _scene_selected(self, key: tuple) -> None:
+        """The inspector shows what was selected in the scene list."""
+        kind = key[0]
+        if kind == "camera":
+            self.inspector.show_category("camera")
+        elif kind == "layers":
+            self.inspector.show_category("layers")
+        elif kind == "header":
+            category = {"Tracks": "tracks", "Map layers": "layers"}.get(key[1])
+            if category:
+                self.inspector.show_category(category)
+        elif kind in ("group", "track"):
+            self._show_group(key)
+        elif kind in ("poi", "photo"):
+            self.show_scene_item(kind, key[1])
+
+    def _show_group(self, key: tuple) -> None:
+        session = self.session
+        if session is None:
+            return
+        if key[0] == "track":
+            track = self.tracks[key[1]]
+            group = next(g for g in session.groups if track in g.tracks)
+            s = track.stats
+            title = track.name
+            subtitle = (f"Track of {group.label} · {s.distance_m / 1000:.1f} km · "
+                        f"↑ {s.ascent_m:.0f} m")  # fmt: skip
+        else:
+            group = session.group(key[1])
+            total = sum(t.stats.distance_m for t in group.tracks)
+            title = group.label
+            subtitle = f"Track group · {len(group.tracks)} tracks · {total / 1000:.1f} km"
+        sections = [f"Tracks: {group.label}", f"Tracks: {group.label} – colours"]
+        self.inspector.show_item(title, subtitle, "path", sections)
+
     def show_scene_item(self, kind: str, index: int) -> None:
-        """The inspector shows the settings of a POI or a photo."""
-        items = self.scene.pois if kind == "poi" else self.scene.photos
+        """The inspector shows the form and the settings of a POI or a photo."""
+        editor = self.poi_editor if kind == "poi" else self.photo_editor
+        items = editor.items()
         if not 0 <= index < len(items):
             return
         item = items[index]
+        editor.select(index)
         if kind == "poi":
-            self.inspector.show_item(item.name, "Point of interest", "map-pin",
-                                     [f"POI: {item.name}"])  # fmt: skip
+            what = next((k.name for k in KINDS if k.icon == item.icon), "custom icon")
+            self.inspector.show_item(item.name, f"Point of interest · {what}", "map-pin",
+                                     [f"POI: {item.name}"], top=editor)  # fmt: skip
         else:
-            self.inspector.show_item(item.name, "Photo", "image", [f"Photo: {item.name}"])
+            self.inspector.show_item(item.name, f"Photo · {item.path}", "image",
+                                     [f"Photo: {item.name}"], top=editor)  # fmt: skip
+
+    def add_gpx_dialog(self) -> None:
+        if self.project is None:
+            QMessageBox.information(self, "Add GPX files", "Open or create a project first.")
+            return
+        paths, _ = QFileDialog.getOpenFileNames(self, "Add GPX files", str(Path.home()),
+                                                "GPX files (*.gpx)")  # fmt: skip
+        self.add_gpx_files([Path(p) for p in paths])
+
+    def add_gpx_files(self, paths: list[Path]) -> None:
+        """Copy GPX files into the project's GPX folder and load them."""
+        import shutil
+
+        if self.project is None or not paths:
+            return
+        folder = self.project.gpx_dir
+        if not folder.is_dir():  # (a single file or a pattern: the files go next to it)
+            folder = folder.parent
+        folder.mkdir(parents=True, exist_ok=True)
+        for path in paths:
+            target = folder / path.name
+            if path.resolve() != target.resolve():
+                shutil.copy2(path, target)
+        self._reload_project()
+
+    def drop_paths(self, paths: list[Path]) -> None:
+        """Dropped files: a project folder opens, GPX files join the project, pictures
+        become photos."""
+        for folder in [p for p in paths if p.is_dir()]:
+            if (folder / "earthling.toml").exists():
+                self.open_project(folder)
+                return
+        gpx = [p for p in paths if p.suffix.lower() == ".gpx"]
+        if gpx:
+            self.add_gpx_files(gpx)
+        for picture in [p for p in paths if p.suffix.lower() in PHOTO_SUFFIXES]:
+            self.photo_editor.add_photo(picture)
 
     def hiker_lonlat(self) -> tuple[float, float] | None:
         """(lon, lat) of the head of the drawn track."""
@@ -627,7 +726,10 @@ class MainWindow(QMainWindow):
         if self.scene.camera and not has_camera_keys:
             self.viewport.restore_camera_state(self.scene.camera)
         self._restore_ui_state()
-        self.poi_dock.refresh()
+        self.poi_editor.refresh()
+        self.photo_editor.refresh()
+        self.scene_list.refresh()
+        self.inspector.show_category("camera")
         self._pois_changed()
         self._update_title()
         if problems:

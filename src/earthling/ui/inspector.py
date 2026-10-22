@@ -249,6 +249,7 @@ class Inspector(QWidget):
         self.rows: dict[str, PropertyRow] = {}
         self.sections: dict[str, SectionView] = {}
         self._section_state: dict[str, tuple[bool, bool, str | None]] = {}
+        self._shown_top: QWidget | None = None
         self._build()
         self._unsubscribe = store.subscribe(self._on_store_changed)
         self._counts_timer = QTimer(self, singleShot=True, interval=0)
@@ -384,6 +385,11 @@ class Inspector(QWidget):
     def rebuild(self) -> None:
         """Rebuild the shown sections (category, item, or search / filter results)."""
         self._remember_sections()
+        # an item's form belongs to the application: take it out before the view is deleted
+        previous_top = self._shown_top
+        if previous_top is not None:
+            previous_top.setParent(self)
+        self._shown_top = None
         self.editors.clear()
         self.rows.clear()
         self.sections.clear()
@@ -400,6 +406,8 @@ class Inspector(QWidget):
         else:
             self._build_category(layout)
         layout.addStretch()
+        if previous_top is not None and previous_top is not (self.item or {}).get("top"):
+            previous_top.hide()
         old = self.scroll.takeWidget()
         self.scroll.setWidget(container)
         if old is not None:
@@ -428,6 +436,8 @@ class Inspector(QWidget):
         self._set_header(item["icon"], item["title"], item["subtitle"])
         if item["top"] is not None:
             layout.addWidget(item["top"])
+            item["top"].show()
+            self._shown_top = item["top"]
         by_title = dict(self.all_sections())
         for title in item["sections"]:
             if title in by_title:
@@ -505,7 +515,7 @@ class Inspector(QWidget):
         if not flat:
             state = self._section_state.get(title)
             if state is None:  # map styles not on a slot start collapsed
-                state = (self._relevant(title, defs), False, None)
+                state = (self.item is not None or self._relevant(title, defs), False, None)
             open_, more, tab = state
             section.set_open(open_)
             section.more_open = more

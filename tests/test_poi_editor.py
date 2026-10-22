@@ -3,17 +3,17 @@ import pytest
 from earthling.core.pois import Poi
 
 
-def test_poi_dock_add_edit_remove_with_undo(qtbot):
+def test_poi_editor_add_edit_remove_with_undo(qtbot):
     from earthling.app.main_window import MainWindow
 
     window = MainWindow()
     qtbot.addWidget(window)
-    dock = window.poi_dock
+    dock = window.poi_editor
     scene = window.scene
     dock.add_poi(6.9, 45.9, "Coffee stop")
     assert [p.id for p in scene.pois] == ["coffee_stop"]
     assert "poi.coffee_stop.effect" in window.property_panel.editors  # own panel section
-    assert dock.list.count() == 1
+    assert window.scene_list.current_key() == ("poi", 0)  # selected
     dock.caption.setText("Cappuccino!")
     dock._edit_field("caption", "Cappuccino!")
     assert scene.pois[0].caption == "Cappuccino!"
@@ -24,7 +24,7 @@ def test_poi_dock_add_edit_remove_with_undo(qtbot):
     dock._move_to(7.0, 46.0)
     assert (scene.pois[0].lon, scene.pois[0].lat) == (7.0, 46.0)
     dock.add_poi(6.8, 45.8, "Closed path")
-    dock.list.setCurrentRow(1)
+    dock.select(1)
     dock._remove()
     assert [p.id for p in scene.pois] == ["coffee_stop"]
     stack = window.undo_stack
@@ -44,7 +44,7 @@ def test_poi_dock_add_edit_remove_with_undo(qtbot):
     window.undo_stack.setClean()
 
 
-def test_scene_load_restores_pois_in_the_dock(qtbot, tmp_path):
+def test_scene_load_restores_pois_in_the_scene_list(qtbot, tmp_path):
     from earthling.app.main_window import MainWindow
     from earthling.core.scene import Scene
 
@@ -54,6 +54,7 @@ def test_scene_load_restores_pois_in_the_dock(qtbot, tmp_path):
     window = MainWindow()
     qtbot.addWidget(window)
     assert window.load_scene(path)
-    assert window.poi_dock.list.count() == 1 and window.poi_dock.name.text() == "Camp"
+    window.scene_list.select(("poi", 0))
+    assert window.poi_editor.name.text() == "Camp"
     assert "poi.camp.visible" in window.property_panel.editors
     window.undo_stack.setClean()

@@ -315,6 +315,13 @@ QToolButton#look {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border
 QToolButton#look:hover {{ border-color: #46505F; color: {TEXT}; }}
 QToolButton#crumb {{ color: {TEXT_3}; font-size: 12px; padding: 5px 4px; text-align: left; }}
 QToolButton#crumb:hover {{ color: {ACCENT_TEXT}; background: transparent; }}
+#sceneHeader {{ border-bottom: 1px solid {LINE}; }}
+QLabel#panelTitle {{ font-weight: 600; }}
+QTreeView#sceneTree {{ padding: 4px; }}
+QTreeView#sceneTree::item {{ padding: 4px 2px; }}
+QLabel#dropHint {{ color: {TEXT_3}; font-size: 12px; border: 1px dashed {LINE_STRONG};
+    border-radius: 10px; padding: 12px; margin: 8px; }}
+#itemEditor, #poiEditor, #photoEditor {{ border-bottom: 1px solid {LINE}; }}
 QToolButton#pin {{ padding: 2px; }}
 QToolButton#pin:checked {{ background: transparent; }}
 """

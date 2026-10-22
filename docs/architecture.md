@@ -105,7 +105,7 @@ places, track numbering, the look of a series) and usually starts with
 
 The application offers the same generators (`app/generators.py`, the Animation menu: camera,
 drawing the tracks, the sun, still seconds) as undoable keys, and the POI and Photos docks
-place items at coordinates, the hiker, a click or a track point (`app/item_dock.py`,
+place items at coordinates, the hiker, a click or a track point (`app/item_editor.py`,
 `app/place_dialog.py`).
 
 The workflow for a video: run the scene script, check stills

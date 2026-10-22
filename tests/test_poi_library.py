@@ -60,7 +60,7 @@ def test_new_poi_of_a_kind_and_by_place(qtbot, monkeypatch):
 
     window = MainWindow()
     qtbot.addWidget(window)
-    dock = window.poi_dock
+    dock = window.poi_editor
     km = next(k for k in KINDS if k.name == "30 km")
     poi = dock.add_poi(7.0, 46.0, kind=km)
     assert (poi.icon, poi.caption, poi.name) == (BADGE, "30 km", "30 km")

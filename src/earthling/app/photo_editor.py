@@ -1,6 +1,7 @@
-"""Photos dock: pictures shown on the screen (with a frame, a shadow and a slow zoom). A photo
-can know where it was taken (EXIF GPS, or its EXIF time on the tracks) to appear when the drawn
-line reaches that place; placement, size and the fades are properties (see app/item_dock.py)."""
+"""Photos: pictures shown on the screen (with a frame, a shadow and a slow zoom). A photo can
+know where it was taken (EXIF GPS, or its EXIF time on the tracks) to appear when the drawn
+line reaches that place; placement, size and the fades are its settings in the inspector
+(see app/item_editor.py)."""
 
 from __future__ import annotations
 
@@ -8,9 +9,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtWidgets import QFileDialog, QFormLayout, QLabel, QLineEdit, QPushButton, QWidget
+from PyQt6.QtWidgets import QFileDialog, QFormLayout, QLabel, QLineEdit, QWidget
 
-from earthling.app.item_dock import SceneItemDock
+from earthling.app.item_editor import SceneItemEditor, icon_button
 from earthling.core.photos import Photo, read_exif
 from earthling.core.pois import slug
 from earthling.render.photos import resolve_photo
@@ -19,39 +20,29 @@ from earthling.ui.widgets import row
 PHOTO_FILTER = "Images (*.jpg *.jpeg *.png *.webp *.tif *.tiff)"
 
 
-class PhotoDock(SceneItemDock):
+class PhotoEditor(SceneItemEditor):
     ATTR, PREFIX, NOUN, ITEM = "photos", "photo.", "Photo", Photo
-    NOTE = ("Placement, size, the fade (opacity keys or 'Appear when the line reaches…') are in "
-            "the photo's section of the parameter panel.")  # fmt: skip
 
     def __init__(self, scene, undo_stack, hiker_position, request_pick, base_dir, parent=None,
                  choose_place=None, place_at_time: Callable | None = None) -> None:  # fmt: skip
         """``place_at_time(datetime) -> (lon, lat) | None``: where the tracks were at that time
         (photos without GPS)."""
         self.place_at_time = place_at_time
-        super().__init__("Photos", scene, undo_stack, hiker_position, request_pick, base_dir,
-                         parent, choose_place)  # fmt: skip
-        self.setObjectName("photo_dock")
-
-    def _add_buttons(self) -> list[QPushButton]:
-        self.add_files = QPushButton("+ Photos…")
-        self.add_files.setToolTip(
-            "Add pictures; they are placed where they were taken "
-            "(EXIF GPS, or their time on the tracks), else at the hiker"
-        )
-        return [self.add_files]
+        super().__init__(scene, undo_stack, hiker_position, request_pick, base_dir, parent,
+                         choose_place)  # fmt: skip
+        self.setObjectName("photoEditor")
 
     def _form_rows(self, form: QFormLayout) -> list[QWidget]:
         self.name = QLineEdit()
         self.file = QLabel()
+        self.file.setObjectName("dim")
         self.file.setWordWrap(True)
-        self.change_file = QPushButton("Change…")
+        self.change_file = icon_button("image", "Change…", "Another picture for this photo")
         form.addRow("Name", self.name)
         form.addRow("File", row((self.file, 1), self.change_file))
         return [self.name, self.change_file]
 
     def _connect_fields(self) -> None:
-        self.add_files.clicked.connect(self._add_dialog)
         self.change_file.clicked.connect(self._change_file)
         self.name.editingFinished.connect(lambda: self._edit_field("name", self.name.text()))
 
@@ -64,7 +55,7 @@ class PhotoDock(SceneItemDock):
         self.file.setText(photo.path)
 
     # --- adding ---------------------------------------------------------------------------
-    def _add_dialog(self) -> None:
+    def add_dialog(self) -> None:
         start = str(self.base_dir() or Path.home())
         paths, _ = QFileDialog.getOpenFileNames(self, "Photos", start, PHOTO_FILTER)
         for path in paths:
