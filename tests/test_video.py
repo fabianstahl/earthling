@@ -69,6 +69,7 @@ def test_export_dialog_writes_video(qtbot, tmp_path):
 
     window = MainWindow()
     qtbot.addWidget(window)
+    window.show_start(False)  # (the viewport sets up GL when it is shown)
     window.show()
     qtbot.waitUntil(lambda: window.viewport.renderer is not None, timeout=5000)
     dialog = ExportDialog(window)

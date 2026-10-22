@@ -357,6 +357,24 @@ QToolButton#overlayButton:hover {{ color: #FFFFFF; background: rgba(255, 255, 25
 QToolButton#overlayButton:checked {{ background: rgba(77, 159, 255, 56); color: #FFFFFF; }}
 QLabel#overlayLabel {{ background: rgba(15, 18, 23, 205); border: 1px solid rgba(255, 255, 255, 26);
     border-radius: 10px; color: {TEXT_2}; font-size: 12px; padding: 5px 10px; }}
+#startLeft {{ background: {PANEL}; border-right: 1px solid {LINE}; }}
+#startRight, #startScreen {{ background: {GROUND}; }}
+QLabel#startLogo {{ background: {ACCENT_BG}; border-radius: 12px; }}
+QLabel#startName {{ font-size: 28px; font-weight: 700; }}
+QLabel#startTitle {{ font-size: 16px; font-weight: 600; }}
+QLabel#startHeading {{ font-size: 15px; font-weight: 600; }}
+QFrame#dropZone {{ background: #171B21; border: 1.5px dashed #3A4352; border-radius: 14px; }}
+QPushButton#startOption {{ background: transparent; border: 1px solid #2A313C; border-radius: 10px;
+    text-align: left; }}
+QPushButton#startOption:hover {{ background: {FIELD}; }}
+QPushButton#projectCard {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 12px;
+    text-align: left; padding: 0; }}
+QPushButton#projectCard:hover {{ border-color: #3C4656; }}
+QLabel#cardPicture {{ background: {FIELD}; border-top-left-radius: 12px;
+    border-top-right-radius: 12px; }}
+QFrame#startStep {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 12px; }}
+QLabel#stepNumber {{ background: {HOVER}; border-radius: 14px; font-weight: 600; }}
+QToolButton#startLink {{ color: {TEXT_2}; font-size: 12.5px; }}
 QToolButton#pin {{ padding: 2px; }}
 QToolButton#pin:checked {{ background: transparent; }}
 """

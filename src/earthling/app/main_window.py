@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QStackedWidget,
     QToolBar,
     QUndoView,
     QWidget,
@@ -31,6 +32,7 @@ from earthling.app.photo_editor import PhotoEditor
 from earthling.app.plan_dialog import PlanDialog
 from earthling.app.poi_editor import PoiEditor
 from earthling.app.scene_list import PHOTO_SUFFIXES, SceneList
+from earthling.app.start_screen import StartScreen
 from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.undo import set_property
@@ -85,7 +87,12 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._build_toolbar()
         self.viewport = Viewport(dev_mode=dev_mode)
-        self.setCentralWidget(self.viewport)
+        show_start = self.settings.value("start/show", True) not in (False, "false")
+        self.start_screen = StartScreen(self._recent(), show_start)
+        self.central = QStackedWidget()
+        self.central.addWidget(self.start_screen)
+        self.central.addWidget(self.viewport)
+        self.setCentralWidget(self.central)
         self.viewport.set_store(self.scene.store)
         self.viewport.pose_provider = self._animated_pose
         app = QApplication.instance()
@@ -99,6 +106,8 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.data_changed.connect(self._reload_terrain)
         self.statusBar().showMessage("Ready")
+        self._connect_start_screen()
+        self.show_start(show_start)
 
     def _build_docks(self) -> None:
         """Parameters, history, timeline, tracks and POI docks (each listed in the View menu)."""
@@ -217,6 +226,8 @@ class MainWindow(QMainWindow):
             QKeySequence.StandardKey.Open, "folder-open",
         )  # fmt: skip
         self.recent_menu = self.file_menu.addMenu("Open &Recent")
+        self._add_action(self.file_menu, "Start Scree&n", lambda: self.show_start(True), None,
+                         "house-line")  # fmt: skip
         self._add_action(self.file_menu, "Re&load Project", self._reload_project, "F5",
                          "arrows-clockwise")  # fmt: skip
         self.settings_action = self._add_action(
@@ -443,6 +454,78 @@ class MainWindow(QMainWindow):
     def _pois_changed(self) -> None:
         self.viewport.set_pois(self.scene.pois, self._scene_dir(), self.scene.animation)
         self.viewport.set_photos(self.scene.photos, self._scene_dir())
+
+    # --- start screen ---------------------------------------------------------------------
+    def _connect_start_screen(self) -> None:
+        start = self.start_screen
+        start.open_requested.connect(self.open_project)
+        start.new_requested.connect(self.new_project_from_gpx)
+        start.choose_new.connect(self._choose_new_project_gpx)
+        start.browse_requested.connect(self._open_project_dialog)
+        start.continue_requested.connect(lambda: self.show_start(False))
+        start.shortcuts_requested.connect(self.show_shortcuts)
+        start.show_switch.toggled.connect(lambda v: self.settings.setValue("start/show", v))
+
+    def show_start(self, on: bool) -> None:
+        """The start screen instead of the viewport, the docks and the toolbar."""
+        if on:
+            self.start_screen.set_recent(self._recent())
+        if on == getattr(self, "_start_shown", None):
+            return
+        self._start_shown = on
+        docks = [self.scene_dock, self.parameters_dock, self.timeline_dock, self.tracks_dock]
+        if on:
+            self._hidden_docks = [d for d in docks if not d.isHidden()]
+            for dock in docks:
+                dock.hide()
+            self.toolbar.hide()
+            self.central.setCurrentWidget(self.start_screen)
+        else:
+            for dock in getattr(self, "_hidden_docks", docks):
+                dock.show()
+            self._hidden_docks = []
+            self.toolbar.show()
+            self.central.setCurrentWidget(self.viewport)
+            self.timeline_dock.raise_()
+
+    def _choose_new_project_gpx(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(self, "GPX files for the new project",
+                                                str(Path.home()), "GPX files (*.gpx)")  # fmt: skip
+        if paths:
+            self.new_project_from_gpx([Path(p) for p in paths])
+
+    def new_project_from_gpx(self, paths: list[Path], folder: Path | None = None) -> bool:
+        """A new project in ``folder`` (asked for) with copies of the GPX files, opened."""
+        import shutil
+
+        if folder is None:
+            start = str(paths[0].parent) if paths else str(Path.home())
+            chosen = QFileDialog.getExistingDirectory(
+                self, "Folder for the new project (empty or new)", start
+            )
+            if not chosen:
+                return False
+            folder = Path(chosen)
+        project = Project.create(folder)
+        project.gpx_dir.mkdir(parents=True, exist_ok=True)
+        for path in paths:
+            shutil.copy2(path, project.gpx_dir / path.name)
+        return self.open_project(project.folder)
+
+    def _save_thumbnail(self) -> None:
+        """A small picture of the view for the start screen's recent projects."""
+        from earthling.app.start_screen import thumbnail_path
+
+        if self.project is None or self.viewport.renderer is None or not self.viewport.isVisible():
+            return
+        image = self.viewport.grabFramebuffer()
+        if image.isNull():
+            return
+        path = thumbnail_path(self.project.folder)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        image.scaledToWidth(480, Qt.TransformationMode.SmoothTransformation).save(
+            str(path), "JPG", 85
+        )
 
     # --- command palette ------------------------------------------------------------------
     def show_palette(self, text: str = "") -> None:
@@ -778,6 +861,7 @@ class MainWindow(QMainWindow):
     def _set_session(self, session: Session) -> None:
         project = session.project
         self.session = session
+        self.show_start(False)
         self._remember_recent(project.folder)
         self._update_title()
         self.tracks_dock.set_tracks(session.all_tracks)
@@ -897,6 +981,7 @@ class MainWindow(QMainWindow):
             return False
         self.undo_stack.setClean()
         self._update_title()
+        self._save_thumbnail()
         self.statusBar().showMessage(f"Saved {saved}", 4000)
         return True
 
@@ -1087,6 +1172,7 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard():
             event.ignore()
             return
+        self._save_thumbnail()
         self.viewport.shutdown()
         # editors must not report edits while Qt destroys them (focus moves, lists clear)
         for widget in (self.inspector, self.poi_editor, self.photo_editor, self.scene_list):
