@@ -11,7 +11,7 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from PyQt6.QtCore import QSettings, QSize, Qt, QTimer, pyqtSignal
@@ -19,10 +19,12 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QScrollArea,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -50,7 +52,6 @@ class Category:
     icon: str
     subtitle: str
     sections: tuple[str, ...] = ()  # section titles, or prefixes ending in ": "
-    looks: tuple = field(default=(), compare=False)  # filled by the application
 
 
 CATEGORIES = [
@@ -115,6 +116,13 @@ def category_of(title: str) -> Category | None:
             if title == name or (name.endswith(": ") and title.startswith(name)):
                 return category
     return OTHER
+
+
+def section_rank(category: Category, title: str) -> int:
+    for i, name in enumerate(category.sections):
+        if title == name or (name.endswith(": ") and title.startswith(name)):
+            return i
+    return len(category.sections)
 
 
 def section_display(title: str) -> str:
@@ -252,6 +260,7 @@ class Inspector(QWidget):
         self._section_state: dict[str, tuple[bool, bool, str | None]] = {}
         self._shown_top: QWidget | None = None
         self.reveal_item: Callable[[str], bool] | None = None  # shows an item's section
+        self.looks: dict[str, list] = {}  # category id -> looks (name, icon, tooltip, apply)
         self._build()
         self._unsubscribe = store.subscribe(self._on_store_changed)
         self._counts_timer = QTimer(self, singleShot=True, interval=0)
@@ -457,11 +466,12 @@ class Inspector(QWidget):
         category = next((c for c in self.categories() if c.id == self.category), CATEGORIES[0])
         self.rail.set_current(category.id)
         self._set_header(category.icon, category.title, category.subtitle)
-        if category.looks:
-            layout.addWidget(self._looks(category))
-        for title, defs in self.all_sections():
-            if category_of(title) is category:
-                self._add_section(layout, title, defs, section_display(title))
+        if self.looks.get(category.id):
+            layout.addWidget(self._looks(self.looks[category.id]))
+        mine = [(t, defs) for t, defs in self.all_sections() if category_of(t) is category]
+        mine.sort(key=lambda s: section_rank(category, s[0]))  # (the category's order)
+        for title, defs in mine:
+            self._add_section(layout, title, defs, section_display(title))
 
     def _build_item(self, layout: QVBoxLayout) -> None:
         item = self.item
@@ -513,7 +523,7 @@ class Inspector(QWidget):
             empty.setContentsMargins(24, 40, 24, 40)
             layout.addWidget(empty)
 
-    def _looks(self, category: Category) -> QWidget:
+    def _looks(self, looks: list) -> QWidget:
         box = QWidget()
         box.setObjectName("looks")
         column = QVBoxLayout(box)
@@ -522,9 +532,10 @@ class Inspector(QWidget):
         caption = QLabel("Looks · one click sets the whole category (undoable)")
         caption.setObjectName("dim")
         column.addWidget(caption)
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        for look in category.looks:
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(6)
+        for i, look in enumerate(looks):
             b = QToolButton()
             b.setObjectName("look")
             b.setText(look.name)
@@ -532,10 +543,10 @@ class Inspector(QWidget):
             b.setIconSize(QSize(14, 14))
             b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             b.setToolTip(look.tooltip)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             b.clicked.connect(lambda _=False, lk=look: lk.apply())
-            row.addWidget(b)
-        row.addStretch()
-        column.addLayout(row)
+            grid.addWidget(b, i // 3, i % 3)
+        column.addLayout(grid)
         return box
 
     def _add_section(self, layout, title: str, defs: list[PropertyDef], display: str,

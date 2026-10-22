@@ -26,6 +26,7 @@ from earthling import __version__
 from earthling.app.download_dialog import DownloadDialog
 from earthling.app.goto_dialog import GoToDialog
 from earthling.app.keyframing import KeyframeEditor
+from earthling.app.looks import make_looks
 from earthling.app.photo_editor import PhotoEditor
 from earthling.app.plan_dialog import PlanDialog
 from earthling.app.poi_editor import PoiEditor
@@ -151,6 +152,9 @@ class MainWindow(QMainWindow):
             editor.changed.connect(self._pois_changed)
             editor.current_changed.connect(lambda i, k=kind: self._select_item(k, i))
         self.inspector.reveal_item = self._reveal_item
+        self.looks = make_looks(self)
+        self.inspector.looks = self.looks
+        self.inspector.rebuild()
         self.scene_list = SceneList(self)
         self.scene_list.selected.connect(self._scene_selected)
         self.scene_dock = self._add_dock(area.LeftDockWidgetArea, QDockWidget("Scene", self),
@@ -467,7 +471,13 @@ class MainWindow(QMainWindow):
         return out
 
     def _look_entries(self) -> list:
-        return []
+        from earthling.ui.inspector import CATEGORIES
+        from earthling.ui.palette import Entry
+
+        titles = {c.id: c.title for c in CATEGORIES}
+        return [Entry("Looks", look.name, f"Look · {titles[cid]} (undoable)", look.icon,
+                      look.apply, "Look", look.tooltip)
+                for cid, looks in self.looks.items() for look in looks]  # fmt: skip
 
     def _help_entries(self) -> list:
         from PyQt6.QtCore import QUrl

@@ -685,7 +685,7 @@ class PropertyRow(QWidget):
         self.full_label = label
         metrics = QFontMetrics(theme.ui_font(12.5))
         shown = metrics.elidedText(label, Qt.TextElideMode.ElideRight, LABEL_WIDTH - 2)
-        self.label = QLabel(shown.replace("&", "&&"))
+        self.label = QLabel(shown)
         self.label.setObjectName("rowLabel")
         self.label.setFixedWidth(LABEL_WIDTH)
         tip = d.tooltip or d.label
