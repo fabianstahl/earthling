@@ -126,7 +126,7 @@ class StartScreen(QWidget):
         return left
 
     def _drop_zone(self) -> QWidget:
-        zone = QFrame()
+        zone = self.drop_zone = QFrame()
         zone.setObjectName("dropZone")
         box = QVBoxLayout(zone)
         box.setContentsMargins(24, 30, 24, 30)
@@ -275,11 +275,22 @@ class StartScreen(QWidget):
         return step
 
     # --- drops ------------------------------------------------------------------------
+    def set_drop_active(self, on: bool) -> None:
+        """The drop zone lights up while files are dragged over the screen."""
+        self.drop_zone.setProperty("active", on)
+        self.drop_zone.style().unpolish(self.drop_zone)
+        self.drop_zone.style().polish(self.drop_zone)
+
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
+            self.set_drop_active(True)
+
+    def dragLeaveEvent(self, event) -> None:
+        self.set_drop_active(False)
 
     def dropEvent(self, event) -> None:
+        self.set_drop_active(False)
         paths = [Path(u.toLocalFile()) for u in event.mimeData().urls() if u.isLocalFile()]
         folders = [p for p in paths if p.is_dir() and (p / "earthling.toml").exists()]
         if folders:

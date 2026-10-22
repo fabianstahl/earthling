@@ -11,13 +11,12 @@ from contextlib import suppress
 from functools import cache
 from pathlib import Path
 
-from PyQt6.QtCore import QByteArray, QPointF, QRect, QRectF, QSize, Qt
+from PyQt6.QtCore import QByteArray, QRectF, Qt
 from PyQt6.QtGui import (
     QColor,
     QFont,
     QFontDatabase,
     QIcon,
-    QIconEngine,
     QImage,
     QPainter,
     QPalette,
@@ -98,53 +97,30 @@ def render_icon(name: str, size: int, color: str | QColor) -> QImage:
     return image
 
 
-class _TintedIcon(QIconEngine):
-    """Draws a Phosphor icon sharply at any size, coloured by mode and state."""
-
-    def __init__(self, name: str, colors: dict[str, str]) -> None:
-        super().__init__()
-        self.name = name
-        self.colors = colors
-
-    def _color(self, mode: QIcon.Mode, state: QIcon.State) -> str:
-        if mode == QIcon.Mode.Disabled:
-            return self.colors["disabled"]
-        if state == QIcon.State.On and "on" in self.colors:
-            return self.colors["on"]
-        if mode in (QIcon.Mode.Active, QIcon.Mode.Selected):
-            return self.colors["active"]
-        return self.colors["normal"]
-
-    def paint(self, painter: QPainter, rect: QRect, mode, state) -> None:
-        ratio = painter.device().devicePixelRatioF() if painter.device() else 1.0
-        side = min(rect.width(), rect.height())
-        image = render_icon(self.name, max(1, round(side * ratio)), self._color(mode, state))
-        image.setDevicePixelRatio(ratio)
-        x = rect.x() + (rect.width() - side) / 2
-        y = rect.y() + (rect.height() - side) / 2
-        painter.drawImage(QPointF(x, y), image)
-
-    def pixmap(self, size: QSize, mode, state) -> QPixmap:
-        side = min(size.width(), size.height())
-        return QPixmap.fromImage(render_icon(self.name, max(1, side), self._color(mode, state)))
-
-    def scaledPixmap(self, size: QSize, mode, state, scale: float) -> QPixmap:  # noqa: N802
-        side = max(1, round(min(size.width(), size.height()) * scale))
-        pixmap = QPixmap.fromImage(render_icon(self.name, side, self._color(mode, state)))
-        pixmap.setDevicePixelRatio(scale)
-        return pixmap
-
-    def clone(self) -> QIconEngine:
-        return _TintedIcon(self.name, dict(self.colors))
+ICON_SIZES = (16, 24, 32, 48, 64)  # device pixels; Qt scales the nearest one down
 
 
+@cache
 def icon(name: str, color: str = TEXT_2, active: str = TEXT, on: str | None = None) -> QIcon:
-    """A Phosphor icon (file name without .svg). ``on``: colour of checked buttons."""
-    colors = {"normal": color, "active": active, "disabled": qcolor(TEXT_3, 110).name(
-        QColor.NameFormat.HexArgb)}  # fmt: skip
-    if on is not None:
-        colors["on"] = on
-    return QIcon(_TintedIcon(name, colors))
+    """A Phosphor icon (file name without .svg), tinted per state; ``on``: colour of checked
+    buttons. Plain pixmaps (cached): a Python QIconEngine is unsafe, Qt copies engines through
+    clone() and PyQt may free the copy while Qt still uses it."""
+    disabled = qcolor(TEXT_3, 110)
+    result = QIcon()
+    for side in ICON_SIZES:
+        for mode, tint in (
+            (QIcon.Mode.Normal, color),
+            (QIcon.Mode.Active, active),
+            (QIcon.Mode.Selected, active),
+            (QIcon.Mode.Disabled, disabled),
+        ):
+            pixmap = QPixmap.fromImage(render_icon(name, side, tint))
+            result.addPixmap(pixmap, mode, QIcon.State.Off)
+            checked = on if on is not None and mode != QIcon.Mode.Disabled else tint
+            result.addPixmap(
+                QPixmap.fromImage(render_icon(name, side, checked)), mode, QIcon.State.On
+            )
+    return result  # fmt: skip
 
 
 def tool_icon(name: str) -> QIcon:
@@ -364,6 +340,7 @@ QLabel#startName {{ font-size: 28px; font-weight: 700; }}
 QLabel#startTitle {{ font-size: 16px; font-weight: 600; }}
 QLabel#startHeading {{ font-size: 15px; font-weight: 600; }}
 QFrame#dropZone {{ background: #171B21; border: 1.5px dashed #3A4352; border-radius: 14px; }}
+QFrame#dropZone[active="true"] {{ background: #16253A; border: 1.5px solid {ACCENT}; }}
 QPushButton#startOption {{ background: transparent; border: 1px solid #2A313C; border-radius: 10px;
     text-align: left; }}
 QPushButton#startOption:hover {{ background: {FIELD}; }}
