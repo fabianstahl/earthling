@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QApplication
 
 from earthling.app.main_window import MainWindow
 from earthling.app.viewport import configure_default_surface_format
+from earthling.ui import theme
 
 
 def run_gui(project: str | None = None, dev_mode: bool = False) -> int:
@@ -17,6 +18,7 @@ def run_gui(project: str | None = None, dev_mode: bool = False) -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Earthling")
     app.setOrganizationName("Earthling")
+    theme.apply(app)
     window = MainWindow(dev_mode=dev_mode)
     window.show()
     if project:

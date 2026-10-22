@@ -12,12 +12,13 @@ from PyQt6.QtWidgets import QMenu
 
 from earthling.app.keyframing import KeyframeEditor, KeyRef
 from earthling.core.animation import INTERP_LABELS, Curve, Interp
+from earthling.ui import theme
 
 KEY_RADIUS = 5.0
-KEY_COLOR = QColor(240, 190, 60)
-KEY_OUTLINE = QColor(30, 30, 30)
+KEY_COLOR = QColor(theme.KEY)
+KEY_OUTLINE = QColor(theme.GROUND)
 SELECTED_COLOR = QColor(255, 255, 255)
-PLAYHEAD_COLOR = QColor(90, 170, 255)
+PLAYHEAD_COLOR = QColor(theme.ACCENT)
 ADDITIVE = Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier
 
 
@@ -34,7 +35,7 @@ def all_keys(curves: Iterable[tuple[str, Curve]]) -> set[KeyRef]:
 def paint_band(p: QPainter, band: QRectF) -> None:
     """The rubber band of a box selection."""
     p.setPen(QPen(PLAYHEAD_COLOR, 1, Qt.PenStyle.DashLine))
-    p.setBrush(QColor(90, 170, 255, 40))
+    p.setBrush(theme.qcolor(theme.ACCENT, 40))
     p.drawRect(band)
 
 

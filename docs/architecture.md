@@ -20,7 +20,8 @@ src/earthling/
   export/     offscreen frames, stills, video encoding (ffmpeg), video QA
   scenekit/   helpers for scene scripts (Python files that build scenes)
   app/        PyQt6 application: main window, viewport, dialogs, docks, controllers
-  ui/         reusable Qt widgets: property panel, timeline, dope sheet, graph editor
+  ui/         reusable Qt widgets: theme (colour tokens, Inter, Phosphor icons), property
+              panel, timeline, dope sheet, graph editor
   cli.py      `earthling gui | plan | fetch | render | stills | qa | check-source`
 ```
 

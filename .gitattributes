@@ -2,3 +2,4 @@
 *.png binary
 *.tif binary
 *.npy binary
+*.ttf binary

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from PyQt6 import sip
-from PyQt6.QtCore import QByteArray, QSettings, Qt, pyqtSignal
+from PyQt6.QtCore import QByteArray, QSettings, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QUndoCommand, QUndoStack
 from PyQt6.QtWidgets import (
     QApplication,
@@ -15,7 +15,11 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QToolBar,
     QUndoView,
+    QWidget,
 )
 
 from earthling import __version__
@@ -37,6 +41,7 @@ from earthling.core.scene import DEFAULT_SCENE_NAME, Scene, SceneError
 from earthling.data.jobs import download_jobs
 from earthling.render.camera_rig import CameraRig
 from earthling.session import Session
+from earthling.ui import theme
 from earthling.ui.dope_sheet import KeyButton
 from earthling.ui.property_panel import PropertyPanel
 from earthling.ui.timeline_widget import TimelineWidget
@@ -74,6 +79,7 @@ class MainWindow(QMainWindow):
         self.settings = QSettings()
         self.resize(1600, 1000)
         self._build_menus()
+        self._build_toolbar()
         self.viewport = Viewport(dev_mode=dev_mode)
         self.setCentralWidget(self.viewport)
         self.viewport.set_store(self.scene.store)
@@ -165,68 +171,89 @@ class MainWindow(QMainWindow):
         bar = self.menuBar()
         self.file_menu = bar.addMenu("&File")
         self._add_action(
-            self.file_menu, "&New Project…", self._new_project, QKeySequence.StandardKey.New
-        )
-        self._add_action(
+            self.file_menu, "&New Project…", self._new_project, QKeySequence.StandardKey.New,
+            "file-plus",
+        )  # fmt: skip
+        self.open_action = self._add_action(
             self.file_menu, "&Open Project Folder…", self._open_project_dialog,
-            QKeySequence.StandardKey.Open,
+            QKeySequence.StandardKey.Open, "folder-open",
         )  # fmt: skip
         self.recent_menu = self.file_menu.addMenu("Open &Recent")
-        self._add_action(self.file_menu, "Re&load Project", self._reload_project, "F5")
-        self._add_action(self.file_menu, "Project Se&ttings…", self.edit_settings, "Ctrl+,")
-        self._add_action(self.file_menu, "New &Line…", self.new_line)
+        self._add_action(self.file_menu, "Re&load Project", self._reload_project, "F5",
+                         "arrows-clockwise")  # fmt: skip
+        self.settings_action = self._add_action(
+            self.file_menu, "Project Se&ttings…", self.edit_settings, "Ctrl+,", "gear-six"
+        )
+        self._add_action(self.file_menu, "New &Line…", self.new_line, None, "path")
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "Open &Scene…", self._open_scene_dialog)
-        self._add_action(
-            self.file_menu, "&Save Scene", lambda: self.save_scene(), QKeySequence.StandardKey.Save
-        )
+        self.save_action = self._add_action(
+            self.file_menu, "&Save Scene", lambda: self.save_scene(), QKeySequence.StandardKey.Save,
+            "floppy-disk",
+        )  # fmt: skip
         self._add_action(self.file_menu, "Save Scene &As…", self.save_scene_as, "Ctrl+Shift+S")
         self._add_action(self.file_menu, "Re&vert Scene", self._revert_scene)
         self.file_menu.addSeparator()
-        self._add_action(self.file_menu, "Render &Still…", self.render_still_dialog, "Ctrl+R")
-        self._add_action(self.file_menu, "&Export Video…", self.export_video_dialog, "Ctrl+E")
+        self.still_action = self._add_action(
+            self.file_menu, "Render &Still…", self.render_still_dialog, "Ctrl+R", "camera"
+        )
+        self.export_action = self._add_action(
+            self.file_menu, "&Export Video…", self.export_video_dialog, "Ctrl+E", "film-strip"
+        )
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "&Quit", self.close, QKeySequence.StandardKey.Quit)
         self._rebuild_recent_menu()
 
         edit_menu = bar.addMenu("&Edit")
-        undo = self.undo_stack.createUndoAction(self, "&Undo")
+        undo = self.undo_action = self.undo_stack.createUndoAction(self, "&Undo")
         undo.setShortcut(QKeySequence.StandardKey.Undo)
-        redo = self.undo_stack.createRedoAction(self, "&Redo")
+        undo.setIcon(theme.icon("arrow-counter-clockwise"))
+        redo = self.redo_action = self.undo_stack.createRedoAction(self, "&Redo")
         redo.setShortcuts([QKeySequence.StandardKey.Redo, QKeySequence("Ctrl+Y")])
+        redo.setIcon(theme.icon("arrow-clockwise"))
         edit_menu.addAction(undo)
         edit_menu.addAction(redo)
 
         self.animation_menu = bar.addMenu("&Animation")
         from earthling.app import generators
 
-        for text, action in (
-            ("Generate &Camera…", generators.generate_camera),
-            ("&Draw Tracks…", generators.draw_tracks),
-            ("&Sun from the Tracks…", generators.sun_from_tracks),
-            ("Add Still &Seconds…", generators.add_still_seconds),
+        for text, action, icon_name in (
+            ("Generate &Camera…", generators.generate_camera, "video-camera"),
+            ("&Draw Tracks…", generators.draw_tracks, "path"),
+            ("&Sun from the Tracks…", generators.sun_from_tracks, "sun-horizon"),
+            ("Add Still &Seconds…", generators.add_still_seconds, "clock-counter-clockwise"),
         ):
-            self._add_action(self.animation_menu, text, lambda a=action: a(self))
+            self._add_action(self.animation_menu, text, lambda a=action: a(self), None, icon_name)
         self.animation_menu.addSeparator()
-        self._add_action(self.animation_menu, "&Check Animation…", self.check_animation)
+        self._add_action(self.animation_menu, "&Check Animation…", self.check_animation, None,
+                         "check")  # fmt: skip
 
         self.view_menu = bar.addMenu("&View")
-        self._add_action(self.view_menu, "&Frame All", lambda: self.viewport.frame_all(), "Home")
-        self._add_action(self.view_menu, "&Go To Coordinate…", self._go_to, "Ctrl+G")
+        self.frame_all_action = self._add_action(
+            self.view_menu, "&Frame All", lambda: self.viewport.frame_all(), "Home", "corners-out"
+        )
+        self._add_action(self.view_menu, "&Go To Coordinate…", self._go_to, "Ctrl+G",
+                         "map-trifold")  # fmt: skip
         self.fly_mode_action = QAction("&Fly Camera (Tab)", self, checkable=True)
+        self.fly_mode_action.setIcon(theme.tool_icon("airplane-tilt"))
         self.fly_mode_action.toggled.connect(
             lambda v: self.viewport.set_mode(self.viewport.FLY if v else self.viewport.ORBIT)
         )
         self.view_menu.addAction(self.fly_mode_action)
         self.animated_camera_action = QAction("&Animated Camera (C)", self, checkable=True)
         self.animated_camera_action.setShortcut(QKeySequence("C"))
+        self.animated_camera_action.setIcon(theme.tool_icon("video-camera"))
         self.animated_camera_action.setToolTip(
             "Look through the keyframed camera; manual navigation switches back to the free camera"
         )
         self.animated_camera_action.toggled.connect(lambda v: self.viewport.set_animated_camera(v))
         self.view_menu.addAction(self.animated_camera_action)
-        self._add_action(self.view_menu, "Add &Camera Key (K)", self.add_camera_key, "K")
-        self._add_action(self.view_menu, "Pick Look-at &Target (T)", self.pick_look_at_target, "T")
+        self.camera_key_action = self._add_action(
+            self.view_menu, "Add &Camera Key (K)", self.add_camera_key, "K", "diamond"
+        )
+        self.pick_target_action = self._add_action(
+            self.view_menu, "Pick Look-at &Target (T)", self.pick_look_at_target, "T", "crosshair"
+        )
         self.view_menu.addSeparator()
         self._add_action(self.view_menu, "Centre Scene &Frame on View",
                          lambda: self.set_scene_origin(self._view_centre()))  # fmt: skip
@@ -242,13 +269,51 @@ class MainWindow(QMainWindow):
         self.view_menu.addSeparator()
 
         self.data_menu = bar.addMenu("&Data")
-        self._add_action(self.data_menu, "Download &Plan…", self._show_plan)
-        self._add_action(self.data_menu, "&Download Data…", self._show_download, "Ctrl+D")
-        self._add_action(self.data_menu, "&Test a Source…", self._test_source)
+        self._add_action(self.data_menu, "Download &Plan…", self._show_plan, None, "list-bullets")
+        self._add_action(self.data_menu, "&Download Data…", self._show_download, "Ctrl+D",
+                         "cloud-arrow-down")  # fmt: skip
+        self._add_action(self.data_menu, "&Test a Source…", self._test_source, None, "plug")
         self.data_menu.addAction(self.on_demand_action)
 
         help_menu = bar.addMenu("&Help")
         self._add_action(help_menu, "&About Earthling", self._show_about)
+
+    def _build_toolbar(self) -> None:
+        """File, undo and camera actions as icons; Still and Export on the right."""
+        bar = self.toolbar = QToolBar("Toolbar", self)
+        bar.setObjectName("MainToolbar")
+        bar.setMovable(False)
+        bar.setIconSize(QSize(18, 18))
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        groups = (
+            (self.open_action, self.save_action),
+            (self.undo_action, self.redo_action),
+            (self.animated_camera_action, self.camera_key_action, self.pick_target_action),
+        )
+        for i, actions in enumerate(groups):
+            if i:
+                bar.addSeparator()
+            for action in actions:
+                bar.addAction(action)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        bar.addWidget(spacer)
+        for action, accent in ((self.still_action, False), (self.export_action, True)):
+            text = action.text().replace("&", "")
+            name = "film-strip" if accent else "camera"
+            ink = "#06101F" if accent else theme.TEXT_2  # dark on the accent button
+            label = text.rstrip("…").replace("Render ", "")
+            button = QPushButton(theme.icon(name, ink, ink), label)
+            button.setProperty("accent", accent)
+            button.setIconSize(QSize(16, 16))
+            button.setToolTip(f"{text} ({action.shortcut().toString()})")
+            button.clicked.connect(action.trigger)
+            bar.addWidget(button)
+            if not accent:
+                gap = QWidget()
+                gap.setFixedWidth(6)
+                bar.addWidget(gap)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, bar)
 
     # --- camera animation ----------------------------------------------------------------
     def add_camera_key(self) -> None:
@@ -432,10 +497,12 @@ class MainWindow(QMainWindow):
         self.scene.store.subscribe(sync)
         return action
 
-    def _add_action(self, menu, text, slot, shortcut=None) -> QAction:
+    def _add_action(self, menu, text, slot, shortcut=None, icon_name: str = "") -> QAction:
         action = QAction(text, self)
         if shortcut is not None:
             action.setShortcut(QKeySequence(shortcut))
+        if icon_name:
+            action.setIcon(theme.icon(icon_name))
         action.triggered.connect(slot)
         menu.addAction(action)
         return action
