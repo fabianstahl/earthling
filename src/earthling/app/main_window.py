@@ -150,6 +150,7 @@ class MainWindow(QMainWindow):
             editor.hide()
             editor.changed.connect(self._pois_changed)
             editor.current_changed.connect(lambda i, k=kind: self._select_item(k, i))
+        self.inspector.reveal_item = self._reveal_item
         self.scene_list = SceneList(self)
         self.scene_list.selected.connect(self._scene_selected)
         self.scene_dock = self._add_dock(area.LeftDockWidgetArea, QDockWidget("Scene", self),
@@ -303,7 +304,12 @@ class MainWindow(QMainWindow):
         self.data_menu.addAction(self.on_demand_action)
 
         help_menu = bar.addMenu("&Help")
-        self._add_action(help_menu, "&About Earthling", self._show_about)
+        self.palette_action = self._add_action(
+            help_menu, "&Command Palette…", self.show_palette, "Ctrl+K", "magnifying-glass"
+        )
+        self._add_action(help_menu, "&Keyboard Shortcuts", self.show_shortcuts, "F1", "keyboard")
+        help_menu.addSeparator()
+        self._add_action(help_menu, "&About Earthling", self._show_about, None, "info")
 
     def _build_toolbar(self) -> None:
         """File, undo and camera actions as icons; Still and Export on the right."""
@@ -322,6 +328,17 @@ class MainWindow(QMainWindow):
                 bar.addSeparator()
             for action in actions:
                 bar.addAction(action)
+        gap = QWidget()
+        gap.setFixedWidth(10)
+        bar.addWidget(gap)
+        pill = QPushButton(theme.icon("magnifying-glass", theme.TEXT_3),
+                           "Search settings and actions…        Ctrl K")  # fmt: skip
+        pill.setObjectName("commandPill")
+        pill.setIconSize(QSize(15, 15))
+        pill.setMinimumWidth(300)
+        pill.setToolTip("Command palette: every setting, action, look and help (Ctrl+K)")
+        pill.clicked.connect(lambda: self.show_palette())
+        bar.addWidget(pill)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(spacer)
@@ -416,6 +433,84 @@ class MainWindow(QMainWindow):
     def _pois_changed(self) -> None:
         self.viewport.set_pois(self.scene.pois, self._scene_dir(), self.scene.animation)
         self.viewport.set_photos(self.scene.photos, self._scene_dir())
+
+    # --- command palette ------------------------------------------------------------------
+    def show_palette(self, text: str = "") -> None:
+        from earthling.ui.palette import CommandPalette, mark_recent, menu_entries
+
+        if getattr(self, "command_palette", None) is None:
+            mark_recent(self.export_action, self.still_action, self.camera_key_action,
+                        self.open_action, self.save_action)  # fmt: skip
+            self.command_palette = CommandPalette(
+                [lambda: menu_entries(self.menuBar()), self._setting_entries,
+                 self._look_entries, self._help_entries], self)  # fmt: skip
+        self.command_palette.open(text)
+
+    def _setting_entries(self) -> list:
+        from earthling.ui.inspector import category_of, section_display
+        from earthling.ui.palette import Entry
+        from earthling.ui.property_panel import format_value, has_editor
+
+        out = []
+        store = self.scene.store
+        for d in store.registry:
+            if not has_editor(d):
+                continue
+            category = category_of(d.section)
+            crumb = (f"{category.title} › {section_display(d.section)}" if category
+                     else d.section)  # fmt: skip
+            key = (lambda pid=d.id: self.keys.set_key(pid, store[pid])) if d.animatable else None
+            out.append(Entry("Settings", d.label, crumb, category.icon if category else "map-pin",
+                             lambda pid=d.id: self.inspector.reveal(pid),
+                             format_value(d, store[d.id]), f"{d.tooltip} {d.keywords} {d.id}",
+                             key))  # fmt: skip
+        return out
+
+    def _look_entries(self) -> list:
+        return []
+
+    def _help_entries(self) -> list:
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+
+        from earthling.ui.palette import Entry
+
+        docs = Path(__file__).resolve().parents[3] / "docs"
+        out = [Entry("Help", "Keyboard shortcuts", "Help", "keyboard", self.show_shortcuts, "F1")]
+        for name, title in (("configuration.md", "earthling.toml: every key explained"),
+                            ("adding-a-region.md", "Adding a region (new data sources)"),
+                            ("architecture.md", "How Earthling is built")):  # fmt: skip
+            path = docs / name
+            if path.exists():
+                out.append(Entry("Help", title, f"docs/{name}", "book-open",
+                                 lambda p=path: QDesktopServices.openUrl(QUrl.fromLocalFile(
+                                     str(p)))))  # fmt: skip
+        return out
+
+    def show_shortcuts(self) -> None:
+        """A list of every keyboard shortcut."""
+        from earthling.ui.palette import menu_entries
+
+        rows = [(e.right, f"{e.title}  ({e.crumb})") for e in menu_entries(self.menuBar())
+                if e.right]  # fmt: skip
+        rows += [("Space", "Play / pause"), (", .", "Previous / next frame"),
+                 ("Tab", "Orbit / fly camera"), ("Ctrl+Home / End", "Start / end"),
+                 ("Ctrl+F", "Search the settings")]  # fmt: skip
+        text = "\n".join(f"{key:<18} {what}" for key, what in sorted(rows))
+        box = QMessageBox(self)
+        box.setWindowTitle("Keyboard shortcuts")
+        box.setText("<pre style='font-family: Inter'>" + text.replace("<", "&lt;") + "</pre>")
+        box.exec()
+
+    def _reveal_item(self, title: str) -> bool:
+        """Select the POI or photo that owns the section ``title``."""
+        for kind, items, prefix in (("poi", self.scene.pois, "POI: "),
+                                    ("photo", self.scene.photos, "Photo: ")):  # fmt: skip
+            for i, item in enumerate(items):
+                if title == f"{prefix}{item.name}":
+                    self.scene_list.select((kind, i))
+                    return True
+        return False
 
     def _select_item(self, kind: str, index: int) -> None:
         """An item was added or removed: select it (or its neighbour) in the scene list."""
@@ -977,6 +1072,10 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.viewport.shutdown()
+        # editors must not report edits while Qt destroys them (focus moves, lists clear)
+        for widget in (self.inspector, self.poi_editor, self.photo_editor, self.scene_list):
+            for child in widget.findChildren(QWidget):
+                child.blockSignals(True)
         super().closeEvent(event)
 
     def _show_about(self) -> None:

@@ -38,6 +38,7 @@ from earthling.ui.property_panel import (
     SectionView,
     editor_for,
     has_editor,
+    retire,
 )
 
 
@@ -250,6 +251,7 @@ class Inspector(QWidget):
         self.sections: dict[str, SectionView] = {}
         self._section_state: dict[str, tuple[bool, bool, str | None]] = {}
         self._shown_top: QWidget | None = None
+        self.reveal_item: Callable[[str], bool] | None = None  # shows an item's section
         self._build()
         self._unsubscribe = store.subscribe(self._on_store_changed)
         self._counts_timer = QTimer(self, singleShot=True, interval=0)
@@ -372,6 +374,38 @@ class Inspector(QWidget):
         if section is not None:
             QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(section, 0, 0))
 
+    def reveal(self, pid: str) -> None:
+        """Show one setting: its category (or item), its section, tab and "More settings";
+        then scroll to its row and flash it."""
+        d = self.store.registry[pid]
+        title = d.section
+        if category_of(title) is None:  # a POI or photo: the application selects it
+            if self.reveal_item is None or not self.reveal_item(title):
+                self.search.setText(d.label)
+                self.rebuild()
+        else:
+            self._section_state[title] = (True, d.advanced, None)
+            self.show_category(category_of(title).id)
+        section = self.sections.get(title)
+        if section is not None:
+            section.set_open(True)
+            if d.advanced:
+                section.more_open = True
+            row = section.rows.get(pid)
+            if row is not None and row.tab is not None and row.tab != section.tab:
+                section._choose_tab(section.tabs.index(row.tab))
+                section.tab_bar.set_index(section.tabs.index(row.tab))
+            section.refresh()
+        row = self.rows.get(pid)
+        if row is None or not row.isVisibleTo(self):  # (hidden by its conditions)
+            self.search.setText(d.label)
+            self.rebuild()
+            row = self.rows.get(pid)
+        if row is not None:
+            QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(row, 0, 60))
+            row.flash()
+            row.editor.setFocus()
+
     def all_sections(self) -> list[tuple[str, list[PropertyDef]]]:
         return [(t, [d for d in defs if has_editor(d)])
                 for t, defs in self.store.registry.sections()
@@ -410,8 +444,7 @@ class Inspector(QWidget):
             previous_top.hide()
         old = self.scroll.takeWidget()
         self.scroll.setWidget(container)
-        if old is not None:
-            old.deleteLater()
+        retire(old)
         self.refresh_key_states()
         self._update_counts()
 

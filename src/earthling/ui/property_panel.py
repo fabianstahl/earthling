@@ -13,7 +13,7 @@ import math
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from PyQt6.QtCore import QDateTime, QPointF, QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QDateTime, QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QFontMetrics,
@@ -28,6 +28,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QAbstractButton,
+    QApplication,
     QButtonGroup,
     QColorDialog,
     QComboBox,
@@ -223,14 +224,19 @@ class DragField(QWidget):
         edit.selectAll()
         edit.show()
         edit.setFocus()
+        self._typed_text = number
+        edit.textChanged.connect(self._remember_typed)
         edit.editingFinished.connect(self._typed)
+
+    def _remember_typed(self, text: str) -> None:
+        self._typed_text = text  # (read here, not from a field that may be destroyed)
 
     def _typed(self) -> None:
         edit, self._edit = self._edit, None
         if edit is None:
             return
         try:
-            value = _parse_number(edit.text())
+            value = _parse_number(self._typed_text)
         except ValueError:
             value = None
         edit.deleteLater()
@@ -346,7 +352,10 @@ class BoolEditor(PropertyEditor):
         self.box = SwitchButton()
         layout.addWidget(self.box)
         layout.addStretch()
-        self.box.toggled.connect(lambda v: self._emit(bool(v)))
+        self.box.toggled.connect(self._toggled)
+
+    def _toggled(self, on: bool) -> None:
+        self._emit(bool(on))
 
     def _show(self, value: Any) -> None:
         self.box.setChecked(bool(value))
@@ -361,7 +370,12 @@ class EnumEditor(PropertyEditor):
         for value, label in d.options:
             self.combo.addItem(label, value)
         layout.addWidget(self.combo)
-        self.combo.currentIndexChanged.connect(lambda i: self._emit(self.combo.itemData(i)))
+        self.values = [v for v, _ in d.options]
+        # (activated: chosen by the user; a combo box being destroyed changes its index)
+        self.combo.activated.connect(self._activated)
+
+    def _activated(self, index: int) -> None:
+        self._emit(self.values[index])
 
     def _show(self, value: Any) -> None:
         index = self.combo.findData(value)
@@ -411,7 +425,10 @@ class SegmentedEditor(PropertyEditor):
         self.values = [v for v, _ in d.options]
         self.segments = Segments([label for _, label in d.options])
         layout.addWidget(self.segments)
-        self.segments.chosen.connect(lambda i: self._emit(self.values[i]))
+        self.segments.chosen.connect(self._chosen)
+
+    def _chosen(self, index: int) -> None:
+        self._emit(self.values[index])
 
     def _show(self, value: Any) -> None:
         if value in self.values:
@@ -450,7 +467,10 @@ class CornerEditor(PropertyEditor):
         self.name.setObjectName("dim")
         layout.addWidget(frame)
         layout.addWidget(self.name, 1)
-        self.group.idClicked.connect(lambda i: self._emit(self.ORDER[i]))
+        self.group.idClicked.connect(self._corner_clicked)
+
+    def _corner_clicked(self, index: int) -> None:
+        self._emit(self.ORDER[index])
 
     def _show(self, value: Any) -> None:
         if value in self.ORDER:
@@ -523,7 +543,10 @@ class DateTimeEditor(PropertyEditor):
         self.edit.setCalendarPopup(True)
         self.edit.setKeyboardTracking(False)
         layout.addWidget(self.edit)
-        self.edit.dateTimeChanged.connect(lambda dt: self._emit(dt.toPyDateTime()))
+        self.edit.dateTimeChanged.connect(self._date_changed)
+
+    def _date_changed(self, value) -> None:
+        self._emit(value.toPyDateTime())
 
     def _show(self, value: Any) -> None:
         self.edit.setDateTime(QDateTime(value))
@@ -534,11 +557,19 @@ class TextEditor(PropertyEditor):
         super().__init__(d, parent)
         layout = tight_hbox(self)
         self.edit = QLineEdit()
+        self._text = ""  # (kept here: a field being destroyed must not be read)
         layout.addWidget(self.edit)
-        self.edit.editingFinished.connect(lambda: self._emit(self.edit.text()))
+        self.edit.textChanged.connect(self._changed)
+        self.edit.editingFinished.connect(self._finished)
+
+    def _finished(self) -> None:
+        self._emit(self._text)
+
+    def _changed(self, text: str) -> None:
+        self._text = text
 
     def _show(self, value: Any) -> None:
-        if self.edit.text() != value:
+        if self._text != value:
             self.edit.setText(str(value))
 
 
@@ -552,6 +583,39 @@ EDITORS = {
     PType.DATETIME: DateTimeEditor,
     PType.TEXT: TextEditor,
 }
+
+
+def format_value(d: PropertyDef, value: Any) -> str:
+    """A value as a short text (the palette shows it next to the setting)."""
+    t = d.type
+    if t in (PType.FLOAT, PType.INT):
+        decimals = 0 if t is PType.INT else d.decimals
+        return f"{float(value):.{decimals}f} {d.unit}".strip()
+    if t is PType.BOOL:
+        return "On" if value else "Off"
+    if t is PType.ENUM:
+        return dict(d.options).get(value, str(value))
+    if t is PType.COLOR:
+        return QColor.fromRgbF(*value).name().upper()
+    if t is PType.DATETIME:
+        return value.strftime("%Y-%m-%d %H:%M")
+    if t is PType.TEXT:
+        return f"“{value}”" if value else "–"
+    return ""
+
+
+def retire(view: QWidget | None) -> None:
+    """Delete a replaced view safely: a focused field inside would report "editing finished"
+    while it is destroyed (a crash), so its focus goes first and its signals stop."""
+    if view is None:
+        return
+    focus = QApplication.focusWidget()
+    if focus is not None and view.isAncestorOf(focus):
+        focus.clearFocus()
+    for child in view.findChildren(QWidget):
+        child.blockSignals(True)
+    view.hide()
+    view.deleteLater()
 
 
 def segmentable(d: PropertyDef) -> bool:
@@ -636,9 +700,27 @@ class PropertyRow(QWidget):
                 extra.setFixedSize(20, 20)
             layout.addWidget(extra)
         self.setMinimumHeight(30)
+        self.setObjectName("propertyRow")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._menu)
         self.set_changed(False)
+
+    def flash(self) -> None:
+        """Highlight the row for a moment (it was searched for)."""
+        self._set_flash(True)
+        timer = QTimer(self)  # (dies with the row)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._flash_off)
+        timer.start(1400)
+
+    def _flash_off(self) -> None:
+        self._set_flash(False)
+
+    def _set_flash(self, on: bool) -> None:
+        self.setProperty("flash", on)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def set_changed(self, changed: bool) -> None:
         self.dot.setStyleSheet(f"background: {theme.ACCENT if changed else 'transparent'};"
@@ -747,15 +829,15 @@ class SectionView(QWidget):
             self.caret.setCheckable(False)
             self.caret.setObjectName("crumb")
             self.caret.setToolTip("Show this section")
-            self.caret.clicked.connect(lambda: self.jump_requested.emit(self.title))
+            self.caret.clicked.connect(self._jump)
         else:
-            self.caret.toggled.connect(lambda _: self.refresh())
+            self.caret.toggled.connect(self._caret_toggled)
         layout.addWidget(self.caret, 1)
         self.switch = None
         if self.switch_def is not None:
             self.switch = SwitchButton()
             self.switch.setToolTip(f"{self.switch_def.label}: on / off")
-            self.switch.toggled.connect(lambda v: self.on_edit(self.switch_def.id, bool(v), False))
+            self.switch.toggled.connect(self._switched)
             layout.addWidget(self.switch)
         menu_button = QToolButton()
         menu_button.setIcon(theme.icon("dots-three"))
@@ -769,6 +851,15 @@ class SectionView(QWidget):
         menu_button.setMenu(menu)
         layout.addWidget(menu_button)
         return header
+
+    def _jump(self) -> None:
+        self.jump_requested.emit(self.title)
+
+    def _caret_toggled(self, _open: bool) -> None:
+        self.refresh()
+
+    def _switched(self, on: bool) -> None:
+        self.on_edit(self.switch_def.id, bool(on), False)
 
     @property
     def is_open(self) -> bool:
@@ -946,6 +1037,7 @@ class PropertyPanel(QScrollArea):
             layout.addWidget(section)
             self.sections[title] = section
         layout.addStretch()
+        retire(self.takeWidget())
         self.setWidget(container)
         self._dependents = self._dependent_sections()
         self.refresh_key_states()

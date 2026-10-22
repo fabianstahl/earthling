@@ -322,6 +322,22 @@ QTreeView#sceneTree::item {{ padding: 4px 2px; }}
 QLabel#dropHint {{ color: {TEXT_3}; font-size: 12px; border: 1px dashed {LINE_STRONG};
     border-radius: 10px; padding: 12px; margin: 8px; }}
 #itemEditor, #poiEditor, #photoEditor {{ border-bottom: 1px solid {LINE}; }}
+QWidget#propertyRow[flash="true"] {{ background: rgba(77, 159, 255, 0.22); border-radius: 6px; }}
+QPushButton#commandPill {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 8px;
+    color: {TEXT_3}; padding: 5px 10px; text-align: left; }}
+QPushButton#commandPill:hover {{ border-color: #46505F; color: {TEXT_2}; }}
+QFrame#paletteFrame {{ background: #171B21; border: 1px solid #333A46; border-radius: 14px; }}
+QLineEdit#paletteInput {{ background: transparent; border: none; border-bottom: 1px solid {LINE};
+    border-radius: 0; font-size: 17px; padding: 14px 12px; }}
+QListWidget#paletteList {{ background: transparent; padding: 4px 8px; }}
+QListWidget#paletteList::item {{ border-radius: 8px; color: {TEXT_3}; font-size: 11px;
+    font-weight: 600; padding: 2px 4px; }}
+QListWidget#paletteList::item:selected {{ background: {ACCENT_BG}; }}
+QLabel#paletteTile {{ background: {HOVER}; border-radius: 7px; }}
+QLabel#paletteTitle {{ font-size: 13.5px; }}
+QLabel#paletteRight {{ color: {TEXT_2}; font-size: 12px; }}
+QLabel#paletteFoot {{ color: {TEXT_3}; font-size: 12px; padding: 10px 16px;
+    border-top: 1px solid {LINE}; }}
 QToolButton#pin {{ padding: 2px; }}
 QToolButton#pin:checked {{ background: transparent; }}
 """
