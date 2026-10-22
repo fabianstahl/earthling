@@ -35,6 +35,7 @@ from earthling.app.timeline import TimelineController
 from earthling.app.tracks_dock import TracksDock
 from earthling.app.undo import set_property
 from earthling.app.viewport import Viewport
+from earthling.app.viewport_overlay import ViewportOverlay
 from earthling.core.animation import layer_switch_warnings
 from earthling.core.camera_path import camera_path_lines
 from earthling.core.config import ConfigError, Project
@@ -94,6 +95,7 @@ class MainWindow(QMainWindow):
         self.viewport.timeline_time_provider = lambda: self.timeline.time
         self._pois_changed()
         self._connect_viewport()
+        self.viewport_overlay = ViewportOverlay(self)
         self._update_title()
         self.data_changed.connect(self._reload_terrain)
         self.statusBar().showMessage("Ready")
@@ -127,10 +129,14 @@ class MainWindow(QMainWindow):
             right, QDockWidget("History", self), "HistoryDock", QUndoView(self.undo_stack)
         )
         self.history_dock.hide()
-        self.timeline_widget = TimelineWidget(self.timeline, self.keys)
+        self.timeline_widget = TimelineWidget(
+            self.timeline, self.keys,
+            extra=[self.camera_key_action, ("magic-wand", "Generate…", self.animation_menu)],
+        )  # fmt: skip
         self.timeline_dock = self._add_dock(
             bottom, QDockWidget("Timeline", self), "TimelineDock", self.timeline_widget
         )
+        self.timeline_dock.setTitleBarWidget(QWidget())
         self.timeline.settings_changed.connect(lambda: self.scene.mark_dirty())
         self.tracks_dock = self._add_dock(bottom, TracksDock(self))
         self.tabifyDockWidget(self.timeline_dock, self.tracks_dock)

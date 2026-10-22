@@ -81,6 +81,7 @@ class Viewport(QOpenGLWidget):
         self.suspended = False  # no viewport rendering (e.g. while exporting a video)
         self.timeline_time_provider = None  # () -> timeline seconds (POI animations)
         self.animated_camera = False  # follow the "camera.pose" property (timeline playback)
+        self.export_size: tuple[int, int] | None = None  # screen overlays in this frame
         self.pose_provider = None  # () -> pose; the camera rig (modes, transitions)
         self._pick_callback = None  # set by request_pick(): the next click picks a point
         self.timezone = "UTC"
@@ -410,6 +411,13 @@ class Viewport(QOpenGLWidget):
                 "terrain.detail": self.store["terrain.detail"] * 2.0,
                 "shadows.resolution": "2048",
             }
+        self.renderer.overlay_rect = None
+        if self.export_size is not None:
+            from earthling.app.viewport_overlay import export_frame
+
+            frame = export_frame(width, height, *self.export_size)
+            if frame is not None and frame.width() < width - 1:
+                self.renderer.overlay_rect = (int(frame.left()), 0, int(frame.width()), height)
         self.renderer.render(fbo, width, height, self.camera, scale=scale)
         self._sync_watcher()
         self._count_frame(now)

@@ -79,7 +79,7 @@ def test_ruler_scrubbing(qtbot):
     assert tl.time == pytest.approx(7.0, abs=0.05)
     assert "00:07" in widget.time_label.text()
     widget.buttons["play"].click()
-    assert tl.playing and widget.buttons["play"].text() == "⏸"
+    assert tl.playing and widget.buttons["play"].property("playing") is True
     tl.pause()
 
 

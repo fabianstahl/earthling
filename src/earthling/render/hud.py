@@ -109,6 +109,7 @@ class HudLayer:
         self.ctx = ctx
         self.shaders = shaders
         self.atlas_provider = atlas_provider
+        self.origin = (0, 0)  # framebuffer pixel where the drawn area starts
         self.attribution = ""  # e.g. "Imagery: … · Elevation: …"
         self._stats: HikeStats | None = None
         self._stats_key: tuple | None = None
@@ -470,7 +471,7 @@ class HudLayer:
             ("u_outline_px", float(1.6 * k * store["stats.scale"])),
             ("u_outline_alpha", float(store["stats.outline"])),
         ))  # fmt: skip
-        draw_overlay(self.ctx, fbo, vao, len(vertices), width, height)
+        draw_overlay(self.ctx, fbo, vao, len(vertices), width, height, self.origin)
 
     def release(self) -> None:
         self._stream.release()

@@ -56,11 +56,12 @@ class DynamicBuffer:
 
 
 def draw_overlay(ctx: moderngl.Context, fbo, vao: moderngl.VertexArray, vertices: int,
-                 width: int, height: int) -> None:  # fmt: skip
+                 width: int, height: int, origin: tuple[int, int] = (0, 0)) -> None:  # fmt: skip
     """Draw screen-space triangles with premultiplied alpha over ``fbo`` (no depth test), then
-    restore the default blending."""
+    restore the default blending. ``origin``: where the width x height area starts in the
+    framebuffer (the export frame inside a wider viewport)."""
     fbo.use()
-    ctx.viewport = (0, 0, width, height)
+    ctx.viewport = (*origin, width, height)
     ctx.disable(moderngl.DEPTH_TEST)
     ctx.enable(moderngl.BLEND)
     ctx.blend_func = moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA

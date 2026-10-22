@@ -52,6 +52,7 @@ class PhotoLayer:
         self._textures: dict[tuple, tuple[moderngl.Texture, float] | None] = {}
         self._stream = DynamicBuffer(ctx, "2f", "in_local", min_bytes=0)
         self.last_drawn: list[str] = []  # ids drawn in the last frame (tests)
+        self.origin = (0, 0)  # framebuffer pixel where the drawn area starts
         # photos shown when the drawn line reaches them: set by the renderer every frame
         self.path = self.frame = self.animation = None
         self.time = 0.0
@@ -142,7 +143,7 @@ class PhotoLayer:
         texture.use(0)
         set_uniforms(program, {"u_image": 0, "u_viewport": (float(width), float(height)),
                                **uniforms})  # fmt: skip
-        draw_overlay(self.ctx, fbo, vao, len(quad), width, height)
+        draw_overlay(self.ctx, fbo, vao, len(quad), width, height, self.origin)
 
     def release(self) -> None:
         for entry in self._textures.values():

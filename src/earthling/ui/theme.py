@@ -338,6 +338,25 @@ QLabel#paletteTitle {{ font-size: 13.5px; }}
 QLabel#paletteRight {{ color: {TEXT_2}; font-size: 12px; }}
 QLabel#paletteFoot {{ color: {TEXT_3}; font-size: 12px; padding: 10px 16px;
     border-top: 1px solid {LINE}; }}
+#transport {{ border-bottom: 1px solid {LINE}; }}
+QToolButton#playButton {{ background: {TEXT}; border-radius: 17px; }}
+QToolButton#playButton:hover {{ background: #FFFFFF; }}
+QLabel#timecode {{ color: {TEXT}; }}
+QToolButton#autoKey {{ border: 1px solid {LINE_STRONG}; border-radius: 7px; padding: 4px 10px;
+    font-size: 12px; font-weight: 500; }}
+QToolButton#autoKey:checked {{ background: rgba(255, 91, 82, 0.14);
+    border-color: rgba(255, 91, 82, 0.5); color: #FFB1AC; }}
+QToolButton#barButton {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 7px;
+    padding: 4px 10px; font-size: 12px; margin-left: 4px; }}
+QToolButton#barButton:hover {{ background: {HOVER}; }}
+QFrame#overlayPill {{ background: rgba(15, 18, 23, 205); border: 1px solid rgba(255, 255, 255, 26);
+    border-radius: 10px; }}
+QToolButton#overlayButton {{ color: {TEXT_2}; font-size: 12px; padding: 4px 9px;
+    border-radius: 7px; }}
+QToolButton#overlayButton:hover {{ color: #FFFFFF; background: rgba(255, 255, 255, 20); }}
+QToolButton#overlayButton:checked {{ background: rgba(77, 159, 255, 56); color: #FFFFFF; }}
+QLabel#overlayLabel {{ background: rgba(15, 18, 23, 205); border: 1px solid rgba(255, 255, 255, 26);
+    border-radius: 10px; color: {TEXT_2}; font-size: 12px; padding: 5px 10px; }}
 QToolButton#pin {{ padding: 2px; }}
 QToolButton#pin:checked {{ background: transparent; }}
 """

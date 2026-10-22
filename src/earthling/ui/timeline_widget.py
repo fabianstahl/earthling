@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
 from PyQt6.QtGui import QFont, QMouseEvent, QPainter, QPaintEvent, QPen
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from earthling.app.timeline import TimelineController, format_time
+from earthling.ui import theme
 from earthling.ui.key_views import KEY_COLOR, PLAYHEAD_COLOR, diamond
 from earthling.ui.widgets import double_spin, tool_button
 
@@ -115,61 +116,106 @@ class TimeRuler(QWidget):
 class TimelineWidget(QWidget):
     """Transport bar over the ruler; with a KeyframeEditor also the dope sheet and graph editor."""
 
-    def __init__(self, controller: TimelineController, editor=None, parent=None) -> None:
-        """``editor``: optional KeyframeEditor; shows the dope sheet when given."""
+    def __init__(self, controller: TimelineController, editor=None, parent=None,
+                 extra: list | None = None) -> None:  # fmt: skip
+        """``editor``: optional KeyframeEditor; shows the dope sheet when given. ``extra``:
+        QActions or (icon, text, QMenu) shown after Auto-key (camera key, generators)."""
         super().__init__(parent)
         self.controller = controller
         self.editor = editor
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.addLayout(self._build_bar())
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        bar = QWidget()
+        bar.setObjectName("transport")
+        bar.setLayout(self._build_bar(extra or []))
+        layout.addWidget(bar)
         self._build_views(layout)
         controller.time_changed.connect(self._update_label)
-        controller.playing_changed.connect(
-            lambda playing: self.buttons["play"].setText("⏸" if playing else "▶")
-        )
+        controller.playing_changed.connect(self._show_playing)
         controller.settings_changed.connect(self.sync_settings)
         self.sync_settings()
         self._update_label(controller.time)
 
-    def _build_bar(self) -> QHBoxLayout:
-        """Transport buttons, time, (auto-key), duration and fps."""
+    def _show_playing(self, playing: bool) -> None:
+        button = self.buttons["play"]
+        button.setProperty("playing", playing)
+        button.setIcon(theme.icon("pause" if playing else "play", "#0C0E12", "#0C0E12"))
+        button.setToolTip("Pause (Space)" if playing else "Play (Space)")
+
+    def _build_bar(self, extra: list) -> QHBoxLayout:
+        """Transport buttons, time, (auto-key, extra), duration and fps."""
         controller, editor = self.controller, self.editor
         bar = QHBoxLayout()
+        bar.setContentsMargins(10, 6, 10, 6)
+        bar.setSpacing(4)
         self.buttons: dict[str, QToolButton] = {}
-        for name, text, tip, slot in (
-            ("start", "⏮", "Jump to start (Ctrl+Home)", controller.go_start),
-            ("prev", "◀|", "Previous frame (,)", lambda: controller.step(-1)),
-            ("play", "▶", "Play / pause (Space)", controller.toggle),
-            ("next", "|▶", "Next frame (.)", lambda: controller.step(1)),
-            ("end", "⏭", "Jump to end (Ctrl+End)", controller.go_end),
+        for name, icon, tip, slot in (
+            ("start", "skip-back", "Jump to start (Ctrl+Home)", controller.go_start),
+            ("prev", "caret-left", "Previous frame (,)", lambda: controller.step(-1)),
+            ("play", "play", "Play (Space)", controller.toggle),
+            ("next", "caret-right", "Next frame (.)", lambda: controller.step(1)),
+            ("end", "skip-forward", "Jump to end (Ctrl+End)", controller.go_end),
         ):
-            self.buttons[name] = tool_button(text, tip, slot)
-            bar.addWidget(self.buttons[name])
+            button = tool_button("", tip, slot)
+            button.setIcon(theme.icon(icon))
+            button.setIconSize(QSize(18, 18))
+            self.buttons[name] = button
+            bar.addWidget(button)
+        play = self.buttons["play"]
+        play.setObjectName("playButton")
+        play.setFixedSize(34, 34)
+        self._show_playing(False)
         self.loop_btn = tool_button(
-            "⟲", "Loop playback", lambda v: setattr(controller, "loop", v), controller.loop
+            "", "Loop playback", lambda v: setattr(controller, "loop", v), controller.loop
         )
+        self.loop_btn.setIcon(theme.tool_icon("repeat"))
+        self.loop_btn.setIconSize(QSize(18, 18))
         bar.addWidget(self.loop_btn)
         self.time_label = QLabel()
-        self.time_label.setMinimumWidth(170)
+        self.time_label.setObjectName("timecode")
+        self.time_label.setTextFormat(Qt.TextFormat.RichText)
+        self.time_label.setMinimumWidth(230)
+        self.time_label.setContentsMargins(10, 0, 10, 0)
         bar.addWidget(self.time_label)
+        if editor is not None:
+            self.auto_key = tool_button(
+                "Auto-key", "Auto-key: editing an animated setting keys it at the playhead",
+                lambda v: setattr(editor, "auto_key", v), editor.auto_key,
+            )  # fmt: skip
+            self.auto_key.setObjectName("autoKey")
+            self.auto_key.setIcon(theme.icon("record", theme.TEXT_2, theme.TEXT, on=theme.RECORD))
+            self.auto_key.setIconSize(QSize(14, 14))
+            self.auto_key.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            bar.addWidget(self.auto_key)
+        for item in extra:
+            button = QToolButton()
+            button.setObjectName("barButton")
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            button.setIconSize(QSize(14, 14))
+            if isinstance(item, tuple):
+                icon, text, menu = item
+                button.setIcon(theme.icon(icon))
+                button.setText(text)
+                button.setMenu(menu)
+                button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            else:
+                button.setDefaultAction(item)
+                button.setText(item.text().replace("&", "").split(" (")[0])
+            bar.addWidget(button)
         bar.addStretch()
         bar.addWidget(QLabel("Duration"))
         self.duration = double_spin(0.1, 3600.0, decimals=2, suffix=" s", tracking=False)
         self.duration.valueChanged.connect(controller.set_duration)
         bar.addWidget(self.duration)
-        bar.addWidget(QLabel("FPS"))
+        gap = QLabel("FPS")
+        gap.setContentsMargins(8, 0, 0, 0)
+        bar.addWidget(gap)
         self.fps = QComboBox()
         for fps in FPS_CHOICES:
             self.fps.addItem(f"{fps:g}", fps)
         self.fps.currentIndexChanged.connect(lambda i: controller.set_fps(self.fps.itemData(i)))
         bar.addWidget(self.fps)
-        if editor is not None:  # added last, shown before the stretch
-            self.auto_key = tool_button(
-                "● Auto-key", "Editing an animated property updates its key at the playhead",
-                lambda v: setattr(editor, "auto_key", v), editor.auto_key,
-            )  # fmt: skip
-            bar.insertWidget(bar.count() - 5, self.auto_key)
         return bar
 
     def _build_views(self, layout: QVBoxLayout) -> None:
@@ -199,8 +245,10 @@ class TimelineWidget(QWidget):
         self.graph_editor = GraphEditor(editor)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(page, "Dope Sheet")
-        self.tabs.addTab(self.graph_editor, "Graph Editor")
+        self.tabs.addTab(page, theme.icon("diamond"), "Keys")
+        self.tabs.addTab(self.graph_editor, theme.icon("chart-line-up"), "Curves")
+        self.tabs.setTabToolTip(0, "Dope sheet: every animated setting with its keys")
+        self.tabs.setTabToolTip(1, "Graph editor: the curves between the keys")
         layout.addWidget(self.tabs, 1)
         editor.changed.connect(self.ruler.update)
 
@@ -219,4 +267,7 @@ class TimelineWidget(QWidget):
 
     def _update_label(self, t: float) -> None:
         c = self.controller
-        self.time_label.setText(f"{format_time(t, c.fps)} / {format_time(c.duration, c.fps)}")
+        now, total = format_time(t, c.fps), format_time(c.duration, c.fps)
+        self.time_label.setText(f'<span style="font-size:15px;font-weight:600">{now}</span>'
+                                f'<span style="color:{theme.TEXT_3}">&nbsp;&nbsp;/ {total}'
+                                "</span>")  # fmt: skip

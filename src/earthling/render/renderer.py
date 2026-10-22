@@ -163,6 +163,9 @@ class Renderer:
         self.jitter_index = 0  # sub-frame number (changes the volumetric dither per sample)
         # temporary replacements of property values (preview / export quality)
         self.overrides: dict[str, object] = {}
+        # (x, y, w, h) of the export frame in the output (a viewport wider than the video):
+        # photos, stats and the mini-map are placed in it as in the video
+        self.overlay_rect: tuple[int, int, int, int] | None = None
         self.store: PropertyStore | None = None
         self.timezone = "UTC"
         self.lighting: Lighting | None = None
@@ -355,10 +358,13 @@ class Renderer:
         if self.tracks.visible and self.vehicles:
             self.pois.render_vehicles(fbo, camera, view_proj, self.vehicles, *output,
                                       self.target.depth, (width, height))  # fmt: skip
+        # screen overlays (photos, stats, mini-map) in the export frame of a wider view
+        x, y, frame_w, frame_h = self.overlay_rect or (0, 0, *output)
         photos = self.photos
         photos.path, photos.frame, photos.animation = self.tracks.path, self.frame, self.animation
         photos.time = self.animation_time
-        photos.render(fbo, *output, self.store)
+        photos.origin = self.hud.origin = (x, y)
+        photos.render(fbo, frame_w, frame_h, self.store)
         self.hud.frame = self.frame
         self._minimap_inputs()
         hud_path, hud_head = self.tracks.path, self.tracks.head_m
@@ -368,7 +374,7 @@ class Renderer:
             if lead is not None:
                 self.hud.gap_s = hud_path.gap_at(hud_path.clock_at(self.store["progress.head"]))
                 hud_path, hud_head = hud_path.only(lead), hud_head - lead.offset_m
-        self.hud.render(fbo, *output, self.store, hud_path, hud_head,
+        self.hud.render(fbo, frame_w, frame_h, self.store, hud_path, hud_head,
                         self.timezone)  # fmt: skip
         self.reset_state()  # leave the context clean for Qt
 
