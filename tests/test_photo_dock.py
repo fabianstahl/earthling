@@ -59,7 +59,7 @@ def test_photo_dock_places_photos(qtbot, tmp_path):
     by_time = dock.add_photo(photo_file(tmp_path / "time.jpg", taken="2026:09:01 08:00:00"))
     assert (with_gps.lat, with_gps.lon) == (pytest.approx(45.5), pytest.approx(6.5))
     assert (by_time.lat, by_time.lon) == (46.5, 7.5)
-    assert "photo.gps.appear" in window.property_panel.editors
+    assert "photo.time.appear" in window.property_panel.editors  # the selected photo
     assert [p.id for p in window.scene.photos] == ["gps", "time"]
     window.undo_stack.undo()
     assert [p.id for p in window.scene.photos] == ["gps"]

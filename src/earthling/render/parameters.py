@@ -205,7 +205,7 @@ FOG = section(
     flt("fog.falloff", "Fog falloff", 250.0, 10.0, 5000.0, step=10.0, decimals=0, unit="m",
         logarithmic=True, uniform="u_fog_falloff",
         tooltip="Height over which the fog density drops to 37 %"),
-    color("fog.color", "Fog color", (0.85, 0.88, 0.92)),
+    color("fog.color", "Fog colour", (0.85, 0.88, 0.92)),
     flt("fog.sun_scatter", "Sun glow", 1.0, 0.0, 5.0, advanced=True,
         tooltip="How strongly sunlight scatters in the fog (glow towards the sun)"),
     flt("fog.anisotropy", "Glow sharpness", 0.6, 0.0, 0.95, uniform="u_fog_glow", advanced=True),

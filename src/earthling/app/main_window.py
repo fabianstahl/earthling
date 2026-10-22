@@ -43,7 +43,7 @@ from earthling.render.camera_rig import CameraRig
 from earthling.session import Session
 from earthling.ui import theme
 from earthling.ui.dope_sheet import KeyButton
-from earthling.ui.property_panel import PropertyPanel
+from earthling.ui.inspector import Inspector, search_action
 from earthling.ui.timeline_widget import TimelineWidget
 
 MAX_RECENT = 8
@@ -99,21 +99,27 @@ class MainWindow(QMainWindow):
         """Parameters, history, timeline, tracks and POI docks (each listed in the View menu)."""
         area = Qt.DockWidgetArea
         right, bottom = area.RightDockWidgetArea, area.BottomDockWidgetArea
-        self.property_panel = PropertyPanel(
+        self.inspector = self.property_panel = Inspector(
             self.scene.store,
             on_edit=self._on_panel_edit,
             row_extra=lambda d: KeyButton(d.id, self.keys) if d.animatable else None,
             key_state=self.key_state,
+            is_animated=self.scene.animation.is_animated,
             batch=self.undo_batch,
+            settings=self.settings,
         )
-        self.keys.changed.connect(self.property_panel.refresh_key_states)
-        self.timeline.time_changed.connect(lambda t: self.property_panel.refresh_key_states())
+        self.inspector.rail.add_button("gear-six", "Project", "Project settings (Ctrl+,)",
+                                       self.edit_settings)  # fmt: skip
+        self.keys.changed.connect(self.inspector.refresh_key_states)
+        self.timeline.time_changed.connect(lambda t: self.inspector.refresh_key_states())
         # project specific properties (track groups, POIs) appear as their own sections
-        self.scene.dynamic_listeners.append(self.property_panel.rebuild)
+        self.scene.dynamic_listeners.append(self.inspector.rebuild)
         self.parameters_dock = self._add_dock(
-            right, QDockWidget("Parameters", self), "ParametersDock", self.property_panel
+            right, QDockWidget("Inspector", self), "ParametersDock", self.inspector
         )
-        self.parameters_dock.setMinimumWidth(340)
+        self.parameters_dock.setTitleBarWidget(QWidget())  # (the inspector has its own header)
+        self.parameters_dock.setMinimumWidth(440)
+        self.view_menu.addAction(search_action(self.inspector, self))
         self.history_dock = self._add_dock(
             right, QDockWidget("History", self), "HistoryDock", QUndoView(self.undo_stack)
         )
@@ -136,6 +142,7 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.parameters_dock, self.poi_dock)
         self.parameters_dock.raise_()
         self.poi_dock.changed.connect(self._pois_changed)
+        self.poi_dock.list.currentRowChanged.connect(lambda i: self.show_scene_item("poi", i))
         photo_dock = PhotoDock(self.scene, self.undo_stack, self.hiker_lonlat, self._pick_lonlat,
                                self._scene_dir, self, choose_place=self.choose_place,
                                place_at_time=self.lonlat_at_time)  # fmt: skip
@@ -143,6 +150,7 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.poi_dock, self.photo_dock)
         self.parameters_dock.raise_()
         self.photo_dock.changed.connect(self._pois_changed)
+        self.photo_dock.list.currentRowChanged.connect(lambda i: self.show_scene_item("photo", i))
 
     def _add_dock(self, area, dock: QDockWidget, name: str = "", widget=None) -> QDockWidget:
         """Dock ``dock`` (optionally naming it and setting its widget) and list it in View."""
@@ -393,6 +401,18 @@ class MainWindow(QMainWindow):
     def _pois_changed(self) -> None:
         self.viewport.set_pois(self.scene.pois, self._scene_dir(), self.scene.animation)
         self.viewport.set_photos(self.scene.photos, self._scene_dir())
+
+    def show_scene_item(self, kind: str, index: int) -> None:
+        """The inspector shows the settings of a POI or a photo."""
+        items = self.scene.pois if kind == "poi" else self.scene.photos
+        if not 0 <= index < len(items):
+            return
+        item = items[index]
+        if kind == "poi":
+            self.inspector.show_item(item.name, "Point of interest", "map-pin",
+                                     [f"POI: {item.name}"])  # fmt: skip
+        else:
+            self.inspector.show_item(item.name, "Photo", "image", [f"Photo: {item.name}"])
 
     def hiker_lonlat(self) -> tuple[float, float] | None:
         """(lon, lat) of the head of the drawn track."""

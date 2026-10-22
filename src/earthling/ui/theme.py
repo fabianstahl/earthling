@@ -296,6 +296,27 @@ QToolButton[corner="true"]:checked {{ background: {ACCENT}; }}
 QToolButton#swatch {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 6px;
     padding: 2px 8px 2px 3px; color: {TEXT_2}; font-size: 12px; text-align: left; }}
 QToolButton#swatch:hover {{ border-color: #4A5463; }}
+#rail {{ background: #111419; }}
+QFrame#vline {{ background: {LINE}; }}
+QToolButton#railButton {{ color: {TEXT_3}; font-size: 10px; font-weight: 500; padding: 4px 0;
+    border-radius: 8px; }}
+QToolButton#railButton:hover {{ background: {HOVER}; color: {TEXT}; }}
+QToolButton#railButton:checked {{ background: {ACCENT_BG}; color: #D6E8FF; }}
+#inspectorHeader {{ border-bottom: 1px solid {LINE}; }}
+QLabel#tile {{ background: {ACCENT_BG}; border-radius: 9px; }}
+QLabel#inspectorTitle {{ font-size: 15px; font-weight: 600; }}
+QLineEdit#search {{ padding: 5px 6px; border-radius: 8px; }}
+QToolButton#chip {{ border: 1px solid {LINE_STRONG}; border-radius: 12px; padding: 3px 10px;
+    font-size: 12px; color: {TEXT_2}; }}
+QToolButton#chip:checked {{ background: {ACCENT_BG}; border-color: #2F5487; color: #D6E8FF; }}
+#looks {{ border-bottom: 1px solid {LINE}; }}
+QToolButton#look {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 7px;
+    padding: 4px 10px; font-size: 12px; color: {TEXT_2}; }}
+QToolButton#look:hover {{ border-color: #46505F; color: {TEXT}; }}
+QToolButton#crumb {{ color: {TEXT_3}; font-size: 12px; padding: 5px 4px; text-align: left; }}
+QToolButton#crumb:hover {{ color: {ACCENT_TEXT}; background: transparent; }}
+QToolButton#pin {{ padding: 2px; }}
+QToolButton#pin:checked {{ background: transparent; }}
 """
 
 

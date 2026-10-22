@@ -656,20 +656,29 @@ class PropertyRow(QWidget):
 
 
 class SectionView(QWidget):
-    """A collapsible section: header (switch, menu), rows, tabs and "More settings"."""
+    """A collapsible section: header (switch, menu), rows, tabs and "More settings".
+
+    ``flat``: a list of search or filter results; every row is shown (no tabs, switch or
+    "More settings") and the title (``display``, e.g. "Weather › Height Fog") is a link to
+    the section (``jump_requested``)."""
+
+    jump_requested = pyqtSignal(str)
 
     def __init__(self, title: str, defs: list[PropertyDef], store: PropertyStore,
                  make_row: Callable[[PropertyDef, str], PropertyRow],
                  on_edit: EditCallback, batch: Callable[[str, Callable], None] | None = None,
-                 parent=None) -> None:  # fmt: skip
+                 parent=None, display: str | None = None, flat: bool = False) -> None:  # fmt: skip
         super().__init__(parent)
         self.title = title
+        self.display = display or title
+        self.flat = flat
         self.store = store
         self.on_edit = on_edit
         self.batch = batch or (lambda label, fn: fn())
         self.defs = [d for d in defs if has_editor(d)]
-        self.switch_def = next((d for d in self.defs if d.switch and d.type is PType.BOOL), None)
-        self.tabs = find_tabs(self.defs)
+        self.switch_def = None if flat else next(
+            (d for d in self.defs if d.switch and d.type is PType.BOOL), None)  # fmt: skip
+        self.tabs = [] if flat else find_tabs(self.defs)
         self.tab = self.tabs[0] if self.tabs else None
         self.more_open = False
         self._make_row = make_row
@@ -728,13 +737,19 @@ class SectionView(QWidget):
         layout.setSpacing(6)
         self.caret = QToolButton()
         self.caret.setObjectName("sectionTitle")
-        self.caret.setText(self.title.replace("&", "&&"))
+        self.caret.setText(self.display.replace("&", "&&"))
         self.caret.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.caret.setIconSize(QSize(14, 14))
         self.caret.setCheckable(True)
         self.caret.setChecked(True)
         self.caret.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.caret.toggled.connect(lambda _: self.refresh())
+        if self.flat:
+            self.caret.setCheckable(False)
+            self.caret.setObjectName("crumb")
+            self.caret.setToolTip("Show this section")
+            self.caret.clicked.connect(lambda: self.jump_requested.emit(self.title))
+        else:
+            self.caret.toggled.connect(lambda _: self.refresh())
         layout.addWidget(self.caret, 1)
         self.switch = None
         if self.switch_def is not None:
@@ -757,7 +772,7 @@ class SectionView(QWidget):
 
     @property
     def is_open(self) -> bool:
-        return self.caret.isChecked()
+        return self.flat or self.caret.isChecked()
 
     def set_open(self, open_: bool) -> None:
         self.caret.setChecked(open_)
@@ -772,6 +787,8 @@ class SectionView(QWidget):
         self.refresh()
 
     def row_visible(self, d: PropertyDef, values: dict) -> bool:
+        if self.flat:
+            return True
         row = self.rows[d.id]
         if row.tab is not None and row.tab != self.tab:
             return False
@@ -779,9 +796,17 @@ class SectionView(QWidget):
             return False
         return d.shown(values)
 
+    def depends_on(self, pid: str) -> bool:
+        """Whether a change of ``pid`` can show or hide rows (conditions, the switch)."""
+        if self.switch_def is not None and self.switch_def.id == pid:
+            return True
+        return any(cond[0] == pid for d in self.defs for cond in d.when)
+
     def has_content(self) -> bool:
         """False when every row is hidden by its conditions (and there is no switch)."""
         values = self.store.values
+        if self.flat:
+            return True
         if self.switch_def is not None:
             return self.switch_def.shown(values)
         return any(d.shown(values) for d in self.defs)
@@ -789,7 +814,10 @@ class SectionView(QWidget):
     def refresh(self) -> None:
         values = self.store.values
         open_ = self.is_open
-        self.caret.setIcon(theme.icon("caret-down" if open_ else "caret-right", theme.TEXT_3))
+        if self.flat:
+            self.caret.setIcon(theme.icon("arrow-right", theme.TEXT_3, theme.ACCENT_TEXT))
+        else:
+            self.caret.setIcon(theme.icon("caret-down" if open_ else "caret-right", theme.TEXT_3))
         on = True
         if self.switch is not None:
             on = bool(values.get(self.switch_def.id))
