@@ -158,8 +158,10 @@ def search_terms(query: str) -> list[list[str]]:
     return out
 
 
-def matches(d: PropertyDef, terms: list[list[str]]) -> bool:
-    haystack = normalise(f"{d.label} {d.section} {d.tooltip} {d.keywords} {d.id}")
+def matches(d: PropertyDef, terms: list[list[str]], section: bool = True) -> bool:
+    """Whether every word is in the label, tooltip, keywords or id (and the section)."""
+    where = f"{d.label} {d.tooltip} {d.keywords} {d.id}" + (f" {d.section}" if section else "")
+    haystack = normalise(where)
     return all(any(t in haystack for t in alternatives) for alternatives in terms)
 
 
@@ -498,7 +500,9 @@ class Inspector(QWidget):
         test = tests[self.filter]
         total = groups = 0
         for title, defs in self.all_sections():
-            hits = [d for d in defs if test(d) and (not terms or matches(d, terms))]
+            hits = [d for d in defs if test(d) and (not terms or matches(d, terms, False))]
+            if terms and not hits:  # the section's title: all of it
+                hits = [d for d in defs if test(d) and matches(d, terms)]
             if not hits:
                 continue
             category = category_of(title)

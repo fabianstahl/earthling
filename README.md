@@ -47,13 +47,46 @@ timeline and export 4K video.
   slope classes, aspect, elevation, contour lines and hillshade. Crossfade between any two.
 - **Keyframe everything:** camera paths, sun, weather, layers and overlays on a timeline with
   a dope sheet and graph editor, undo/redo and auto-key. Scenes are saved as JSON.
+- **An application that is easy to find your way in:** a scene list, an inspector with one
+  category at a time, search in English or German, a command palette, looks for the light
+  and the weather, and a start screen (see [The application](#the-application)).
 - **Generated animation:** chase, map-view, orbit and along-the-line cameras, the line drawn
   from one track to another in its recorded time or at an even speed, the light from the
   tracks' clock, still seconds at both ends - all as editable keys (Animation menu).
 - **Video export:** H.264, H.265, ProRes 4444 and DNxHR, up to 4K, landscape, portrait (9:16)
   or square, with anti-aliasing and motion blur. From the GUI or the command line.
 
-![The application: viewport, parameters and timeline](docs/images/gui.jpg)
+## The application
+
+![The application: scene list, viewport, inspector and timeline](docs/images/gui.jpg)
+
+- **Scene list** (left): the camera, the track groups and their tracks, points of interest,
+  photos and map layers. The checkboxes show and hide, "+" adds (GPX files, lines, POIs at
+  the marker or with a click, photos), and you can drop GPX files, pictures or a project
+  folder on it. Selecting an entry shows its settings in the inspector.
+- **Inspector** (right): a rail of categories (Camera, Terrain, Light, Weather, Water,
+  Tracks, Progress, Labels, Overlays, Layers, Export) shows one category at a time. Sections
+  have an on/off switch where that makes sense, rarely needed settings wait behind "More
+  settings", and settings that do nothing right now are hidden (the follow distance appears
+  in follow mode, the colour ramp when the line is coloured by a value). A number shows its
+  value in a bar: drag it sideways (Shift: fine, Ctrl: coarse) or click to type.
+- **Changed, animated, pinned:** a dot marks values that differ from their default
+  (right-click: reset), amber values are animated, and the filters list the changed, the
+  animated or the pinned (☆) settings of the whole scene.
+- **Looks:** one click sets the light (Noon, Golden hour, Blue hour, Night, with the sun
+  times of the scene's day and place) or the weather (Clear, Hazy, Morning fog, Storm,
+  Snowfall).
+- **Timeline:** play, frame steps, loop, Auto-key (red while it records), camera keys and
+  the generators; "Keys" is the dope sheet, "Curves" the graph editor.
+- **Export frame:** on a wide or ultra-wide screen the view darkens what a video does not
+  show, and the stats, the mini-map and the photos sit in the frame as in the video.
+
+| | |
+|---|---|
+| ![Searching for "Nebel" lists the fog settings](docs/images/search.jpg) | ![The start screen](docs/images/start.jpg) |
+| **Search** (Ctrl+F) finds every setting, in English or German. **Ctrl+K** opens the command palette: settings, actions, looks and help in one list | **Start screen:** a new project from GPX files, recent projects with a picture of their last view, the demo |
+
+Every setting and action is also in the command palette; F1 lists the keyboard shortcuts.
 
 ## Gallery
 
@@ -138,8 +171,8 @@ uv run earthling check-source <project> ign_bdortho --out contact-sheet/   # tes
 
 ## Scene scripts
 
-Everything above can be done in the application (Animation menu, POI and Photos docks, File >
-New Line and Project Settings). Scenes can also be written by Python scripts with the scene kit
+Everything above can be done in the application (the Animation menu, the scene list's "+"
+menus, File > New Line and Project Settings). Scenes can also be written by Python scripts with the scene kit
 (`earthling.scenekit`): load a project's journey, plan smooth chase, orbit or map cameras,
 draw the line along a day's track, add POIs, light and still seconds at both ends, and save
 `scenes/<name>.json` for `earthling render`. The showcase scenes in
@@ -169,3 +202,7 @@ uv run ruff check
 
 [docs/architecture.md](docs/architecture.md) explains how the code is organised,
 [ROADMAP.md](ROADMAP.md) lists every implemented step.
+
+The interface uses the [Inter](https://rsms.me/inter/) font (SIL Open Font License) and the
+[Phosphor](https://phosphoricons.com) icons (MIT); both are in `src/earthling/assets` with
+their licences.

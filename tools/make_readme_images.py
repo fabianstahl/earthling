@@ -213,37 +213,67 @@ def night() -> None:
     save(render(scene), "night")
 
 
-def gui() -> None:
-    """The application window with the demo project and its showcase scene."""
-    from PyQt6.QtCore import QTimer
+def _window(size=(1600, 1000), scene: bool = True):
+    """The application (themed) with the demo project and its showcase scene."""
     from PyQt6.QtWidgets import QApplication
 
     from earthling.app.main_window import MainWindow
     from earthling.app.viewport import configure_default_surface_format
+    from earthling.ui import theme
 
     configure_default_surface_format()
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    theme.apply(app)
     window = MainWindow()
-    window.resize(1600, 1000)
+    window.resize(*size)
     window.show()
-    project = ROOT / "examples" / "alps_demo"
-    window.open_project(project)
-    window.load_scene(project / "showcase.json")
-    window.timeline.set_time(4.0)
+    if scene:
+        project = ROOT / "examples" / "alps_demo"
+        window.open_project(project)
+        window.load_scene(project / "showcase.json")
+        window.timeline.set_time(4.0)
+    return app, window
+
+
+def _grab_later(app, window, name: str, delay_ms: int = 12000, widget=None) -> None:
+    from PyQt6.QtCore import QTimer
 
     def grab() -> None:
         window.scene.mark_dirty(False)
         window.undo_stack.setClean()
-        image = window.grab().toImage()
-        path = OUT / "gui.png"
+        image = (widget or window).grab().toImage()
+        path = OUT / f"{name}.png"
         OUT.mkdir(parents=True, exist_ok=True)
         image.save(str(path))
-        save(Image.open(path), "gui")
+        save(Image.open(path), name)
         path.unlink()
         app.quit()
 
-    QTimer.singleShot(12000, grab)  # let the terrain load
+    QTimer.singleShot(delay_ms, grab)  # let the terrain load
     app.exec()
+
+
+def gui() -> None:
+    """The application: scene list, viewport, inspector (weather) and timeline."""
+    app, window = _window()
+    window.scene_list.select(("camera",))
+    window.inspector.show_category("weather")
+    _grab_later(app, window, "gui")
+
+
+def search() -> None:
+    """The inspector's search finds settings in English or German ("Nebel")."""
+    app, window = _window()
+    window.inspector.search.setText("nebel")
+    window.inspector.rebuild()
+    _grab_later(app, window, "search")
+
+
+def start() -> None:
+    """The start screen (recent projects, a new project from GPX files)."""
+    app, window = _window(scene=False)
+    window.show_start(True)
+    _grab_later(app, window, "start", 1500)
 
 
 def graph() -> None:
@@ -253,9 +283,11 @@ def graph() -> None:
 
     from earthling.app.main_window import MainWindow
     from earthling.app.viewport import configure_default_surface_format
+    from earthling.ui import theme
 
     configure_default_surface_format()
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    theme.apply(app)
     window = MainWindow()
     window.resize(1700, 1500)
     window.show()
@@ -300,7 +332,7 @@ def graph() -> None:
 
 
 IMAGES = {"hero": hero, "layers": layers, "weather": weather, "storm": storm, "pois": pois,
-          "night": night, "gui": gui, "graph": graph,
+          "night": night, "gui": gui, "search": search, "start": start, "graph": graph,
           "storm_candidates": storm_candidates}  # fmt: skip
 
 if __name__ == "__main__":

@@ -934,7 +934,7 @@ class SectionView(QWidget):
             and d.shown(values)
             and (self.rows[d.id].tab in (None, self.tab))
         ]
-        self.more.setVisible(bool(hidden_advanced))
+        self.more.setVisible(bool(hidden_advanced) and not self.flat)
         self.more.setText("Fewer settings" if self.more_open
                           else f"More settings · {len(hidden_advanced)}")  # fmt: skip
         self.more.setIcon(theme.icon("caret-down" if self.more_open else "caret-right",

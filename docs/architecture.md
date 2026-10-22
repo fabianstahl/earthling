@@ -19,9 +19,11 @@ src/earthling/
               labels, POIs, HUD, mini-map, photos; shaders/ holds the GLSL
   export/     offscreen frames, stills, video encoding (ffmpeg), video QA
   scenekit/   helpers for scene scripts (Python files that build scenes)
-  app/        PyQt6 application: main window, viewport, dialogs, docks, controllers
+  app/        PyQt6 application: main window, viewport (+ its overlay), scene list, item
+              editors (POIs, photos), looks, start screen, dialogs, controllers
   ui/         reusable Qt widgets: theme (colour tokens, Inter, Phosphor icons), property
-              panel, timeline, dope sheet, graph editor
+              editors and sections, inspector, command palette, timeline, dope sheet,
+              graph editor
   cli.py      `earthling gui | plan | fetch | render | stills | qa | check-source`
 ```
 
@@ -67,6 +69,16 @@ and the HUD (stats panel and mini-map).
   `render.parameters.track_group_properties`). From that declaration come the UI widget, the
   shader binding (`bind_uniforms`), keyframing, serialisation and undo. A new shader
   parameter is one declaration with `uniform="u_name"`.
+- **The inspector.** `ui/inspector.py` maps section titles to the rail's categories (a new
+  section lands in "More" until a category lists it) and builds only the shown sections.
+  The declarations steer it without affecting rendering: `advanced=True` puts a setting
+  behind "More settings", `when=shown_if(...)` / `shown_unless(...)` hides it while it has
+  no effect, `switch=True` makes a boolean its section's on/off switch, `keywords=` helps the
+  search, and labels "<tab>: <setting>" share tabs (the cloud layers). Editor slots are
+  bound methods: PyQt disconnects them when a rebuilt view is destroyed, not lambdas.
+- **The export frame.** The viewport keeps the vertical field of view of the export, so a
+  wider view shows more at the sides; `Renderer.overlay_rect` places the screen overlays
+  (stats, mini-map, photos) inside the frame the video will show.
 - **Animation.** At time *t* the animation evaluates all curves and pushes the values into the
   store; the viewport and the export use exactly the same path.
 - **Tiles.** Everything is an XYZ Web Mercator pyramid. Imagery comes as tiles; DEM sources
@@ -104,8 +116,8 @@ places, track numbering, the look of a series) and usually starts with
 `from earthling.scenekit import *`; see `examples/showcase/tools/sc_common.py`.
 
 The application offers the same generators (`app/generators.py`, the Animation menu: camera,
-drawing the tracks, the sun, still seconds) as undoable keys, and the POI and Photos docks
-place items at coordinates, the hiker, a click or a track point (`app/item_editor.py`,
+drawing the tracks, the sun, still seconds) as undoable keys, and the scene list with the POI
+and photo editors places items at coordinates, the hiker, a click or a track point (`app/item_editor.py`,
 `app/place_dialog.py`).
 
 The workflow for a video: run the scene script, check stills
