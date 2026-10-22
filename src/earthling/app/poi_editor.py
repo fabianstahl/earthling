@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QSizePolicy,
     QSpinBox,
     QWidget,
 )
@@ -77,8 +78,18 @@ class PoiEditor(SceneItemEditor):
         for spin in (self.cols, self.rows):
             spin.setRange(1, 64)
         self.fps = double_spin(0.5, 60.0)
-        sprite = row(QLabel("cols"), self.cols, QLabel("rows"), self.rows, QLabel("fps"), self.fps)
+        for spin in (self.cols, self.rows, self.fps):
+            spin.setButtonSymbols(spin.ButtonSymbols.NoButtons)
+            spin.setMinimumWidth(30)
+            spin.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.fps.setSuffix(" fps")
+        sprite = row((self.cols, 1), QLabel("×"), (self.rows, 1), (self.fps, 2))
         sprite.setToolTip("Animated sprite sheets: columns, rows and frames per second")
+        for combo in (self.kind, self.icon):  # (long entries must not widen the inspector)
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            combo.setMinimumContentsLength(10)
         form.addRow("Kind", self.kind)
         form.addRow("Name", self.name)
         form.addRow("Caption", self.caption)

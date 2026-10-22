@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 from earthling.app.keyframing import KeyframeEditor, KeyRef
 from earthling.core.animation import HANDLE_LABELS, Curve, HandleMode, Keyframe, snap_to_frame
 from earthling.core.properties import PType
+from earthling.ui import theme
 from earthling.ui.key_views import (
     ADDITIVE,
     KEY_OUTLINE,
@@ -580,15 +581,21 @@ class GraphEditor(QWidget):
         self.view = GraphView(editor)
         self.buttons: dict[str, QToolButton] = {}
 
-        def button(name: str, *args, **kwargs) -> None:
+        def button(name: str, *args, icon: str = "", **kwargs) -> None:
             self.buttons[name] = btn = tool_button(*args, **kwargs)
+            if icon:
+                btn.setIcon(theme.tool_icon(icon))
+                btn.setIconSize(QSize(15, 15))
+                btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             bar.addWidget(btn)
 
-        button("frame_all", "Frame all", "Show all curves (Home)", self.view.frame_all)
+        bar.setContentsMargins(8, 4, 8, 4)
+        button("frame_all", "Frame all", "Show all curves (Home)", self.view.frame_all,
+               icon="corners-out")  # fmt: skip
         button("frame_sel", "Frame selected", "Zoom to the selected keys (F)",
-               self.view.frame_selected)  # fmt: skip
+               self.view.frame_selected, icon="frame-corners")  # fmt: skip
         button("normalize", "Normalize", "Scale every curve to 0…1 to compare shapes",
-               self.view.set_normalized, checked=False)  # fmt: skip
+               self.view.set_normalized, checked=False, icon="sliders-horizontal")  # fmt: skip
         bar.addSpacing(16)
         for mode in HandleMode:
             button(f"handles_{mode.value}", HANDLE_LABELS[mode].split(" ")[0],

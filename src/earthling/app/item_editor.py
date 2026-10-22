@@ -14,7 +14,14 @@ from pathlib import Path
 
 from PyQt6.QtCore import QSize, pyqtSignal
 from PyQt6.QtGui import QIcon, QUndoCommand
-from PyQt6.QtWidgets import QFormLayout, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFormLayout,
+    QHBoxLayout,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from earthling.core.scene import Scene
 from earthling.ui import theme
@@ -131,12 +138,18 @@ class SceneItemEditor(QWidget):
         self.lon = double_spin(-180.0, 180.0, decimals=6, suffix="°")
         self.lat.setToolTip("Latitude (north positive)")
         self.lon.setToolTip("Longitude (east positive)")
-        self.move_hiker = icon_button("bicycle", "At marker", "Move it to the head of the line")
+        for spin in (self.lat, self.lon):  # (narrow: the form fits the inspector)
+            spin.setButtonSymbols(spin.ButtonSymbols.NoButtons)
+            spin.setMinimumWidth(40)
+            spin.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.move_hiker = icon_button("bicycle", "Marker", "Move it to the head of the line")
         self.move_click = icon_button("crosshair", "Pick", "Click on the terrain to move it")
         self.move_place = icon_button("magnifying-glass", "Place…",
                                       "Coordinates or a point of a track")  # fmt: skip
         form.addRow("Position", row((self.lat, 1), (self.lon, 1)))
-        form.addRow("", row(self.move_hiker, self.move_click, self.move_place))
+        moves = row(self.move_hiker, self.move_click, self.move_place)
+        moves.layout().setContentsMargins(LABEL_WIDTH - 2, 0, 0, 0)
+        form.addRow(moves)  # (a row of its own: the buttons need the width)
         for i in range(form.rowCount()):
             label = form.itemAt(i, QFormLayout.ItemRole.LabelRole)
             if label is not None and label.widget() is not None:
@@ -145,8 +158,15 @@ class SceneItemEditor(QWidget):
             field = form.itemAt(i, QFormLayout.ItemRole.FieldRole)
             if field is not None and field.widget() is not None and field.widget().layout():
                 field.widget().layout().setContentsMargins(0, 0, 0, 0)
+        for i in range(form.rowCount()):  # fields shrink with the inspector
+            field = form.itemAt(i, QFormLayout.ItemRole.FieldRole)
+            if field is not None and field.widget() is not None:
+                field.widget().setMinimumWidth(0)
+                policy = field.widget().sizePolicy()
+                policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+                field.widget().setSizePolicy(policy)
         layout.addLayout(form)
-        self.remove = icon_button("trash", f"Remove {self.NOUN.lower()}",
+        self.remove = icon_button("trash", "Remove",
                                   f"Remove this {self.NOUN.lower()} (undoable)")  # fmt: skip
         buttons = QHBoxLayout()
         buttons.addStretch()

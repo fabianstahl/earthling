@@ -367,6 +367,10 @@ class EnumEditor(PropertyEditor):
         layout = tight_hbox(self)
         self.combo = QComboBox()
         self.combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        # long choices must not widen the inspector (the list shows them in full)
+        adjust = QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        self.combo.setSizeAdjustPolicy(adjust)
+        self.combo.setMinimumContentsLength(8)
         for value, label in d.options:
             self.combo.addItem(label, value)
         layout.addWidget(self.combo)
