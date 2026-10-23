@@ -1,0 +1,27 @@
+# Showcase 11: the Baltoro glacier trek to Concordia and K2 - synthetic tracks.
+
+[project]
+gpx_dir   = "gpx/"
+cache_dir = "~/earthling-cache"
+timezone  = "Asia/Karachi"
+
+[area]
+border_km = 40.0
+zones = [
+  { within_km = 1.0,  imagery_zoom = 16, dem_zoom = 13 },
+  { within_km = 5.0,  imagery_zoom = 14, dem_zoom = 12 },
+  { within_km = 20.0, imagery_zoom = 12, dem_zoom = 11 },
+  { within_km = 40.0, imagery_zoom = 10, dem_zoom = 9 },
+]
+
+[[tracks]]
+name  = "trek"
+label = "Trek"
+gpx   = "gpx/trek"
+role  = "walked"
+
+[sources]
+imagery = ["esri_world_imagery"]
+colour_reference = "eox_s2cloudless_2024"
+# GLO-30: the Karakoram without the voids and spikes of the SRTM-based tiles
+dem     = ["copernicus_glo30", "aws_terrarium"]

@@ -5,6 +5,11 @@ gpx_dir   = "gpx/"
 cache_dir = "~/earthling-cache"
 timezone  = "Asia/Kathmandu"
 
+# the globe for the zoom-out at the end of the summit scene
+[world]
+imagery_zoom = 5
+dem_zoom     = 3
+
 [area]
 border_km = 50.0
 zones = [

@@ -1,4 +1,4 @@
-"""Generate the synthetic GPX tracks of the ten showcase scenes.
+"""Generate the synthetic GPX tracks of the eleven showcase scenes.
 
     python -m uv run python examples/showcase/tools/gen_tracks.py [s01 s02 ...]
 
@@ -432,6 +432,27 @@ def s08_summit() -> None:
               *thin_by_time(pts, ele, t, 10.0))  # fmt: skip
 
 
+# --- 11 Baltoro glacier: Askole - Concordia (K2) ----------------------------------------------
+ASKOLE, KOROPHON, BARDUMAL = (35.68194, 75.81794), (35.68932, 75.91442), (35.65552, 75.99969)
+PAJU, LILIGO, URDOKAS = (35.67723, 76.12567), (35.70083, 76.19439), (35.72751, 76.28500)
+GORE_I, GORE_II, CONCORDIA = (35.74141, 76.35308), (35.74426, 76.39818), (35.74162, 76.51189)
+BALTORO_DAYS = [  # (stops, start "HH:MM", factor, breaks), July 2026, UTC+5
+    ([ASKOLE, KOROPHON, BARDUMAL], "06:30", 0.8, [(0.5, 45)]),
+    ([BARDUMAL, PAJU], "07:00", 0.8, [(0.5, 40)]),
+    ([PAJU, LILIGO, URDOKAS], "06:30", 0.7, [(0.45, 45)]),
+    ([URDOKAS, GORE_I, GORE_II], "06:30", 0.65, [(0.5, 40)]),
+    ([GORE_II, CONCORDIA], "07:00", 0.6, [(0.5, 30)]),
+]  # fmt: skip
+
+
+def s11() -> None:
+    out = SHOWCASE / "s11_k2" / "gpx" / "trek"
+    for day, (stops, at, factor, breaks) in enumerate(BALTORO_DAYS, 1):
+        h, m = (int(v) for v in at.split(":"))
+        hike(out / f"day{day}.gpx", f"Baltoro trek day {day}", stops,
+             local(2026, 7, 9 + day, h, m, 5.0), factor=factor, breaks=breaks, seed=day)  # fmt: skip
+
+
 # --- 9 Boundary Waters canoe trip ------------------------------------------------------------
 CANOE_DAYS = [  # (from, to, start)
     ((47.9875, -91.4993), (48.0397, -91.4560), "09:00"),   # Moose Lake landing - Sucker Lake
@@ -512,7 +533,7 @@ def s10() -> None:
 
 
 SCENES = {"s01": s01, "s02": s02, "s03": s03, "s04": s04, "s05": s05, "s06": s06, "s07": s07,
-          "s08": s08, "s08_summit": s08_summit, "s09": s09, "s10": s10}  # fmt: skip
+          "s08": s08, "s08_summit": s08_summit, "s09": s09, "s10": s10, "s11": s11}  # fmt: skip
 
 if __name__ == "__main__":
     for key in sys.argv[1:] or list(SCENES):
