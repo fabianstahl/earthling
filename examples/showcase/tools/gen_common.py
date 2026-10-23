@@ -156,6 +156,27 @@ def overpass(query: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def osm_ways(ids: list[int]) -> np.ndarray:
+    """OpenStreetMap ways chained in the given order into one (lat, lon) line: each way is
+    turned so that it starts where the previous one ended."""
+    doc = overpass(f"[out:json][timeout:120];way(id:{','.join(map(str, ids))});out geom;")
+    by_id = {el["id"]: [(p["lat"], p["lon"]) for p in el["geometry"]] for el in doc["elements"]}
+    line: list[tuple[float, float]] = []
+    for i, way_id in enumerate(ids):
+        pts = by_id[way_id]
+        if i == 0 and len(ids) > 1:  # (the first way: the end that meets the second goes last)
+            nxt = by_id[ids[1]]
+            ends = (nxt[0], nxt[-1])
+            if min(np.hypot(*np.subtract(pts[0], e)) for e in ends) < \
+                    min(np.hypot(*np.subtract(pts[-1], e)) for e in ends):  # fmt: skip
+                pts = pts[::-1]
+        elif line and np.hypot(*np.subtract(pts[-1], line[-1])) < \
+                np.hypot(*np.subtract(pts[0], line[-1])):  # fmt: skip
+            pts = pts[::-1]
+        line += pts if not line else pts[1:]
+    return np.array(line)
+
+
 def trail(name_regex: str, bbox, start, end) -> np.ndarray:
     """A named trail from OpenStreetMap (all ways whose name matches), merged into one line and
     cut from the point nearest ``start`` to the point nearest ``end``. ``bbox`` = (south, west,

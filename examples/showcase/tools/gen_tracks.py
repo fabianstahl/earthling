@@ -23,6 +23,7 @@ from gen_common import (  # noqa: E402
     heart_rate,
     heights,
     local,
+    osm_ways,
     place,
     resample,
     route,
@@ -35,7 +36,6 @@ from gen_common import (  # noqa: E402
     trail,
     water_route,
     write_gpx,
-    zigzag,
 )
 
 
@@ -279,14 +279,10 @@ def s04() -> None:
 
 # --- 5 Kilimanjaro summit night ----------------------------------------------------------------
 def s05() -> None:
-    # the summit path is not routable: Barafu - Kosovo camp, switchbacks up the scree to
-    # Stella Point, then along the crater rim to Uhuru Peak
-    barafu, kosovo = place("Barafu Camp, Kilimanjaro"), (-3.0921, 37.3716)
-    stella, uhuru = place("Stella Point, Kilimanjaro"), place("Uhuru Peak")
-    pts = np.vstack([resample([barafu, kosovo], 10.0),
-                     zigzag(kosovo, stella, width_m=70.0, period_m=180.0)[1:],
-                     resample([stella, (-3.0768, 37.3585), uhuru], 10.0)[1:]])  # fmt: skip
-    pts = resample(smooth_line(pts, 5), 10.0)
+    # the summit path as mapped in OpenStreetMap: Barafu Camp up the ridge, the switchbacks of
+    # the scree slope to Stella Point, then along the crater rim to Uhuru Peak
+    pts = osm_ways([627821153, 627821152, 628020731, 5116848, 25908806, 628020733])
+    pts = resample(smooth_line(resample(pts, 5.0), 3), 10.0)
     ele = smooth(heights(pts, 13), 5)
     t = tobler_times(pts, ele, local(2026, 2, 14, 0, 5, 3), factor=0.42,
                      breaks=[(0.25, 10), (0.5, 12), (0.8, 15), (0.999, 25)])  # fmt: skip

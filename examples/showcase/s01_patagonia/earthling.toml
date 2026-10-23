@@ -23,4 +23,4 @@ zones = [
 # one consistent mosaic from space down to the valley (10 m Sentinel-2): no zoom-level
 # patchwork on the dive, and no colour matching needed
 imagery = ["eox_s2cloudless_2024"]
-dem     = ["aws_terrarium"]
+dem     = ["copernicus_glo30", "aws_terrarium"]  # (AWS where GLO-30 has no tile: sea, the globe)

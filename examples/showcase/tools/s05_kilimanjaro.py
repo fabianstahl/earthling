@@ -114,8 +114,13 @@ def main() -> None:
     key_shots(scene, shots)
 
     stella = hike.enu(-3.0782, 37.3626, 5739.0)
+    # the summit flag floats above the peak's label (name and elevation), without a pin line
+    # through the text
+    top = poi("uhuru", summit, "summit", 48.0)
+    top.lift_px = 92.0
     scene.set_pois([poi("barafu", barafu, "tent", 40.0), poi("stella", stella, "flag", 36.0),
-                    poi("uhuru", summit, "summit", 48.0)])  # fmt: skip
+                    top])  # fmt: skip
+    scene.store.set("poi.uhuru.pin", False)
     show(scene, "barafu", None)
     t_stella = next((t for t in times if head_of(t) >= hike.path.total_m * 0.86), WALK[1])
     show(scene, "stella", round(float(t_stella), 3))

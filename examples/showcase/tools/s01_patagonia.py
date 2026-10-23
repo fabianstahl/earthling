@@ -33,6 +33,14 @@ def lerp(a, b, f):
     return a + (b - a) * f
 
 
+def gaussian(values: np.ndarray, sigma: float) -> np.ndarray:
+    """``values`` low-passed with a gaussian of ``sigma`` samples (the ends held)."""
+    radius = int(3 * sigma)
+    kernel = np.exp(-0.5 * (np.arange(-radius, radius + 1) / sigma) ** 2)
+    kernel /= kernel.sum()
+    return np.convolve(np.pad(values, radius, mode="edge"), kernel, "valid")
+
+
 def main() -> None:
     hike = load_hike("s01_patagonia", ORIGIN)
     scene = new_scene(hike, DURATION)
@@ -86,11 +94,11 @@ def main() -> None:
         e = smoother(u)
         # distance: 14 000 km down to 4 km (log), faster in the middle
         dist = math.exp(lerp(math.log(14_000e3), math.log(8_500.0), e))
-        g = smoother(min(1.0, u * 1.4))  # the look point arrives before the camera
+        g = e  # the look point arrives with the zoom and the pitch: one ease, no reversal
         lat = lerp(far_lat, look_lat, g)
         lon = lerp(far_lon, look_lon, g)
         heading = lerp(10.0, 292.0, e)  # a slow spin, ending looking west-north-west
-        pitch = lerp(-62.0, -22.0, smoother(min(1.0, max(0.0, (u - 0.45) / 0.55))))
+        pitch = lerp(-62.0, -22.0, smoother(min(1.0, max(0.0, (u - 0.0) / (1.0 - 0.0)))))
         if t > 13.0:  # glide on: closer, the towers rising
             v = smoother((t - 13.0) / 3.0)
             dist = lerp(8_500.0, 7_000.0, v)
@@ -98,13 +106,23 @@ def main() -> None:
             pitch = lerp(-22.0, -16.0, v)
         return lat, lon, heading, pitch, dist
 
-    for t in np.arange(0.0, DURATION + 1e-9, 1.0 / 30.0):
-        lat, lon, heading, pitch, dist = state(float(t))
-        h = hike.data.height_at(lon, lat) or 0.0
-        eye, target = geo_orbit_eye(hike, lat, lon, h, heading, pitch, dist)
-        ground = hike.ground_z(eye)
-        if math.isfinite(ground):
-            eye[2] = max(eye[2], ground + 400.0)
+    # the ground under the look point changes with every ridge it passes: low-passed (1 s),
+    # so the camera does not bob; the eye's clearance above the ground is smoothed as well
+    times = np.arange(0.0, DURATION + 1e-9, 1.0 / 30.0)
+    states = [state(float(t)) for t in times]
+    raw = np.array([hike.data.height_at(lon, lat) or 0.0 for lat, lon, *_ in states])
+    heights = gaussian(raw, 30.0)
+    eyes, targets = [], []
+    for (lat, lon, heading, pitch, dist), h in zip(states, heights, strict=True):
+        eye, target = geo_orbit_eye(hike, lat, lon, float(h), heading, pitch, dist)
+        eyes.append(eye)
+        targets.append(target)
+    eyes = np.array(eyes)
+    ground = np.array([hike.ground_z(e) for e in eyes])
+    ground = np.where(np.isfinite(ground), ground, -1e9)
+    lift = gaussian(np.maximum(ground + 400.0 - eyes[:, 2], 0.0), 12.0)
+    eyes[:, 2] = np.maximum(eyes[:, 2] + lift, ground + 300.0)
+    for t, eye, target in zip(times, eyes, targets, strict=True):
         scene.animation.set_key("camera.pose", round(float(t), 4), pose(eye, target),
                                 Interp.LINEAR)  # fmt: skip
 
