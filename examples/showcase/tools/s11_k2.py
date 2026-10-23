@@ -1,8 +1,9 @@
 """Showcase 11: Concordia, the snow clouds part and K2 appears (~6 s, for the trailer).
 
 The Baltoro trek (five days from Askole) has arrived at Concordia. It is snowing, a cloud deck
-hides the mountains; the snowfall stops, the clouds dissolve and K2 stands at the end of the
-Godwin-Austen glacier, 15 km away. The camera barely moves: a slow push and a slight tilt up.
+hides the mountains; the snowfall eases, the clouds thin out and part, and K2 appears at the end
+of the Godwin-Austen glacier, 15 km away, still in haze and light snow. The camera moves slowly
+towards the mountain and tilts up a little.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import datetime as dt
 from sc_common import Interp, key, key_shots, load_hike, new_scene, poi, save, show, smoother
 
 DURATION = 6.0
-CLEAR = (2.2, 4.4)  # the clouds dissolve
+CLEAR = (1.5, 5.5)  # the clouds thin out and part (slowly: no sudden fine weather)
 K2 = (35.88165, 76.51347, 8611.0)
 
 
@@ -53,25 +54,21 @@ def main() -> None:
 
     # snowfall from a deck that hides the upper mountains; it stops and the deck dissolves
     for pid, value in (("rain.enabled", True), ("rain.type", "snow"), ("rain.cloud_base", 6000.0),
-                       ("rain.cloud_thickness", 1600.0), ("rain.coverage", 0.9),
+                       ("rain.cloud_thickness", 1600.0),
                        ("rain.darkness", 0.35), ("rain.wind", 4.0), ("snow.line", 4400.0),
                        ("snow.transition", 250.0), ("snow.cover", 0.4)):  # fmt: skip
         s.set(pid, value)
-    key(scene, "rain.intensity", 0.0, 0.6)
-    key(scene, "rain.intensity", CLEAR[0], 0.5)
-    key(scene, "rain.intensity", CLEAR[1], 0.03)
-    key(scene, "rain.cloud_density", 0.0, 0.9)
-    key(scene, "rain.cloud_density", CLEAR[0], 0.85)
-    key(scene, "rain.cloud_density", CLEAR[1], 0.0)
-    key(scene, "rain.visibility_km", 0.0, 7.0)
-    key(scene, "rain.visibility_km", CLEAR[0], 8.0)
-    key(scene, "rain.visibility_km", CLEAR[1], 45.0)
+    for pid, start, end in (("rain.intensity", 0.6, 0.18), ("rain.cloud_density", 0.9, 0.16),
+                            ("rain.coverage", 0.9, 0.5), ("rain.visibility_km", 7.0, 26.0)):  # fmt: skip
+        key(scene, pid, 0.0, start)
+        key(scene, pid, CLEAR[0], start)
+        key(scene, pid, CLEAR[1], end)
 
     # --- the camera: south of the camp, a slow push up the glacier, a slight tilt up ---------
     summit = hike.enu(*K2)
     start_eye = hike.enu(35.7330, 76.5120, 4600.0)
     start_eye[2] = max(start_eye[2], hike.ground_z(start_eye)) + 450.0
-    end_eye = start_eye + (summit - start_eye) * 0.012  # (~190 m closer)
+    end_eye = start_eye + (summit - start_eye) * 0.085  # (~1.3 km closer: a slow push)
     low = hike.enu(35.8780, 76.5134, 6800.0)  # K2's lower slopes: the summit high in the frame
     shots = []
     t = 0.0
