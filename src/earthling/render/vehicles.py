@@ -18,6 +18,23 @@ VEHICLES = {"ship": "rotate", "plane": "rotate", "train": "rotate", "car": "rota
             "bus": "rotate", "canoe": "rotate", "bike": "flip", "runner": "flip",
             "hiker": "flip"}  # fmt: skip
 MARKER_OPTIONS = [("dot", "Glowing dot")] + [(name, name.title()) for name in VEHICLES]
+# the direction of travel: from this far behind the head to this far ahead (metres); long for
+# a plane (no jerk at every waypoint of its line), short for a car in hairpins
+HEADING_WINDOW_M = {"plane": 1500.0, "ship": 300.0, "train": 200.0, "canoe": 40.0}
+EARTH_RADIUS_M = 6_371_000.0
+
+
+def travel_direction(back, here, ahead) -> np.ndarray | None:
+    """The horizontal direction from ``back`` to ``ahead`` at ``here`` (ENU points of the
+    scene frame): climbs and descents (a plane landing) do not turn the icon on screen."""
+    if back is None or ahead is None or here is None:
+        return None
+    up = np.asarray(here, dtype=np.float64) + np.array([0.0, 0.0, EARTH_RADIUS_M])
+    up /= np.linalg.norm(up)  # (the local vertical: the frame's "up" tilts far from its origin)
+    d = np.asarray(ahead, dtype=np.float64) - np.asarray(back, dtype=np.float64)
+    d -= np.dot(d, up) * up
+    n = float(np.linalg.norm(d))
+    return d / n if n > 1e-3 else None
 
 
 @dataclass

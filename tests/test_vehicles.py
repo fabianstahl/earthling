@@ -109,3 +109,17 @@ def test_vehicle_tint_and_label(gl_ctx):
     rows = np.flatnonzero((np.abs(labelled - gold).sum(axis=2) > 30).any(axis=1))
     icon_rows = np.flatnonzero(changed.any(axis=1))
     assert len(rows) and rows.max() <= icon_rows.min() + 2  # the caption above the icon
+
+
+def test_travel_direction_is_horizontal_and_smooth():
+    import numpy as np
+
+    from earthling.render.vehicles import travel_direction
+
+    # a plane landing steeply towards the north-east: the icon still points north-east
+    here = np.array([0.0, 0.0, 500.0])
+    d = travel_direction(here - np.array([700.0, 700.0, -400.0]), here,
+                         here + np.array([5.0, 5.0, -480.0]))  # fmt: skip
+    assert d[2] == 0.0 or abs(d[2]) < 1e-6
+    assert np.allclose(d[:2], [np.sqrt(0.5), np.sqrt(0.5)], atol=0.01)
+    assert travel_direction(here, here, here) is None

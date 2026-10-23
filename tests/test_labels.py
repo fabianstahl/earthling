@@ -307,3 +307,31 @@ def test_labels_appear_when_passed(gl_ctx, tmp_path):
     # without a drawn track the option changes nothing
     renderer, _ = render_labels(gl_ctx, tmp_path, [peak("P")], labels__follow_progress=True)
     assert renderer.labels.last_drawn == 1
+
+
+def test_shown_labels_keep_their_place_and_fade():
+    """A label that is shown is not displaced by one that touches it briefly; changes fade."""
+    import numpy as np
+
+    from earthling.render.labels import FADE_S, LabelLayer
+
+    layer = LabelLayer.__new__(LabelLayer)
+    layer._shown, layer._shown_time = {}, None
+    clash = np.array([[0.0, 1.0], [1.0, 0.0]])  # candidates 0 and 1 overlap
+    # only feature 20 (candidate order: by priority) is on screen at first
+    layer.time = 0.0
+    assert list(layer._stable_placement(np.array([20]), np.array([1.0]), np.zeros((1, 1)), 10)) == [
+        1.0
+    ]
+    # feature 10 (more important) arrives on top of it: 20 stays, 10 waits
+    layer.time = 1 / 60
+    shown = layer._stable_placement(np.array([10, 20]), np.ones(2), clash, 10)
+    assert shown[1] == 1.0 and shown[0] == 0.0
+    # a jump in time (a still): plain priority, 10 is shown at once
+    layer.time = 5.0
+    shown = layer._stable_placement(np.array([10, 20]), np.ones(2), clash, 10)
+    assert list(shown) == [1.0, 0.0]
+    # 20 alone again: it fades in over FADE_S
+    layer.time = 5.0 + FADE_S / 2
+    shown = layer._stable_placement(np.array([20]), np.ones(1), np.zeros((1, 1)), 10)
+    assert shown[0] == pytest.approx(0.5)

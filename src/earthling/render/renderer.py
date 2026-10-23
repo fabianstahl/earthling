@@ -347,6 +347,7 @@ class Renderer:
         self._tonemap(fbo, *output, bloom)
         self.labels.veil = self.target.veil
         self.labels.path, self.labels.head_m = self.tracks.path, self.tracks.head_m
+        self.labels.time = self.time
         self.labels.render(fbo, camera, view_proj, self.frame, self.terrain.exaggeration,
                            *output, self.target.depth, (width, height), self.store)  # fmt: skip
         self.pois.path = self.tracks.path
@@ -602,7 +603,7 @@ class Renderer:
 
     def _vehicle_at(self, path, head: float):
         """The vehicle marker at distance ``head`` (None: the head's group shows the dot)."""
-        from earthling.render.vehicles import VehicleMarker
+        from earthling.render.vehicles import HEADING_WINDOW_M, VehicleMarker, travel_direction
 
         s = self.store
         g = path.track_at(head)
@@ -612,9 +613,15 @@ class Renderer:
         if pid not in s.registry or s[pid] == "dot":
             return None
         here = path.position_at(head)
-        ahead = path.position_at(min(head + 25.0, g.offset_m + g.length_m))
-        if here is None or ahead is None or np.linalg.norm(ahead - here) < 1.0:
-            ahead = here + (here - path.position_at(max(head - 25.0, g.offset_m)))
+        if here is None:
+            return None
+        window = HEADING_WINDOW_M.get(s[pid], 25.0)
+        start, end = g.offset_m, g.offset_m + g.length_m
+        direction = travel_direction(path.position_at(max(head - window, start)), here,
+                                     path.position_at(min(head + window, end)))  # fmt: skip
+        if direction is None:  # (a track of a few metres)
+            direction = np.array([0.0, 1.0, 0.0])
+        ahead = here + direction * 25.0
         p = f"trackgroup.{g.track.group}."
         tint = s[p + "marker_tint"] if p + "marker_tint" in s.registry else (1.0, 1.0, 1.0)
         label = s[p + "marker_label"] if p + "marker_label" in s.registry else ""

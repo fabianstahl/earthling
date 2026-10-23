@@ -15,7 +15,7 @@ import math
 import moderngl
 import numpy as np
 
-from earthling.core.easing import smoothstep, smoothstep_array
+from earthling.core.easing import smoothstep_array
 from earthling.data.labels import LabelData, LabelFeature, enrich
 from earthling.render.camera import Camera
 from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
@@ -34,6 +34,9 @@ from earthling.render.text import (  # noqa: F401 (re-exported)
 LIFT_M = 12.0  # anchors float a little above the ground
 MAX_LABELS = 1024  # candidates per frame for the occlusion test
 MAX_DECLUTTER = 400  # visible candidates considered for placement (by priority)
+FADE_S = 0.4  # a label placed or displaced fades in / out over this time
+INCUMBENT_BONUS = 8  # a shown label goes before this many more important new ones
+RESET_S = 0.5  # a jump in time (scrubbing, a single still) starts the placement afresh
 KIND_PRIORITY = {"place": 2.0, "peak": 2.0, "pass": 1.2, "hut": 0.8, "city": 2.5,
                  "country": 7.0}  # fmt: skip
 KIND_PROPERTIES = {
@@ -104,6 +107,10 @@ class LabelLayer:
         self._passed_key: tuple | None = None
         self._passed = np.zeros(0)
         self.last_drawn = 0  # labels drawn in the last frame (tests, status)
+        # stable placement: how far each feature (index) is faded in, at which time
+        self.time = 0.0  # set by the renderer every frame (animation or wall clock)
+        self._shown: dict[int, float] = {}
+        self._shown_time: float | None = None
 
     def get_atlas(self) -> FontAtlas:
         """The font atlas (shared with the stats overlay)."""
@@ -149,6 +156,7 @@ class LabelLayer:
         self._lonlat = np.array([(f.lon, f.lat) for f in features]).reshape(-1, 2)
         self._priority = static_priority(features)
         self._anchor_key = None
+        self._shown = {}
 
     def load_sync(self) -> bool:
         """For exports: make sure the features are loaded and enriched."""
@@ -355,27 +363,60 @@ class LabelLayer:
         ])  # fmt: skip
         np.fill_diagonal(conflicts, 0.0)
         top_fade = smoothstep_array(0.0, 12.0 * k, top)
-        blocked = np.zeros(len(idx))
+        shown = self._stable_placement(idx, alpha0 * top_fade, conflicts, max_count)
         verts: list[np.ndarray] = []
         for i in range(len(idx)):
-            a = alpha0[i] * (1.0 - smoothstep(0.0, 0.06, blocked[i])) * top_fade[i]
+            a = alpha0[i] * shown[i] * top_fade[i]
             if a < 0.02:
                 continue
-            if a > 0.12:  # even faint (partly hidden) labels reserve their space
-                blocked = np.maximum(blocked, conflicts[:, i])
             name, ele_text = texts[idx[i]]
             verts.append(self._label_vertices(
                 x[i], y[i], bottom[i], name, name_base[i], name_scale[i], name_w[i],
                 ele_text, ele_base[i], ele_scale[i], ele_w[i], a, k, dot=not country[i],
             ))  # fmt: skip
-            if len(verts) >= max_count:
-                break
         self.last_drawn = len(verts)
         if not verts:
             return
         # most important labels last, i.e. on top
         vertices = np.concatenate(verts[::-1]).astype(np.float32)
         self._submit(fbo, vertices, width, height, store)
+
+    def _stable_placement(self, idx: np.ndarray, alpha: np.ndarray, conflicts: np.ndarray,
+                          max_count: int) -> np.ndarray:  # fmt: skip
+        """How far each candidate (in priority order) is shown, 0..1.
+
+        Greedy by priority, except that labels already shown go first (by INCUMBENT_BONUS
+        places): a label that briefly touches another one keeps its place instead of
+        blinking. Placed labels fade in, displaced ones fade out over FADE_S, and a new label
+        waits until a fading one has made room. A jump in time starts afresh (a still shows
+        the plain greedy placement)."""
+        dt = None if self._shown_time is None else self.time - self._shown_time
+        # (anti-aliasing samples share a time, motion blur samples may step back a little:
+        # neither changes the state)
+        fresh = dt is None or abs(dt) > RESET_S
+        self._shown_time = self.time
+        before = np.array([0.0 if fresh else self._shown.get(int(j), 0.0) for j in idx])
+        rank = np.arange(len(idx)) - INCUMBENT_BONUS * (before > 0.5)
+        target = np.zeros(len(idx))
+        blocked = np.zeros(len(idx))
+        count = 0
+        for i in np.argsort(rank, kind="stable"):
+            if alpha[i] < 0.02 or blocked[i] > 0.06 or count >= max_count:
+                continue
+            target[i] = 1.0
+            count += 1
+            blocked = np.maximum(blocked, conflicts[:, i])
+        fading = (before > 0.02) & (target == 0.0)
+        if fading.any():  # newcomers wait for the place of a label that fades out
+            waits = (before < 0.02) & (target > 0.0) & (conflicts[:, fading] > 0.06).any(axis=1)
+            target[waits] = 0.0
+        if fresh:
+            shown = target
+        else:
+            step = max(dt, 0.0) / FADE_S
+            shown = before + np.clip(target - before, -step, step)
+        self._shown = {int(j): float(v) for j, v in zip(idx, shown, strict=True) if v > 1e-3}
+        return shown
 
     def _label_vertices(
         self,
