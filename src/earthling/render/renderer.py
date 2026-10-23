@@ -346,6 +346,9 @@ class Renderer:
         bloom = self._render_glow(camera, view_proj, width, height)
         self._tonemap(fbo, *output, bloom)
         self.labels.veil = self.target.veil
+        self.labels.cloud_bands = [(shape[0], shape[0] + shape[1])
+                                   for shape, *_ in self.weather.layers]  # fmt: skip
+        self.labels.camera_height = self.camera_height
         self.labels.path, self.labels.head_m = self.tracks.path, self.tracks.head_m
         self.labels.time = self.time
         self.labels.render(fbo, camera, view_proj, self.frame, self.terrain.exaggeration,

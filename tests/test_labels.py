@@ -19,7 +19,7 @@ from earthling.data.labels import (
 )
 from earthling.render import lod
 from earthling.render.camera import Camera, OrbitController
-from earthling.render.labels import FontAtlas, signed_distance
+from earthling.render.labels import FontAtlas, sight_in_clouds, signed_distance
 from earthling.render.renderer import Renderer
 from helpers import FRAME, FakeTerrainData
 
@@ -335,3 +335,13 @@ def test_shown_labels_keep_their_place_and_fade():
     layer.time = 5.0 + FADE_S / 2
     shown = layer._stable_placement(np.array([20]), np.ones(1), np.zeros((1, 1)), 10)
     assert shown[0] == pytest.approx(0.5)
+
+
+def test_clouds_hide_only_labels_seen_through_a_layer():
+    # camera at 7000 m: a summit at 8849 m 20 km away, a valley village at 4800 m under the
+    # sea of clouds (4600 - 5400 m), and a summit seen through the cirrus band from below
+    camera = np.array([0.0, 0.0, 7000.0])
+    rel = np.array([[20000.0, 0.0, 1849.0], [15000.0, 0.0, -2200.0], [20000.0, 0.0, 4000.0]])
+    bands = [(4600.0, 5400.0), (9800.0, 10700.0)]
+    assert sight_in_clouds(rel, camera, 7000.0, bands).tolist() == [False, True, True]
+    assert sight_in_clouds(rel, camera, 7000.0, []).tolist() == [False, False, False]

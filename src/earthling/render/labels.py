@@ -17,6 +17,7 @@ import numpy as np
 
 from earthling.core.easing import smoothstep_array
 from earthling.data.labels import LabelData, LabelFeature, enrich
+from earthling.render.atmosphere import PLANET_RADIUS
 from earthling.render.camera import Camera
 from earthling.render.gl_util import DynamicBuffer, draw_overlay, set_uniforms
 from earthling.render.scale import pixel_scale
@@ -49,6 +50,27 @@ KIND_PROPERTIES = {
 }
 WITH_ELEVATION = ("peak", "pass", "hut")
 COUNTRY_SCALE = 1.3  # country names: larger, in capitals, centred on the point, no leader
+
+
+def sight_in_clouds(rel: np.ndarray, camera_position, camera_height: float, bands,
+                    samples: int = 12) -> np.ndarray:  # fmt: skip
+    """True where the line of sight from the camera to an anchor (``rel``: camera-relative)
+    passes through the height band (bottom, top) of a cloud layer: only there can clouds hide
+    the label. (The cloud veil of a summit seen against the sky also holds the clouds far
+    behind it.) Heights above a sphere under the camera, as in the cloud shader."""
+    hit = np.zeros(len(rel), dtype=bool)
+    if not bands or not len(rel):
+        return hit
+    position = np.asarray(camera_position, dtype=np.float64)
+    up = position + (0.0, 0.0, PLANET_RADIUS)
+    up /= np.linalg.norm(up)
+    centre = -up * (PLANET_RADIUS + camera_height)  # relative to the camera
+    t = np.linspace(0.0, 1.0, samples)
+    heights = np.linalg.norm(rel[:, None, :] * t[None, :, None] - centre, axis=2) - PLANET_RADIUS
+    low, high = heights.min(axis=1), heights.max(axis=1)
+    for bottom, top in bands:
+        hit |= (low <= top) & (high >= bottom)
+    return hit
 
 
 # --- signed distance field font atlas --------------------------------------------------------
@@ -97,7 +119,7 @@ class LabelLayer:
         self._metrics_key: tuple | None = None
         self._vis_tex = ctx.texture((MAX_LABELS, 1), 1, dtype="f1")
         self._vis_fbo = ctx.framebuffer([self._vis_tex])
-        self._vis_buffer = ctx.buffer(reserve=MAX_LABELS * 16)
+        self._vis_buffer = ctx.buffer(reserve=MAX_LABELS * 20)
         self._vis_vao: moderngl.VertexArray | None = None
         self._stream = DynamicBuffer(ctx, "2f 2f 3f", "in_pos", "in_uv", "in_params")
         self.enricher = None  # callable(features) run once after loading (DEM, tracks)
@@ -107,6 +129,10 @@ class LabelLayer:
         self._passed_key: tuple | None = None
         self._passed = np.zeros(0)
         self.last_drawn = 0  # labels drawn in the last frame (tests, status)
+        # the cloud layers' height bands (bottom, top) and the camera height: set by the
+        # renderer every frame (clouds hide only the labels behind or in them)
+        self.cloud_bands: list[tuple[float, float]] = []
+        self.camera_height = 0.0
         # stable placement: how far each feature (index) is faded in, at which time
         self.time = 0.0  # set by the renderer every frame (animation or wall clock)
         self._shown: dict[int, float] = {}
@@ -265,10 +291,13 @@ class LabelLayer:
         n = len(rel)
         program = self.shaders.get("label_vis")
         if self._vis_vao is None:
-            self._vis_vao = self.ctx.vertex_array(program, [(self._vis_buffer, "4f", "in_anchor")])
-        data = np.zeros((MAX_LABELS, 4), dtype=np.float32)
+            self._vis_vao = self.ctx.vertex_array(
+                program, [(self._vis_buffer, "4f 1f", "in_anchor", "in_clouds")]
+            )
+        data = np.zeros((MAX_LABELS, 5), dtype=np.float32)
         data[:n, :3] = rel
         data[:n, 3] = 4.0 + 0.004 * np.linalg.norm(rel, axis=1)  # depth tolerance (m)
+        data[:n, 4] = sight_in_clouds(rel, camera.position, self.camera_height, self.cloud_bands)
         self._vis_buffer.write(data.tobytes())
         program["u_view_proj"].write(view_proj)
         program["u_depth_size"] = (float(depth_size[0]), float(depth_size[1]))

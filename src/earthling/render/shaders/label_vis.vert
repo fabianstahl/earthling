@@ -2,6 +2,7 @@
 // at 3x3 taps around its screen position; the visible fraction goes to texel i of an N x 1
 // target that is read back for decluttering.
 in vec4 in_anchor;  // camera-relative position (xyz), depth tolerance in metres (w)
+in float in_clouds; // 1: the line of sight crosses a cloud layer (only then can clouds hide it)
 
 uniform mat4 u_view_proj;
 uniform sampler2D u_depth;
@@ -37,7 +38,7 @@ void main() {
             }
         }
         visible /= taps;
-        if (u_has_veil) {  // only where the landscape is seen: not in or behind clouds
+        if (u_has_veil && in_clouds > 0.5) {  // only where the landscape is seen: not in or behind clouds
             visible *= smoothstep(0.3, 0.75, texture(u_veil, uv).r);
         }
     }
