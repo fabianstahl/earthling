@@ -35,6 +35,12 @@ label = "Trek"
 gpx   = "gpx/trek"
 role  = "walked"
 
+[[tracks]]
+name  = "summit"
+label = "Summit push"
+gpx   = "gpx/summit"
+role  = "walked"
+
 [sources]
 imagery = ["esri_world_imagery"]
 colour_reference = "eox_s2cloudless_2024"

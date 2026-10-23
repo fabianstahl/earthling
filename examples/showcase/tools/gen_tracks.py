@@ -416,6 +416,22 @@ def s08() -> None:
              profile=profile)  # fmt: skip
 
 
+def s08_summit() -> None:
+    # the South Col route as mapped in OpenStreetMap: from Base Camp (the end of the trek) over
+    # the glacier into the Khumbu Icefall, up the Western Cwm and the Lhotse Face to the South
+    # Col and along the south-east ridge to the summit; four camps on the way
+    route_line = osm_ways([1380301536, 518618562])
+    base_camp = np.array([[28.0026, 86.8528]])
+    pts = np.vstack([base_camp, route_line])
+    pts = resample(smooth_line(resample(pts, 5.0), 3), 10.0)
+    ele = smooth(heights(pts, 13), 5)
+    t = tobler_times(pts, ele, local(2026, 10, 21, 3, 0, 5.75), factor=0.35,
+                     breaks=[(0.3, 900), (0.55, 900), (0.75, 900), (0.88, 600)])  # fmt: skip
+    write_gpx(SHOWCASE / "s08_everest" / "gpx" / "summit" / "summit_push.gpx",
+              "Everest summit push: Base Camp - South Col - summit",
+              *thin_by_time(pts, ele, t, 10.0))  # fmt: skip
+
+
 # --- 9 Boundary Waters canoe trip ------------------------------------------------------------
 CANOE_DAYS = [  # (from, to, start)
     ((47.9875, -91.4993), (48.0397, -91.4560), "09:00"),   # Moose Lake landing - Sucker Lake
@@ -496,7 +512,7 @@ def s10() -> None:
 
 
 SCENES = {"s01": s01, "s02": s02, "s03": s03, "s04": s04, "s05": s05, "s06": s06, "s07": s07,
-          "s08": s08, "s09": s09, "s10": s10}  # fmt: skip
+          "s08": s08, "s08_summit": s08_summit, "s09": s09, "s10": s10}  # fmt: skip
 
 if __name__ == "__main__":
     for key in sys.argv[1:] or list(SCENES):

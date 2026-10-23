@@ -14,7 +14,8 @@ OpenStreetMap, plausible times from simple speed models, a heart rate for the bi
 | `s06_iceland` | ring road | car + hikes | cloud changing by the day | several track groups, a map view with pauses at every change, a mini-map, photos of the sights appearing when the line gets there, still seconds at both ends |
 | `s07_berlin` | marathon | running | overcast, drizzle | two runs at once (by clock): gold and silver runners with their year, km badges and water stations, 9:16 portrait |
 | `s08_everest` | Lukla – Base Camp | plane + on foot | snowfall, clearing | a follow-mode flight, snow cover, peak labels (Everest from Kala Patthar) |
-| `s08_everest_sunrise` | Everest from the west | (the trek, drawn) | dawn, a sea of clouds | the sun breaking out beside Lhotse, a glide towards the South Col (`tools/s08_everest_sunrise.py`, the trailer's finale) |
+| `s08_everest_sunrise` | Everest from the west | (the trek, drawn) | dawn, a sea of clouds | the sun breaking out beside Lhotse, a glide towards the South Col (`tools/s08_everest_sunrise.py`) |
+| `s08_everest_summit` | Base Camp – summit (South Col route) | on foot | a thunderstorm below, first light | the route drawn up to the summit, lightning inside the cloud deck, one rising arc (`tools/s08_everest_summit.py`, the trailer's finale) |
 | `s09_boundary_waters` | lakes of Minnesota | canoe | late afternoon sun | paddling and portages split by the water mask, glint on the lakes |
 | `s10_trans_siberian` | Moscow – Beijing | train | winter | day and night side, city lights, time zones, border map, country and city labels |
 

@@ -37,6 +37,7 @@ def main() -> None:
     path = hike.path
     scene = new_scene(hike, DURATION)
     s = scene.store
+    s.set("trackgroup.summit.visible", False)  # (the summit push: s08_everest_summit)
     s.set("progress.mode", "time")
     s.set("sun.follow_track", True)
     s.set("trackgroup.flight.marker", "plane")

@@ -23,6 +23,7 @@ def main() -> None:
     s.set("progress.mode", "distance")
     s.set("progress.head", 1.0)
     s.set("trackgroup.flight.visible", False)
+    s.set("trackgroup.summit.visible", False)
     s.set("trackgroup.trek.color_mode", "single")
     s.set("trackgroup.trek.color", (1.0, 0.46, 0.14))
     s.set("trackgroup.trek.marker", "dot")
