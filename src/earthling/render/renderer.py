@@ -22,7 +22,7 @@ from earthling.core.geo import LocalFrame
 from earthling.core.gpx import Track
 from earthling.core.properties import PropertyStore, bind_uniforms
 from earthling.core.sun import enu_to_celestial
-from earthling.render.bloom import Bloom
+from earthling.render.bloom import MAX_LEVELS, Bloom
 from earthling.render.camera import Camera, far_for_height
 from earthling.render.gl_util import set_uniform, set_uniforms
 from earthling.render.hud import HudLayer
@@ -67,6 +67,18 @@ class FullscreenPasses:
         self._cache[name][1].render(moderngl.TRIANGLES, vertices=3)
 
 
+GLOW_MARGIN = 0.12  # glowing objects are drawn this far (of the picture) beyond each edge
+
+
+def glow_margin(width: int, height: int) -> tuple[int, int]:
+    """The glow buffer's margin (px) at each side: about GLOW_MARGIN of the picture, so a line
+    just outside the frame still glows into it, in whole texels of the coarsest bloom level
+    (the bloom levels line up with the picture's pixels)."""
+    block = 2**MAX_LEVELS
+    return (block * max(1, round(GLOW_MARGIN * width / block)),
+            block * max(1, round(GLOW_MARGIN * height / block)))  # fmt: skip
+
+
 class SceneTarget:
     """Offscreen HDR color + depth render target that follows the output size."""
 
@@ -77,8 +89,9 @@ class SceneTarget:
         self.depth: moderngl.Texture | None = None
         self.fbo: moderngl.Framebuffer | None = None
         self.glow: moderngl.Texture | None = None
-        self.glow_fbo: moderngl.Framebuffer | None = None  # emissive objects, shares depth
-        self.glow_clear_fbo: moderngl.Framebuffer | None = None
+        self.glow_fbo: moderngl.Framebuffer | None = None  # emissive objects, with a margin
+        self.glow_depth: moderngl.Texture | None = None  # the scene depth, in the centre
+        self.glow_margin = (0, 0)
         self.color_fbo: moderngl.Framebuffer | None = None
         self.veil: moderngl.Texture | None = None  # cloud transmittance (1 = clear view)
         self.veil_fbo: moderngl.Framebuffer | None = None
@@ -91,18 +104,18 @@ class SceneTarget:
             self.color = self.ctx.texture(size, 4, dtype="f2")  # linear HDR radiance
             self.depth = self.ctx.depth_texture(size)
             self.fbo = self.ctx.framebuffer([self.color], self.depth)
-            self.glow = self.ctx.texture(size, 4, dtype="f2")
+            self.glow_margin = mx, my = glow_margin(*size)
+            glow_size = (size[0] + 2 * mx, size[1] + 2 * my)
+            self.glow = self.ctx.texture(glow_size, 4, dtype="f2")
             self.glow.filter = (moderngl.LINEAR, moderngl.LINEAR)
             self.glow.repeat_x = self.glow.repeat_y = False
-            # drawing: shares the scene depth (glowing objects redraw at their own depth,
-            # so depth writes are harmless); clearing: colour only
-            self.glow_fbo = self.ctx.framebuffer([self.glow], self.depth)
+            self.glow_depth = self.ctx.depth_texture(glow_size)
+            self.glow_fbo = self.ctx.framebuffer([self.glow], self.glow_depth)
             # colour only: passes that sample the depth texture while drawing (clouds)
             self.color_fbo = self.ctx.framebuffer([self.color])
             self.veil = self.ctx.texture(size, 1, dtype="f2")
             self.veil_fbo = self.ctx.framebuffer([self.veil])
             self.cloud_fbo = self.ctx.framebuffer([self.color, self.veil])
-            self.glow_clear_fbo = self.ctx.framebuffer([self.glow])
             self.size = size
         return self.fbo
 
@@ -121,9 +134,9 @@ class SceneTarget:
             self.veil_fbo,
             self.veil,
             self.color_fbo,
-            self.glow_clear_fbo,
             self.glow_fbo,
             self.glow,
+            self.glow_depth,
             self.fbo,
             self.color,
             self.depth,
@@ -131,7 +144,7 @@ class SceneTarget:
             if obj is not None:
                 obj.release()
         self.fbo = self.color = self.depth = self.glow = self.glow_fbo = None
-        self.glow_clear_fbo = self.color_fbo = None
+        self.glow_depth = self.color_fbo = None
         self.veil = self.veil_fbo = self.cloud_fbo = None
 
 
@@ -686,29 +699,48 @@ class Renderer:
         self.fullscreen.draw("sky")
 
     def _render_glow(self, camera: Camera, view_proj, width: int, height: int):
-        """Emissive objects into the glow buffer, then bloom. Returns the bloom texture."""
+        """Emissive objects into the glow buffer (the picture plus a margin: glow from just
+        outside the frame), then bloom. Returns the bloom texture."""
         s = self.store
-        if s is None or not s["glow.enabled"] or self.target.glow_fbo is None:
+        target = self.target
+        if s is None or not s["glow.enabled"] or target.glow_fbo is None:
             return None
-        self.target.glow_clear_fbo.clear(0.0, 0.0, 0.0, 0.0)
-        glow_fbo = self.target.glow_fbo
+        assert target.glow is not None and target.depth is not None
+        glow_fbo = target.glow_fbo
         glow_fbo.use()
-        self.ctx.viewport = (0, 0, width, height)
-        self.ctx.enable(moderngl.DEPTH_TEST)  # test against the scene depth ...
-        self.ctx.depth_func = "<="  # ... (terrain only: tracks do not write depth)
-        self.tracks.render(camera, view_proj, width, height, s, glow_pass=True)
+        size = target.glow.size
+        self.ctx.viewport = (0, 0, *size)
+        glow_fbo.clear(0.0, 0.0, 0.0, 0.0, depth=1.0)
+        # the scene depth into the centre: the glowing objects are hidden by the terrain
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        self.ctx.depth_func = "1"
+        previous = target.depth.compare_func
+        target.depth.compare_func = ""  # plain depth values
+        target.depth.use(0)
+        program = self.fullscreen("glow_depth")
+        program["u_depth"] = 0
+        program["u_offset"] = target.glow_margin
+        self.fullscreen.draw("glow_depth")
+        target.depth.compare_func = previous
+        self.ctx.depth_func = "<="  # (tracks do not write depth)
+        # the same projection, widened to the margin (same pixel size)
+        widen = glm.scale(glm.mat4(1.0), glm.vec3(width / size[0], height / size[1], 1.0))
+        glow_view_proj = widen * view_proj
+        picture = (width, height)  # on-screen sizes refer to the picture
+        self.tracks.render(camera, glow_view_proj, *size, s, glow_pass=True, ref_size=picture)
         if self.tracks.visible:
-            self.marker.render(camera, view_proj, width, height, self.time, s, glow_pass=True)
-        self.lightning.render(camera, view_proj, width, height, s, glow=True)
+            self.marker.render(camera, glow_view_proj, *size, self.time, s, glow_pass=True,
+                               ref_size=picture)  # fmt: skip
+        self.lightning.render(camera, glow_view_proj, *size, s, glow=True, ref_size=picture)
         glow_fbo.use()
         self.ctx.depth_func = "<"
         self.ctx.disable(moderngl.DEPTH_TEST)
-        assert self.target.glow is not None
-        return self.bloom_pass(self.target.glow, width, height)
+        return self.bloom_pass(target.glow, width, height)
 
     def bloom_pass(self, source: moderngl.Texture, width: int, height: int) -> moderngl.Texture:
+        """Bloom of ``source`` (may be larger than the ``width`` x ``height`` picture)."""
         s = self.store
-        self.bloom.ensure(width, height)
+        self.bloom.ensure(*source.size)
         skip = max(0, round(math.log2(pixel_scale(width, height))))  # 4K: one level coarser
         return self.bloom.run(source, self.fullscreen, s["glow.radius"], s["glow.levels"], skip)
 
@@ -723,6 +755,12 @@ class Renderer:
             bloom.use(1)
         set_uniform(program, "u_bloom", 1)
         set_uniform(program, "u_has_bloom", bloom is not None)
+        glow = self.target.glow
+        if glow is not None:  # the picture inside the glow buffer's margin
+            (mx, my), (gw, gh) = self.target.glow_margin, glow.size
+            sw, sh = self.target.size
+            set_uniform(program, "u_bloom_offset", (mx / gw, my / gh))
+            set_uniform(program, "u_bloom_scale", (sw / gw, sh / gh))
         if self.store is not None:
             bind_uniforms(program, self.store)
             program["u_exposure"] = 2.0 ** self.store["post.exposure"]

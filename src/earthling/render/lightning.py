@@ -251,7 +251,9 @@ class LightningLayer:
         self._vertices = np.concatenate(parts) if parts else np.zeros((0, 9), np.float32)
         return self._vertices
 
-    def render(self, camera, view_proj, width: int, height: int, store, glow: bool) -> None:
+    def render(self, camera, view_proj, width: int, height: int, store, glow: bool,
+               ref_size: tuple[int, int] | None = None) -> None:  # fmt: skip
+        """``ref_size``: the picture that sizes refer to, when the viewport is larger."""
         if not self.active:
             return
         vertices = self._geometry(camera)
@@ -263,7 +265,7 @@ class LightningLayer:
         set_uniforms(program, (
             ("u_viewport", (float(width), float(height))),
             ("u_log_depth_coef", camera.log_depth_coef),
-            ("u_width_px", 2.2 * pixel_scale(width, height)),
+            ("u_width_px", 2.2 * pixel_scale(*(ref_size or (width, height)))),
             ("u_color", tuple(float(c) for c in color)),
         ))  # fmt: skip
         program["u_view_proj"].write(view_proj)

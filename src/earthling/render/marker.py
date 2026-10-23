@@ -30,6 +30,7 @@ class MarkerLayer:
         time_s: float,
         store=None,
         glow_pass: bool = False,
+        ref_size: tuple[int, int] | None = None,  # the picture, when the viewport is larger
     ) -> None:
         heads = ([(self.position, self.color)] if self.position is not None else []) + self.extra
         if not heads:
@@ -50,7 +51,9 @@ class MarkerLayer:
             bind_uniforms(program, store)
             # given for 1080p, scales with the image height (like the tracks)
             set_uniform(
-                program, "u_marker_size", float(store["marker.size"]) * pixel_scale(width, height)
+                program,
+                "u_marker_size",
+                float(store["marker.size"]) * pixel_scale(*(ref_size or (width, height))),
             )
         self.ctx.enable(moderngl.BLEND)
         if glow_pass:

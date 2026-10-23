@@ -115,8 +115,17 @@ class TrackLayer:
         self._built_key = key
 
     def render(
-        self, camera: Camera, view_proj, width: int, height: int, store=None, glow_pass=False
+        self,
+        camera: Camera,
+        view_proj,
+        width: int,
+        height: int,
+        store=None,
+        glow_pass=False,
+        ref_size: tuple[int, int] | None = None,
     ) -> None:
+        """``width`` x ``height``: the viewport; ``ref_size``: the picture that on-screen
+        sizes refer to, when the viewport is larger (the glow buffer's margin)."""
         if not self._gpu or not self.visible:
             return
         if glow_pass:
@@ -126,14 +135,15 @@ class TrackLayer:
         program["u_view_proj"].write(view_proj)
         set_uniform(program, "u_log_depth_coef", camera.log_depth_coef)
         set_uniform(program, "u_viewport", (float(width), float(height)))
-        focal = height / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
+        ref_w, ref_h = ref_size or (width, height)
+        focal = ref_h / (2.0 * np.tan(np.radians(camera.fov_y) / 2.0))
         set_uniform(program, "u_focal_px", float(focal))
         if store is not None:
             from earthling.core.properties import bind_uniforms
 
             bind_uniforms(program, store)
         # pixel sizes scale with the image height: a 4K export looks like the 1080p preview
-        self.pixel_scale = pixel_scale(width, height)
+        self.pixel_scale = pixel_scale(ref_w, ref_h)
         if store is not None:
             for name, pid in (("u_track_min_px", "tracks.min_px"),
                               ("u_track_outline", "tracks.outline"),

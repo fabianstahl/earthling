@@ -7,6 +7,8 @@ uniform int u_tonemap = 0;       // 0 ACES, 1 Reinhard, 2 none (clamp)
 uniform sampler2D u_bloom;
 uniform bool u_has_bloom = false;
 uniform float u_bloom_intensity = 1.0;
+uniform vec2 u_bloom_offset = vec2(0.0);  // the picture inside the bloom (it has a margin)
+uniform vec2 u_bloom_scale = vec2(1.0);
 
 vec3 aces(vec3 x) {
     // Narkowicz 2015 fit
@@ -26,7 +28,7 @@ float dither(vec2 p) {
 
 void main() {
     vec3 hdr = max(texture(u_hdr, v_uv).rgb, 0.0);
-    if (u_has_bloom) hdr += texture(u_bloom, v_uv).rgb * u_bloom_intensity;
+    if (u_has_bloom) hdr += texture(u_bloom, u_bloom_offset + v_uv * u_bloom_scale).rgb * u_bloom_intensity;
     hdr *= u_exposure;
     vec3 mapped;
     if (u_tonemap == 0) mapped = aces(hdr);

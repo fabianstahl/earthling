@@ -211,7 +211,7 @@ def test_head_hides_the_rest_of_the_track(gl_ctx):
     assert rows.max() < 105 and rows.min() < 80  # only the southern (first) half is drawn
 
 
-def _top_down(gl_ctx, tracks, **props):
+def _top_down(gl_ctx, tracks, east_px=0.0, **props):
     from earthling.core.scene import Scene
     from earthling.render.camera import Camera
     from earthling.render.renderer import Renderer
@@ -227,6 +227,8 @@ def _top_down(gl_ctx, tracks, **props):
     renderer.timezone = "UTC"
     mid = FRAME.geodetic_to_enu(46.005, 7.0, 1500.0)
     camera = Camera(position=mid + np.array([0.0, 0.0, 3000.0]), heading=0.0, pitch=-89.9)
+    px_m = 2.0 * 3000.0 * np.tan(np.radians(camera.fov_y) / 2.0) / 200.0
+    camera.position = camera.position + np.array([east_px * px_m, 0.0, 0.0])
     fbo = gl_ctx.simple_framebuffer((200, 200))
     renderer.render(fbo, 200, 200, camera)
     img = np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(200, 200, 3).astype(int)
@@ -265,6 +267,15 @@ def test_overlapping_tracks_do_not_add_up_their_glow(gl_ctx):
     assert one > 0.0 and twice == pytest.approx(one, rel=0.05)
 
 
+def test_a_track_just_outside_the_frame_glows_into_it(gl_ctx):
+    # the line ~10 px beyond the left edge: not drawn, but its halo reaches into the picture
+    props = {"tracks.glow": 5.0, "tracks.color_mode": "single"}
+    off, _ = _top_down(gl_ctx, [straight_track()], east_px=110.0, **props)
+    lit, _ = _top_down(gl_ctx, [straight_track()], east_px=110.0, **props, **{"glow.enabled": True})
+    edge = (slice(20, 180), slice(0, 4))
+    assert lit[edge][..., 0].mean() > off[edge][..., 0].mean() + 8
+
+
 def test_tracks_on_top_of_each_other_do_not_mix_colours(gl_ctx):
     """The upper track replaces the glow of the one below; no third colour appears."""
     from earthling.render.tracks import track_color
@@ -272,8 +283,9 @@ def test_tracks_on_top_of_each_other_do_not_mix_colours(gl_ctx):
     below, above = straight_track(), straight_track()
     below.name, above.name = "below", "above"
     _, renderer = _top_down(gl_ctx, [below, above], **{"glow.enabled": True})
-    glow = np.frombuffer(renderer.target.glow.read(), dtype=np.float16).astype(np.float32)
-    glow = glow.reshape(200, 200, 4)
+    texture = renderer.target.glow
+    glow = np.frombuffer(texture.read(), dtype=np.float16).astype(np.float32)
+    glow = glow.reshape(texture.size[1], texture.size[0], 4)  # (with the margin)
     rgb = glow[..., :3].reshape(-1, 3)
     brightest = rgb[np.argmax(rgb.sum(axis=1))]
     top = np.array(track_color(1)) ** 2.2
