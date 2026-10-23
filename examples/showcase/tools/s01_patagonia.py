@@ -94,11 +94,11 @@ def main() -> None:
         e = smoother(u)
         # distance: 14 000 km down to 4 km (log), faster in the middle
         dist = math.exp(lerp(math.log(14_000e3), math.log(8_500.0), e))
-        g = e  # the look point arrives with the zoom and the pitch: one ease, no reversal
+        g = smoother(min(1.0, u * 1.4))  # the look point arrives before the camera
         lat = lerp(far_lat, look_lat, g)
         lon = lerp(far_lon, look_lon, g)
         heading = lerp(10.0, 292.0, e)  # a slow spin, ending looking west-north-west
-        pitch = lerp(-62.0, -22.0, smoother(min(1.0, max(0.0, (u - 0.0) / (1.0 - 0.0)))))
+        pitch = lerp(-62.0, -22.0, smoother(min(1.0, max(0.0, (u - 0.45) / 0.55))))
         if t > 13.0:  # glide on: closer, the towers rising
             v = smoother((t - 13.0) / 3.0)
             dist = lerp(8_500.0, 7_000.0, v)
@@ -106,23 +106,18 @@ def main() -> None:
             pitch = lerp(-22.0, -16.0, v)
         return lat, lon, heading, pitch, dist
 
-    # the ground under the look point changes with every ridge it passes: low-passed (1 s),
-    # so the camera does not bob; the eye's clearance above the ground is smoothed as well
+    # the ground height under the moving look point jumps with every ridge and valley it
+    # passes: low-passed (1 s), so the picture does not bob (the path stays the same)
     times = np.arange(0.0, DURATION + 1e-9, 1.0 / 30.0)
-    states = [state(float(t)) for t in times]
-    raw = np.array([hike.data.height_at(lon, lat) or 0.0 for lat, lon, *_ in states])
+    raw = np.array([hike.data.height_at(lon, lat) or 0.0
+                    for lat, lon, *_ in (state(float(t)) for t in times)])  # fmt: skip
     heights = gaussian(raw, 30.0)
-    eyes, targets = [], []
-    for (lat, lon, heading, pitch, dist), h in zip(states, heights, strict=True):
+    for t, h in zip(times, heights, strict=True):
+        lat, lon, heading, pitch, dist = state(float(t))
         eye, target = geo_orbit_eye(hike, lat, lon, float(h), heading, pitch, dist)
-        eyes.append(eye)
-        targets.append(target)
-    eyes = np.array(eyes)
-    ground = np.array([hike.ground_z(e) for e in eyes])
-    ground = np.where(np.isfinite(ground), ground, -1e9)
-    lift = gaussian(np.maximum(ground + 400.0 - eyes[:, 2], 0.0), 12.0)
-    eyes[:, 2] = np.maximum(eyes[:, 2] + lift, ground + 300.0)
-    for t, eye, target in zip(times, eyes, targets, strict=True):
+        ground = hike.ground_z(eye)
+        if math.isfinite(ground):
+            eye[2] = max(eye[2], ground + 400.0)
         scene.animation.set_key("camera.pose", round(float(t), 4), pose(eye, target),
                                 Interp.LINEAR)  # fmt: skip
 
