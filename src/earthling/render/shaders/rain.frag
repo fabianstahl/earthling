@@ -45,6 +45,42 @@ vec3 rainbow(float angle) {
     return c;
 }
 
+// The snowflakes of one layer at a pixel: ``lanes`` = the lane coordinate (u / cell), ``z`` the
+// height on the cylinder. Flakes sit off their lane centre and between their drop slots, so the
+// neighbouring lanes and drops are drawn as well: a flake is never cut at a lane edge.
+float snow_layer(float lanes, float z, float cell, float shear, float horiz, float t, int layer) {
+    const float FALL = 1.1;  // m/s
+    float sum = 0.0;
+    float base = floor(lanes);
+    // (flakes smaller than a pixel are drawn at pixel size and fainter, and never wider than
+    // a fifth of their lane)
+    float want = max(0.06 * cell, u_pixel_angle * t * 0.8);
+    float size = min(want, 0.22 * cell);
+    for (int k = -1; k <= 1; ++k) {
+        float lane = base + float(k);
+        float lane_id = lane + float(layer) * 1013.0;
+        float h1 = hash11(lane_id);
+        float h2 = hash11(lane_id * 1.37 + 5.1);
+        if (h1 > u_rain_intensity * 0.9 + 0.1) continue;  // sparser lanes in light snow
+        float period = 0.5 + h2 * 1.2;  // metres between the flakes of a lane
+        float fall = (z + u_time * FALL * (0.9 + 0.2 * h1) + h2 * 17.0) / period;
+        float x0 = lanes - lane - 0.5 - (h2 - 0.5) * 0.6;
+        for (int j = -1; j <= 1; ++j) {
+            float drop = floor(fall) + float(j);
+            float phase = hash11(drop * 1.618 + lane_id * 0.71);
+            float jitter = (phase - 0.5) * 0.85;  // flakes off the lane centre ...
+            float x = x0 - jitter - 0.2 * sin(u_time * (1.3 + phase) + phase * 6.28);  // tumbling
+            float dz = (fall - drop - 0.5) * period;  // metres above the flake
+            // the lanes are sheared by the wind: the distance to the flake centre in real
+            // metres, the vertical part as seen on screen (looking up or down, the cylinder's
+            // vertical metres shrink by horiz), so flakes stay round
+            vec2 d = vec2(x * cell - dz * shear, dz * horiz);
+            sum += exp(-dot(d, d) / (size * size)) * (size / want);
+        }
+    }
+    return sum;
+}
+
 void main() {
     // a point on the near plane: the far plane is numerically unstable for huge far / near
     vec4 ray = u_inv_view_proj * vec4(v_ndc, -1.0, 1.0);
@@ -100,6 +136,11 @@ void main() {
         float shear = dot(u_rain_wind, across) / FALL;
         if (snow) shear = clamp(shear, -1.2, 1.2);
         float u = az * r + p.z * shear;
+        if (snow) {
+            sum += snow_layer(u / cell, p.z, cell, shear, horiz, t, layer) * 1.6
+                   / (1.0 + 0.35 * float(layer));
+            continue;
+        }
         float lane_id = floor(u / cell) + float(layer) * 1013.0;
         float h1 = hash11(lane_id);
         float h2 = hash11(lane_id * 1.37 + 5.1);
@@ -107,24 +148,6 @@ void main() {
         float period = snow ? 0.5 + h2 * 1.2 : 0.8 + h2 * 2.0;  // metres between drops of a lane
         float fall = p.z + u_time * FALL * (0.9 + 0.2 * h1) + h2 * 17.0;
         float x = fract(u / cell) - 0.5 - (h2 - 0.5) * 0.6;
-        if (snow) {
-            // the lanes are sheared by the wind (u above): measure the distance to the flake
-            // centre in real metres, the vertical part as seen on screen (looking up or down,
-            // the cylinder's vertical metres shrink by horiz), so flakes stay round
-            float drop = floor(fall / period);
-            float phase = hash11(drop * 1.618 + lane_id * 0.71);
-            float jitter = (phase - 0.5) * 0.85;              // flakes off the lane centre ...
-            x -= jitter + 0.2 * sin(u_time * (1.3 + phase) + phase * 6.28);  // ... tumbling
-            float dz = (fract(fall / period) - 0.5) * period;  // metres above the flake
-            vec2 d = vec2(x * cell - dz * shear, dz * horiz);
-            // (flakes smaller than a pixel are drawn at pixel size and fainter, and never
-            // wider than their lane)
-            float want = max(0.06 * cell, u_pixel_angle * t * 0.8);
-            float size = min(want, 0.22 * cell);
-            float flake = exp(-dot(d, d) / (size * size)) * (size / want);
-            sum += flake * 1.6 / (1.0 + 0.35 * float(layer));
-            continue;
-        }
         float width = max(0.045, u_pixel_angle * t / cell * 0.45);
         float across = exp(-x * x / (width * width));
         float streak_len = FALL * EXPOSURE * 1.2 + 0.03;

@@ -52,7 +52,7 @@ def test_layers_follow_the_properties(gl_ctx):
     assert uniforms["u_layer_count"] == 2 and len(uniforms["u_layer_shape"]) == 4
 
 
-def render(gl_ctx, distance=1.0, **props):
+def render(gl_ctx, distance=1.0, size=96, **props):
     renderer = Renderer(gl_ctx)
     renderer.set_scene(FRAME, [])
     tx, ty = lonlat_to_tile(7.0, 46.0, 10)
@@ -63,16 +63,17 @@ def render(gl_ctx, distance=1.0, **props):
     renderer.store = scene.store
     renderer.timezone = "UTC"
     camera = Camera()
-    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 96)
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), size)
     orbit = OrbitController(camera)
     orbit.frame_bounds(*renderer.scene_bounds())
     orbit.distance *= distance
     orbit.pitch = -35.0
     orbit.apply()
-    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 96)
-    fbo = gl_ctx.simple_framebuffer((96, 96))
-    renderer.render(fbo, 96, 96, camera)
-    return np.frombuffer(fbo.read(components=3), dtype=np.uint8).reshape(96, 96, 3).astype(float)
+    renderer.terrain.finish_loading(camera, camera.view_projection(1.0), size)
+    fbo = gl_ctx.simple_framebuffer((size, size))
+    renderer.render(fbo, size, size, camera)
+    image = np.frombuffer(fbo.read(components=3), dtype=np.uint8)
+    return image.reshape(size, size, 3).astype(float)
 
 
 def test_cloud_layer_renders_and_casts_shadows(gl_ctx):
@@ -269,6 +270,24 @@ def test_snow_falls_and_covers_the_ground(gl_ctx):
     assert np.abs(rain - snow).mean() > 1.0  # flakes instead of streaks
     assert Renderer(gl_ctx).weather.rain_uniforms(_store(rain__enabled=True, rain__type="snow"))[
         "u_wetness"] == 0.0  # snow does not darken the ground  # fmt: skip
+
+
+def test_snowflakes_are_not_cut_at_their_lane_edges(gl_ctx):
+    """A flake off its lane centre is drawn whole (the neighbouring lanes are drawn too): with
+    a long lens the flakes are a few pixels wide and change smoothly, a flake cut at the
+    slanted lane edge falls from bright to nothing within a pixel."""
+    import datetime
+
+    snowing = {"sun__datetime": datetime.datetime(2026, 7, 1, 12, 0), "haze__aerial": 0.0,
+               "view__fov": 8.0, "glow__enabled": False, "rain__enabled": True,
+               "rain__type": "snow", "rain__cloud_base": 40000.0, "rain__coverage": 0.0,
+               "rain__visibility_km": 50.0, "rain__wind": 8.0, "rain__wind_dir": 90.0}  # fmt: skip
+    flakes = render(gl_ctx, 0.08, 256, **snowing, rain__intensity=1.0).mean(axis=2)
+    flakes -= render(gl_ctx, 0.08, 256, **snowing, rain__intensity=0.0).mean(axis=2)
+    flakes = np.clip(flakes, 0.0, None)
+    steepest = max(np.abs(np.diff(flakes, axis=0)).max(), np.abs(np.diff(flakes, axis=1)).max())
+    assert flakes.max() > 50.0  # (flakes in view)
+    assert steepest < 0.4 * flakes.max()  # (cut flakes: 0.65)
 
 
 def _store(**props):
