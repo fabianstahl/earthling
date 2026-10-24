@@ -70,3 +70,15 @@ def _no_network():
     # interpreter shuts down after the session, and reached the real Overpass server.
     httpx.HTTPTransport.handle_request = refuse
     yield
+
+
+@pytest.fixture(autouse=True)
+def _network_state(monkeypatch):
+    """No real back-off waits between retries, and no offline pause unless a test sets one:
+    daemon threads of earlier tests reach the refusing transport above and would otherwise
+    pause the hosts (Overpass, Natural Earth) that later tests mock."""
+    from earthling.data import net
+
+    monkeypatch.setattr(net, "backoff_wait", lambda seconds, cancel=None: None)
+    monkeypatch.setattr(net, "OFFLINE", net.OfflineHosts(pause=0.0))
+    yield

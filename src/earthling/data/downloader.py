@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -12,33 +11,12 @@ from pathlib import Path
 
 import httpx
 
+from earthling.data import net
 from earthling.data.cache import TileCache, write_atomic
-from earthling.data.providers import USER_AGENT, TileProvider
+from earthling.data.net import RateLimiter
+from earthling.data.providers import TileProvider
 
 log = logging.getLogger(__name__)
-
-MAX_RETRIES = 4
-OFFLINE_PAUSE_S = 30.0  # after a connection error, tiles fail at once for this long
-
-
-class RateLimiter:
-    """Thread-safe limiter spacing requests at least ``1 / rate`` seconds apart."""
-
-    def __init__(self, rate: float) -> None:
-        self.interval = 1.0 / rate if rate > 0 else 0.0
-        self._lock = threading.Lock()
-        self._next = time.monotonic()
-
-    def wait(self) -> None:
-        if not self.interval:
-            return
-        with self._lock:
-            now = time.monotonic()
-            slot = max(now, self._next)
-            self._next = slot + self.interval
-        delay = slot - now
-        if delay > 0:
-            time.sleep(delay)
 
 
 @dataclass
@@ -60,15 +38,7 @@ class DownloadProgress:
 ProgressCallback = Callable[[DownloadProgress], None]
 
 
-def http_client(transport: httpx.BaseTransport | None = None, **kwargs) -> httpx.Client:
-    return httpx.Client(
-        headers={"User-Agent": USER_AGENT},
-        timeout=httpx.Timeout(30.0, connect=15.0),
-        follow_redirects=True,
-        transport=transport,
-        limits=httpx.Limits(max_connections=16, max_keepalive_connections=16),
-        **kwargs,
-    )
+http_client = net.client  # (the old name)
 
 
 class TileDownloader:
@@ -77,16 +47,16 @@ class TileDownloader:
         provider: TileProvider,
         cache: TileCache,
         client: httpx.Client | None = None,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], None] | None = None,
     ) -> None:
+        """``sleep``: replaces the back-off wait between retries (tests)."""
         self.provider = provider
         self.cache = cache
-        self.client = client or http_client()
+        self.client = client or net.client()
         self._sleep = sleep
         self._limiter = RateLimiter(provider.max_requests_per_second)
         self._cancel = threading.Event()
         self._lock = threading.Lock()
-        self._offline_until = 0.0
 
     def cancel(self) -> None:
         self._cancel.set()
@@ -148,47 +118,38 @@ class TileDownloader:
 
     def _fetch(self, z: int, x: int, y: int) -> tuple[str, int, str]:
         p = self.provider
-        url = p.tile_url(z, x, y)
-        delay = 1.0
-        last_error = ""
-        for _attempt in range(MAX_RETRIES + 1):
-            if self._cancel.is_set():
-                return "failed", 0, "cancelled"
-            if time.monotonic() < self._offline_until:
-                return "failed", 0, f"{z}/{x}/{y}: offline"
-            self._limiter.wait()
-            try:
-                response = self.client.get(url, headers=p.headers)
-            except httpx.ConnectError as exc:
-                # the server cannot be reached (offline, DNS): retrying every tile for half a
-                # minute would stall an export for many minutes; try again after a pause
-                self._offline_until = time.monotonic() + OFFLINE_PAUSE_S
-                log.warning("cannot reach %s, pausing downloads: %s", p.id, exc)
-                return "failed", 0, f"{z}/{x}/{y}: {type(exc).__name__}: {exc}"
-            except httpx.HTTPError as exc:
-                last_error = f"{z}/{x}/{y}: {type(exc).__name__}: {exc}"
-            else:
-                status = response.status_code
-                if status == 200:
-                    data = response.content
-                    if not data or p.is_placeholder(data):
-                        self.cache.mark_missing(p.id, z, x, y)
-                        return "missing", 0, ""
-                    self.cache.write(p.id, z, x, y, p.ext, data)
-                    return "ok", len(data), ""
-                if status in (204, 404):
-                    self.cache.mark_missing(p.id, z, x, y)
-                    return "missing", 0, ""
-                last_error = f"{z}/{x}/{y}: HTTP {status}"
-                if status == 429:
-                    retry_after = response.headers.get("Retry-After", "")
-                    delay = max(delay, float(retry_after)) if retry_after.isdigit() else delay * 2
-                elif status < 500:
-                    return "failed", 0, last_error  # other client errors are not retried
-            self._sleep(delay)
-            delay = min(delay * 2, 30.0)
-        log.warning("giving up on tile %s", last_error)
-        return "failed", 0, last_error
+        tile = f"{z}/{x}/{y}"
+        try:
+            response = net.get(
+                self.client,
+                p.tile_url(z, x, y),
+                headers=p.headers,
+                cancel=self._cancel,
+                limiter=self._limiter,
+                sleep=self._sleep,
+            )
+        except net.CancelledError:
+            return "failed", 0, "cancelled"
+        except httpx.HTTPError as exc:
+            error = f"{tile}: {type(exc).__name__}: {exc}"
+            if not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):  # (net logs)
+                log.warning("giving up on tile %s", error)
+            return "failed", 0, error
+        status = response.status_code
+        if status == 200:
+            data = response.content
+            if not data or p.is_placeholder(data):
+                self.cache.mark_missing(p.id, z, x, y)
+                return "missing", 0, ""
+            self.cache.write(p.id, z, x, y, p.ext, data)
+            return "ok", len(data), ""
+        if status in (204, 404):
+            self.cache.mark_missing(p.id, z, x, y)
+            return "missing", 0, ""
+        error = f"{tile}: HTTP {status}"
+        if net.retryable(status):
+            log.warning("giving up on tile %s", error)
+        return "failed", 0, error  # (other client errors are not retried)
 
 
 # --- Natural Earth (borders, countries, cities): one GeoJSON file per dataset ------------------
@@ -213,8 +174,8 @@ def ensure_natural_earth(
     url = f"{NATURAL_EARTH_URL}/{dataset}.geojson"
     log.info("downloading %s", url)
     try:
-        with http_client() as client:
-            response = client.get(url, timeout=120.0)
+        with net.client() as client:
+            response = net.get(client, url, timeout=120.0)
             response.raise_for_status()
         write_atomic(path, response.content)
     except Exception as exc:  # offline etc.

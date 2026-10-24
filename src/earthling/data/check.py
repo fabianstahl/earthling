@@ -20,6 +20,7 @@ import shapely
 from PIL import Image
 
 from earthling.core.geo import lonlat_to_tile, tile_bounds_lonlat
+from earthling.data import net
 from earthling.data.cache import TileCache
 from earthling.data.dem import (
     DemBaker,
@@ -27,7 +28,6 @@ from earthling.data.dem import (
     download_sources,
     sample_spacing_m,
 )
-from earthling.data.downloader import http_client
 from earthling.data.providers import TileProvider
 
 
@@ -84,7 +84,7 @@ def check_imagery(
     )
     report.info(f"license: {provider.license.name}; attribution: {provider.license.attribution}")
     _coverage_line(report, provider, lon, lat)
-    client = client or http_client()
+    client = client or net.client()
     if zooms is None:
         zooms = sorted(
             {
@@ -98,7 +98,7 @@ def check_imagery(
         x, y = int(tx), int(ty)
         started = time.monotonic()
         try:
-            response = client.get(provider.tile_url(z, x, y), headers=provider.headers)
+            response = net.get(client, provider.tile_url(z, x, y), headers=provider.headers)
         except httpx.HTTPError as exc:
             report.problem(f"z{z} {x}/{y}: {type(exc).__name__}: {exc}")
             continue
@@ -209,7 +209,7 @@ def check_dem(
     )
     report.info(f"license: {source.license.name}; attribution: {source.license.attribution}")
     _coverage_line(report, source, lon, lat)
-    client = client or http_client()
+    client = client or net.client()
 
     def prepare(src: DemSource, z: int) -> DemBaker:
         if not src.direct:  # download the files around the location

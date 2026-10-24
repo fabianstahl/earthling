@@ -12,7 +12,8 @@ src/earthling/
   core/       model, no GL and no Qt: config, geo math, GPX, AOI, properties, animation,
               scene document, POIs, photos, sun, easing
   data/       data sources: providers, tile cache, downloader, DEM baking, imagery
-              compositing, colour harmonisation, labels, borders, water, download jobs
+              compositing, colour harmonisation, labels, borders, water, download jobs;
+              every download goes through data/net.py (retries, offline pause per host)
   session.py  Session: a loaded project = core model + data sources (+ the renderer's
               track-group properties); used by GUI, CLI, scene scripts and tests
   render/     moderngl renderer: terrain LOD, sky, lighting, shadows, weather, tracks,

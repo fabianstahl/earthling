@@ -170,13 +170,13 @@ zones = [{{ within_km = 1.0, imagery_zoom = 12, dem_zoom = 10 }}]
 
 
 def mock_http(monkeypatch, handler) -> list:
-    """Route the data layer's default HTTP clients to ``handler`` (request -> httpx.Response).
-    Returns the list the requests are recorded in."""
+    """Route the data layer's default HTTP client (``net.client``) to ``handler`` (request ->
+    httpx.Response). Returns the list the requests are recorded in."""
     import httpx
 
-    from earthling.data import check, dem, downloader, labels
+    from earthling.data import net
 
-    real = downloader.http_client
+    real = net.client
     requests = []
 
     def record(request):
@@ -186,8 +186,7 @@ def mock_http(monkeypatch, handler) -> list:
     def client(transport=None, **kwargs):
         return real(httpx.MockTransport(record), **kwargs)
 
-    for module in (downloader, dem, check, labels):
-        monkeypatch.setattr(module, "http_client", client)
+    monkeypatch.setattr(net, "client", client)
     return requests
 
 

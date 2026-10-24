@@ -1,7 +1,7 @@
 import datetime as dt
-import json
 import shutil
 
+import httpx
 import numpy as np
 import pytest
 
@@ -9,7 +9,7 @@ from earthling.core.config import Config
 from earthling.core.geo import great_circle
 from earthling.core.gpx import haversine_m, load_gpx_file
 from earthling.data import lines
-from helpers import DEMO
+from helpers import DEMO, mock_http
 
 UTC2 = dt.timezone(dt.timedelta(hours=2))
 START, END = dt.datetime(2026, 9, 1, 8, 0, tzinfo=UTC2), dt.datetime(2026, 9, 1, 10, 0, tzinfo=UTC2)
@@ -37,21 +37,8 @@ def test_make_line(tmp_path):
 
 
 def test_road_route_is_cached(tmp_path, monkeypatch):
-    calls = []
-
-    class Client:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def get(self, url, params=None):
-            calls.append(url)
-            body = {"routes": [{"geometry": {"coordinates": [[7.001, 46.0], [7.05, 46.02]]}}]}
-            return type("R", (), {"text": json.dumps(body), "raise_for_status": lambda s: None})()
-
-    monkeypatch.setattr(lines, "http_client", Client)
+    body = {"routes": [{"geometry": {"coordinates": [[7.001, 46.0], [7.05, 46.02]]}}]}
+    calls = mock_http(monkeypatch, lambda request: httpx.Response(200, json=body))
     pts = lines.road_route((46.0, 7.0), (46.03, 7.06), tmp_path)
     assert pts[0] == (46.0, 7.0) and pts[-1] == (46.03, 7.06) and len(pts) == 4
     lines.road_route((46.0, 7.0), (46.03, 7.06), tmp_path)

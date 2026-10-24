@@ -19,7 +19,6 @@ import logging
 import math
 import re
 import threading
-import time
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -38,14 +37,10 @@ from earthling.core.geo import (
     tile_bounds_lonlat,
     tile_bounds_mercator,
 )
+from earthling.data import net
 from earthling.data.cache import LruCache, TileCache, write_atomic
-from earthling.data.downloader import (
-    MAX_RETRIES,
-    DownloadProgress,
-    ProgressCallback,
-    RateLimiter,
-    http_client,
-)
+from earthling.data.downloader import DownloadProgress, ProgressCallback
+from earthling.data.net import RateLimiter
 from earthling.data.providers import License
 
 log = logging.getLogger(__name__)
@@ -139,8 +134,11 @@ class DemSource:
             and f.bounds[3] > south and (folder / f.filename).exists()
         ]  # fmt: skip
 
-    def fetch_tile(self, z: int, x: int, y: int, client: httpx.Client) -> np.ndarray | None:
-        """Heightmap samples of one tile (direct sources); None where there is no data."""
+    def fetch_tile(
+        self, z: int, x: int, y: int, client: httpx.Client, limiter: RateLimiter | None = None
+    ) -> np.ndarray | None:
+        """Heightmap samples of one tile (direct sources); None where there is no data.
+        Requests go through ``net.get`` (retries, offline pause) and wait for ``limiter``."""
         raise NotImplementedError
 
 
@@ -181,8 +179,9 @@ class WmsDemSource(DemSource):
             "FORMAT": "image/x-bil;bits=32",
         }
 
-    def fetch_tile(self, z, x, y, client):
-        response = client.get(self.wms_url, params=self.request_params(z, x, y))
+    def fetch_tile(self, z, x, y, client, limiter=None):
+        params = self.request_params(z, x, y)
+        response = net.get(client, self.wms_url, params=params, limiter=limiter)
         if response.status_code in (204, 404):
             return None
         response.raise_for_status()
@@ -270,7 +269,7 @@ class TerrariumDemSource(DemSource):
     def files_for_bounds(self, bounds, client=None):
         return []
 
-    def _source_tile(self, z: int, x: int, y: int, client: httpx.Client) -> np.ndarray | None:
+    def _source_tile(self, z: int, x: int, y: int, client, limiter) -> np.ndarray | None:
         n = 1 << z
         if not 0 <= y < n:
             return None
@@ -279,7 +278,7 @@ class TerrariumDemSource(DemSource):
         hit, heights = self._tiles.lookup(key)
         if hit:
             return heights
-        response = client.get(self.url_template.format(z=z, x=x, y=y))
+        response = net.get(client, self.url_template.format(z=z, x=x, y=y), limiter=limiter)
         if response.status_code in (403, 404):
             heights = None
         else:
@@ -289,14 +288,14 @@ class TerrariumDemSource(DemSource):
             heights = np.maximum(heights, 0.0)  # sea level instead of bathymetry
         return self._tiles.put(key, heights)
 
-    def fetch_tile(self, z, x, y, client):
+    def fetch_tile(self, z, x, y, client, limiter=None):
         zs = min(z, self.max_zoom)
         shift = z - zs
         sx, sy = x >> shift, y >> shift
         mosaic = np.full((768, 768), np.nan, dtype=np.float32)
         for j in range(3):
             for i in range(3):
-                tile = self._source_tile(zs, sx + i - 1, sy + j - 1, client)
+                tile = self._source_tile(zs, sx + i - 1, sy + j - 1, client, limiter)
                 if tile is not None:
                     mosaic[j * 256 : (j + 1) * 256, i * 256 : (i + 1) * 256] = tile
         # heightmap sample s (-1..257) of tile (z, x, y) in mosaic pixel-centre coordinates
@@ -334,7 +333,7 @@ class StacDemSource(DemSource):
 
     def files_for_bounds(self, bounds, client=None):
         own = client is None
-        client = client or http_client()
+        client = client or net.client()
         newest: dict[str, tuple[str, SourceFile]] = {}
         try:
             url: str | None = self.items_url
@@ -343,7 +342,7 @@ class StacDemSource(DemSource):
                 "limit": self.page_size,
             }
             while url:
-                response = client.get(url, params=params)
+                response = net.get(client, url, params=params)
                 response.raise_for_status()
                 page = response.json()
                 for item in page.get("features", []):
@@ -436,7 +435,7 @@ def download_sources(
     on_progress: ProgressCallback | None = None,
     cancel: threading.Event | None = None,
 ) -> DownloadProgress:
-    client = client or http_client()
+    client = client or net.client()
     folder = source_dir(cache, source)
     folder.mkdir(parents=True, exist_ok=True)
     if source.listed_remotely:
@@ -451,7 +450,8 @@ def download_sources(
             progress.skipped += 1
         else:
             try:
-                with client.stream("GET", f.url) as response:
+                response = net.get(client, f.url, stream=True, cancel=cancel)
+                try:
                     if response.status_code in (403, 404):
                         missing.touch()  # e.g. ocean tiles do not exist
                         progress.missing += 1
@@ -460,14 +460,16 @@ def download_sources(
                         buf = io.BytesIO()
                         for chunk in response.iter_bytes(1 << 20):
                             if cancel is not None and cancel.is_set():
-                                raise InterruptedError
+                                raise net.CancelledError(f.url)
                             buf.write(chunk)
                             progress.bytes += len(chunk)
                             if on_progress:
                                 on_progress(progress)
                         write_atomic(target, buf.getvalue())
                         progress.downloaded += 1
-            except InterruptedError:
+                finally:
+                    response.close()
+            except net.CancelledError:
                 break
             except httpx.HTTPError as exc:
                 progress.failed += 1
@@ -562,24 +564,8 @@ class DemBaker:
 
     def _fetch_direct(self, z: int, x: int, y: int) -> np.ndarray | None:
         if self._client is None:
-            self._client = http_client()
-        delay = 1.0
-        last: Exception | None = None
-        for _attempt in range(MAX_RETRIES + 1):
-            self._limiter.wait()
-            try:
-                return self.source.fetch_tile(z, x, y, self._client)
-            except httpx.HTTPStatusError as exc:
-                status = exc.response.status_code
-                if status < 500 and status != 429:
-                    raise
-                last = exc
-            except httpx.TransportError as exc:
-                last = exc
-            time.sleep(delay)
-            delay = min(delay * 2, 30.0)
-        assert last is not None
-        raise last
+            self._client = net.client()
+        return self.source.fetch_tile(z, x, y, self._client, self._limiter)
 
     def bake_tile(self, z: int, x: int, y: int) -> np.ndarray | None:
         if self.source.direct:

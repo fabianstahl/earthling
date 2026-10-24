@@ -18,6 +18,7 @@ import time
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
+from earthling.data import net
 from earthling.data.cache import TileCache, write_atomic
 from earthling.data.providers import License, TileProvider
 from earthling.data.vector_tiles import decode_tile, ring_area
@@ -87,11 +88,9 @@ class WaterData:
             return self._provider
 
     def _download_tilejson(self) -> dict | None:
-        from earthling.data.downloader import http_client
-
         try:
-            with http_client() as client:
-                response = client.get(TILEJSON_URL, timeout=30.0)
+            with net.client() as client:
+                response = net.get(client, TILEJSON_URL, timeout=30.0)
                 response.raise_for_status()
             doc = response.json()
         except Exception as exc:  # offline: the water mask is optional

@@ -11,6 +11,7 @@ import shapely
 from rasterio.transform import from_origin
 
 from earthling.core.geo import lonlat_to_tile
+from earthling.data import net
 from earthling.data.cache import TileCache
 from earthling.data.dem import DemSource, SourceFile, read_heightmap, source_dir
 from earthling.data.jobs import _flatten, download_jobs
@@ -100,7 +101,7 @@ def test_tile_job_downloads_up_to_max_zoom_and_cancels(tmp_path, monkeypatch):
 def test_labels_job_reports_success_and_failure(tmp_path, monkeypatch):
     answers = [
         httpx.Response(200, json={"elements": []}),
-        httpx.Response(504),
+        *(httpx.Response(504) for _ in range(net.MAX_RETRIES + 1)),  # (retried)
         httpx.Response(200, json={"elements": [], "remark": "runtime error: timeout"}),
     ]
     requests = mock_http(monkeypatch, lambda r: answers.pop(0))

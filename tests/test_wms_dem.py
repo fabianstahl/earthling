@@ -82,13 +82,7 @@ def test_nodata_retries_and_threaded_bake(tmp_path):
     baker = DemBaker(RampWms(), cache, client=client)
     z, x, y = key_near_chamonix()
     tiles = [(z, x + i, y) for i in range(4)]
-    import earthling.data.dem as dem
-
-    dem.time.sleep, sleep = (lambda s: None), dem.time.sleep  # no real back-off in tests
-    try:
-        progress = baker.bake(tiles)
-    finally:
-        dem.time.sleep = sleep
+    progress = baker.bake(tiles)
     assert progress.downloaded == 4 and progress.failed == 0 and progress.done == 4
     assert len(calls) == 6  # two 503s were retried
     heights = read_heightmap(cache, "test_wms", *tiles[0])

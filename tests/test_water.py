@@ -8,6 +8,7 @@ import httpx
 import numpy as np
 import pytest
 
+from earthling.data import net
 from earthling.data.cache import TileCache
 from earthling.data.vector_tiles import decode_tile, ring_area
 from earthling.data.water import PROVIDER_ID, TILEJSON_URL, WaterData
@@ -197,7 +198,7 @@ def test_tilejson_downloaded_cached_and_refreshed(tmp_path, monkeypatch):
     path = write_tilejson(tmp_path, {"tiles": ["https://old.example/{z}/{x}/{y}.pbf"]})
     month_ago = time.time() - 31 * 86400
     os.utime(path, (month_ago, month_ago))
-    answers.append(httpx.Response(500))
+    answers.extend(httpx.Response(500) for _ in range(net.MAX_RETRIES + 1))  # (retried)
     assert WaterData(cache).provider().url_template.startswith("https://old.example")
     answers.append(httpx.Response(200, json={"tiles": [TILES_URL]}))
     assert WaterData(cache).provider().url_template == TILES_URL

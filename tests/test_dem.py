@@ -218,7 +218,7 @@ def test_file_priority_and_nodata(tmp_path):
 def test_direct_sources_retry_network_errors_and_cancel(tmp_path, monkeypatch):
     import httpx
 
-    import earthling.data.dem as dem
+    from earthling.data import net
     from earthling.data.dem import WmsDemSource, get_dem_source
     from helpers import mock_http
 
@@ -229,19 +229,19 @@ def test_direct_sources_retry_network_errors_and_cancel(tmp_path, monkeypatch):
         concurrency = 2
         max_requests_per_second = 0.0
 
-    answers = {"errors": 2}
+    answers = {"errors": 2, "error": httpx.ReadTimeout}
 
     def server(request):
         if answers["errors"]:
             answers["errors"] -= 1
-            raise httpx.ConnectError("connection refused", request=request)
+            raise answers["error"]("no answer", request=request)
         values = np.full((HEIGHTMAP_SAMPLES, HEIGHTMAP_SAMPLES), 777.0, "<f4")
         return httpx.Response(200, content=values.tobytes(),
                               headers={"content-type": "image/x-bil;bits=32"})  # fmt: skip
 
     requests = mock_http(monkeypatch, server)
     sleeps = []
-    monkeypatch.setattr(dem.time, "sleep", sleeps.append)  # no real back-off
+    monkeypatch.setattr(net, "backoff_wait", lambda s, cancel=None: sleeps.append(s))
     baker = DemBaker(Wms(), TileCache(tmp_path))  # (its own client)
     heights = baker.bake_tile(12, 2100, 1450)
     assert np.allclose(heights, 777.0) and len(requests) == 3 and sleeps == [1.0, 2.0]
@@ -259,7 +259,11 @@ def test_direct_sources_retry_network_errors_and_cancel(tmp_path, monkeypatch):
     # a server that stays down: given up after the retries, the tile counts as failed
     answers["errors"], sleeps[:] = 100, []
     failed = baker.bake([(12, 2200, 1450)])
-    assert failed.failed == 1 and "connection refused" in failed.errors[0]
-    assert sleeps == [1.0, 2.0, 4.0, 8.0, 16.0]
+    assert failed.failed == 1 and "no answer" in failed.errors[0]
+    assert sleeps == [1.0, 2.0, 4.0, 8.0]
+    # an unreachable server is not retried: failed at once (the host pauses, see net)
+    answers["error"], sleeps[:], requests[:] = httpx.ConnectError, [], []
+    failed = baker.bake([(12, 2300, 1450)])
+    assert failed.failed == 1 and len(requests) == 1 and sleeps == []
     with pytest.raises(KeyError, match="unknown DEM source 'nope'.*copernicus_glo30"):
         get_dem_source("nope")

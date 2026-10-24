@@ -122,7 +122,7 @@ def test_an_unreachable_server_fails_fast_and_is_tried_again_later(tmp_path, mon
     """Offline (connection refused, no DNS) every tile would wait through its retries - half
     a minute each, minutes for an export. After a connection error the downloader fails tiles
     at once for a while, then tries again."""
-    import earthling.data.downloader as downloader
+    from earthling.data import net
 
     calls, sleeps = [], []
     online = {"up": False}
@@ -134,12 +134,12 @@ def test_an_unreachable_server_fails_fast_and_is_tried_again_later(tmp_path, mon
         return httpx.Response(200, content=b"tile")
 
     clock = {"now": 1000.0}
-    monkeypatch.setattr(downloader.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(net, "OFFLINE", net.OfflineHosts(clock=lambda: clock["now"]))
     provider = TileProvider(**{**PROVIDER.__dict__, "concurrency": 1})
     dl = TileDownloader(provider, TileCache(tmp_path), http_client(httpx.MockTransport(handler)),
                         sleep=sleeps.append)  # fmt: skip
     progress = dl.run([(5, x, 0) for x in range(20)])
     assert progress.failed == 20 and len(calls) == 1 and sleeps == []
     online["up"] = True
-    clock["now"] += downloader.OFFLINE_PAUSE_S + 1.0  # (the pause is over)
+    clock["now"] += net.OFFLINE_PAUSE_S + 1.0  # (the pause is over)
     assert dl.run([(5, x, 0) for x in range(20)]).downloaded == 20

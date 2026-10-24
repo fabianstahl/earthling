@@ -248,7 +248,7 @@ def test_stills(gl_ctx, project, scene_file, tmp_path, capsys):
 
 # --- check-source ------------------------------------------------------------------------------
 def test_check_source_imagery(project, monkeypatch, tmp_path, capsys):
-    import earthling.data.check
+    from earthling.data import net
 
     urls = []
 
@@ -259,7 +259,7 @@ def test_check_source_imagery(project, monkeypatch, tmp_path, capsys):
         )
 
     client = httpx.Client(transport=httpx.MockTransport(tiles))
-    monkeypatch.setattr(earthling.data.check, "http_client", lambda: client)
+    monkeypatch.setattr(net, "client", lambda: client)
     argv = ["check-source", str(project), "esri_world_imagery", "--at", "7.0,46.0", "--out",
             str(tmp_path / "sheet")]  # fmt: skip
     assert main(argv) == 0

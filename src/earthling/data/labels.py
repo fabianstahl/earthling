@@ -22,8 +22,9 @@ from pathlib import Path
 import numpy as np
 import shapely
 
+from earthling.data import net
 from earthling.data.cache import TileCache, write_atomic
-from earthling.data.downloader import ensure_natural_earth, http_client, natural_earth_path
+from earthling.data.downloader import ensure_natural_earth, natural_earth_path
 
 log = logging.getLogger(__name__)
 
@@ -154,9 +155,10 @@ def download_labels(cache: TileCache, bounds, client=None) -> Path:
     """Fetch the features of ``bounds`` (lon/lat) from Overpass into the cache."""
     path = cache_path(cache, bounds)
     own = client is None
-    client = client or http_client()
+    client = client or net.client()
     try:
-        response = client.post(OVERPASS_URL, data={"data": overpass_query(bounds)}, timeout=180.0)
+        query = {"data": overpass_query(bounds)}
+        response = net.post(client, OVERPASS_URL, data=query, timeout=180.0)
         response.raise_for_status()
         data = response.json()
     finally:

@@ -13,7 +13,7 @@ import numpy as np
 
 from earthling.core.geo import great_circle
 from earthling.core.gpx import haversine_m, write_gpx
-from earthling.data.downloader import http_client
+from earthling.data import net
 
 KINDS = [("straight", "Straight line"), ("flight", "Flight (an arc in the air)"),
          ("road", "Road route (online)")]  # fmt: skip
@@ -38,9 +38,9 @@ def road_route(a: tuple[float, float], b: tuple[float, float],
     coords = f"{a[1]:.5f},{a[0]:.5f};{b[1]:.5f},{b[0]:.5f}"
     cache = Path(cache_dir) / (hashlib.md5(coords.encode()).hexdigest()[:12] + ".json")
     if not cache.exists():
-        with http_client() as client:
-            response = client.get(OSRM_URL + coords, params={"overview": "full",
-                                                             "geometries": "geojson"})  # fmt: skip
+        with net.client() as client:
+            params = {"overview": "full", "geometries": "geojson"}
+            response = net.get(client, OSRM_URL + coords, params=params)
             response.raise_for_status()
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(response.text, encoding="utf-8")
