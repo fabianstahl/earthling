@@ -7,6 +7,7 @@ from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import QApplication, QColorDialog, QDialog, QFileDialog, QInputDialog
 
 from earthling.app.main_window import MainWindow
+from earthling.ui.palette import menu_text
 from helpers import offline_demo
 
 
@@ -16,7 +17,7 @@ def menu_actions(menu) -> list[tuple[str, QAction]]:
     for action in menu.actions():
         if action.isSeparator():
             continue
-        text = action.text().replace("&", "")
+        text = menu_text(action.text())
         if action.menu() is not None:
             out += [(f"{text} › {path}", a) for path, a in menu_actions(action.menu())]
         elif action.isEnabled():

@@ -87,6 +87,9 @@ timeline and export 4K video.
 | **Search** (Ctrl+F) finds every setting, in English or German. **Ctrl+K** opens the command palette: settings, actions, looks and help in one list | **Start screen:** a new project from GPX files, recent projects with a picture of their last view, the demo |
 
 Every setting and action is also in the command palette; F1 lists the keyboard shortcuts.
+Without a mouse: Ctrl+1 to Ctrl+0 open the inspector's categories, F6 / Shift+F6 move between
+the scene list, the viewport, the inspector and the timeline, and arrow keys, Enter and Esc
+do the rest.
 
 ## Gallery
 

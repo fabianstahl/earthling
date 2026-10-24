@@ -47,6 +47,11 @@ class Entry:
     recent: bool = False  # listed while nothing is typed
 
 
+def menu_text(text: str) -> str:
+    """A menu entry's text as shown: without the mnemonic marks ("&&" is a literal "&")."""
+    return "&".join(part.replace("&", "") for part in text.split("&&")).split("\t")[0]
+
+
 def menu_entries(menu_bar) -> list[Entry]:
     """Every enabled action of the menus (with its menu path and shortcut)."""
     out: list[Entry] = []
@@ -55,18 +60,19 @@ def menu_entries(menu_bar) -> list[Entry]:
         for action in menu.actions():
             if action.isSeparator():
                 continue
-            text = action.text().replace("&", "").split("\t")[0]
+            text = menu_text(action.text())
             if action.menu() is not None:
                 walk(action.menu(), [*path, text])
             elif action.isEnabled() and text:
                 icon = action.icon() if not action.icon().isNull() else "command"
+                keys = ", ".join(k.toString() for k in action.shortcuts())
                 out.append(Entry("Actions", text, " › ".join(path), icon, action.trigger,
-                                 action.shortcut().toString(), action.toolTip(),
+                                 keys, action.toolTip(),
                                  recent=action.property("palette_recent") is True))  # fmt: skip
 
     for action in menu_bar.actions():
         if action.menu() is not None:
-            walk(action.menu(), [action.text().replace("&", "")])
+            walk(action.menu(), [menu_text(action.text())])
     return out
 
 

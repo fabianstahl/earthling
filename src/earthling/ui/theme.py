@@ -184,6 +184,7 @@ QToolBar::separator {{ background: {LINE}; width: 1px; margin: 6px 6px; }}
 QToolButton {{ background: transparent; border: none; border-radius: 7px; padding: 5px;
     color: {TEXT_2}; }}
 QToolButton:hover {{ background: {HOVER}; color: {TEXT}; }}
+QToolButton:focus {{ background: {HOVER}; color: {TEXT}; }}
 QToolButton:checked {{ background: {ACCENT_BG}; color: {ACCENT_TEXT}; }}
 QToolButton::menu-indicator {{ image: none; width: 0; }}
 QPushButton {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 7px;
@@ -289,6 +290,8 @@ QToolButton#chip:checked {{ background: {ACCENT_BG}; border-color: #2F5487; colo
 QToolButton#look {{ background: {FIELD}; border: 1px solid {LINE_STRONG}; border-radius: 7px;
     padding: 4px 10px; font-size: 12px; color: {TEXT_2}; }}
 QToolButton#look:hover {{ border-color: #46505F; color: {TEXT}; }}
+QPushButton:focus, QComboBox:focus, QToolButton#chip:focus, QToolButton#look:focus,
+QToolButton#swatch:focus {{ border-color: {ACCENT}; }}
 QToolButton#crumb {{ color: {TEXT_3}; font-size: 12px; padding: 5px 4px; text-align: left; }}
 QToolButton#crumb:hover {{ color: {ACCENT_TEXT}; background: transparent; }}
 #sceneHeader {{ border-bottom: 1px solid {LINE}; }}

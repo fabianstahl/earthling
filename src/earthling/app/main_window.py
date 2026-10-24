@@ -186,6 +186,45 @@ class MainWindow(QMainWindow):
                 self.scene_list.refresh()
 
         self.scene.store.subscribe(store_changed)
+        self._add_keyboard_navigation()
+
+    def _add_keyboard_navigation(self) -> None:
+        """Ctrl+1 .. Ctrl+0: an inspector category; F6 / Shift+F6: the next / previous pane
+        (the viewport keeps Tab for its camera mode)."""
+        from earthling.ui.inspector import CATEGORIES
+
+        menu = self.view_menu.addMenu(theme.icon("squares-four"), "Inspector &Category")
+        for category, digit in zip(CATEGORIES, "1234567890", strict=False):
+            shortcut = f"Ctrl+{digit}"
+            self._add_action(menu, category.title.replace("&", "&&"),
+                             lambda c=category.id: self.show_inspector_category(c), shortcut,
+                             category.icon)  # fmt: skip
+            button = self.inspector.rail.buttons[category.id]
+            button.setToolTip(f"{button.toolTip()} ({shortcut})")
+        self._add_action(self.view_menu, "Next &Pane", lambda: self.focus_pane(1), "F6")
+        self._add_action(self.view_menu, "Previous Pane", lambda: self.focus_pane(-1), "Shift+F6")
+
+    def show_inspector_category(self, category_id: str) -> None:
+        self.parameters_dock.show()
+        self.inspector.show_category(category_id)
+
+    def focus_pane(self, step: int) -> None:
+        """Move the keyboard focus to the next (``step`` 1) or previous visible pane: the scene
+        list, the viewport, the inspector (its search field), the timeline."""
+        panes = [
+            (self.scene_list, self.scene_list.tree),
+            (self.viewport, self.viewport),
+            (self.inspector, self.inspector.search),
+            (self.timeline_widget, self.timeline_widget.dope_sheet or self.timeline_widget),
+        ]
+        panes = [(pane, target) for pane, target in panes if pane.isVisible()]
+        if not panes:
+            return
+        focus = self.focusWidget()  # (the window's: also while another window is active)
+        current = next((i for i, (pane, _) in enumerate(panes)
+                        if focus is not None and (focus is pane or pane.isAncestorOf(focus))),
+                       -1)  # fmt: skip
+        panes[(current + step) % len(panes)][1].setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _add_dock(self, area, dock: QDockWidget, name: str = "", widget=None) -> QDockWidget:
         """Dock ``dock`` (optionally naming it and setting its widget) and list it in View."""
@@ -258,7 +297,7 @@ class MainWindow(QMainWindow):
         undo.setShortcut(QKeySequence.StandardKey.Undo)
         undo.setIcon(theme.icon("arrow-counter-clockwise"))
         redo = self.redo_action = self.undo_stack.createRedoAction(self, "&Redo")
-        redo.setShortcuts([QKeySequence.StandardKey.Redo, QKeySequence("Ctrl+Y")])
+        redo.setShortcuts([QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")])
         redo.setIcon(theme.icon("arrow-clockwise"))
         edit_menu.addAction(undo)
         edit_menu.addAction(redo)
@@ -328,6 +367,7 @@ class MainWindow(QMainWindow):
         self.palette_action = self._add_action(
             help_menu, "&Command Palette…", self.show_palette, "Ctrl+K", "magnifying-glass"
         )
+        self.palette_action.setShortcuts([QKeySequence("Ctrl+K"), QKeySequence("Ctrl+Shift+P")])
         self._add_action(help_menu, "&Keyboard Shortcuts", self.show_shortcuts, "F1", "keyboard")
         help_menu.addSeparator()
         self._add_action(help_menu, "&About Earthling", self._show_about, None, "info")
@@ -593,8 +633,14 @@ class MainWindow(QMainWindow):
         rows = [(e.right, f"{e.title}  ({e.crumb})") for e in menu_entries(self.menuBar())
                 if e.right]  # fmt: skip
         rows += [("Space", "Play / pause"), (", .", "Previous / next frame"),
-                 ("Tab", "Orbit / fly camera"), ("Ctrl+Home / End", "Start / end"),
-                 ("Ctrl+F", "Search the settings")]  # fmt: skip
+                 ("Ctrl+Home / End", "Start / end"),
+                 ("Tab", "Orbit / fly camera (in the viewport)"),
+                 ("W A S D, arrows", "Fly (in the viewport; Q E or Page Up / Down: down, up)"),
+                 ("Up / Down", "Change a value (in a field; Shift: finer, Ctrl: coarser)"),
+                 ("Enter, F2", "Type a value (in a field)"),
+                 ("Delete", "Delete the selected keys, POI or photo"),
+                 ("Ctrl+A", "Select all keys (in the timeline)"),
+                 ("Esc", "Close a dialog or the palette")]  # fmt: skip
         text = "\n".join(f"{key:<18} {what}" for key, what in sorted(rows))
         box = QMessageBox(self)
         box.setWindowTitle("Keyboard shortcuts")
