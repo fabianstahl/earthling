@@ -26,6 +26,7 @@ earthling = "earthling.cli:main"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.170.9",
     "pytest>=8",
     "pytest-cov>=7.1.0",
     "pytest-qt>=4.4",

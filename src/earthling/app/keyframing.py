@@ -21,6 +21,13 @@ from earthling.core.animation import (
 KeyRef = tuple[str, float]  # (property id, key time)
 
 
+def static_values(animation: Animation, pids: Iterable[str]) -> dict[str, Any]:
+    """The values of those of ``pids`` that are not animated. An undo that removes a curve
+    gives them back: the store would keep the curve's last value (the first key undone left
+    the setting at the keyed value, not at the one it had before)."""
+    return {pid: animation.store[pid] for pid in pids if not animation.is_animated(pid)}
+
+
 class AnimationSnapshotCommand(QUndoCommand):
     """Undo by restoring the affected curves as they were (JSON snapshots)."""
 
@@ -31,31 +38,36 @@ class AnimationSnapshotCommand(QUndoCommand):
         before: dict[str, list],
         after: dict[str, list],
         on_change: Callable[[], None],
+        values: tuple[dict[str, Any], dict[str, Any]] = ({}, {}),
     ) -> None:
+        """``values``: static_values of the affected properties before and after."""
         super().__init__(label)
         self.animation = animation
         self.before = before
         self.after = after
         self.on_change = on_change
+        self.values_before, self.values_after = values
         self._first = True
 
-    def _restore(self, snapshot: dict[str, list]) -> None:
+    def _restore(self, snapshot: dict[str, list], values: dict[str, Any]) -> None:
         registry = self.animation.store.registry
         for pid, data in snapshot.items():
             if data:
                 self.animation.curves[pid] = Curve.from_json(registry[pid], data)
             else:
                 self.animation.curves.pop(pid, None)
+        for pid, value in values.items():
+            self.animation.store.set(pid, value)
         self.on_change()
 
     def redo(self) -> None:
         if self._first:  # the edit was already applied when the command was pushed
             self._first = False
             return
-        self._restore(self.after)
+        self._restore(self.after, self.values_after)
 
     def undo(self) -> None:
-        self._restore(self.before)
+        self._restore(self.before, self.values_before)
 
 
 class KeyframeEditor(QObject):
@@ -70,7 +82,7 @@ class KeyframeEditor(QObject):
         self.stack = stack
         self.auto_key = True  # editing an animated property updates its key
         self.clipboard: list[tuple[str, float, Any, Interp]] = []
-        self._pending: tuple[list[str], dict[str, list]] | None = None  # begin() .. commit()
+        self._pending: tuple | None = None  # (pids, curves, static values): begin() .. commit()
 
     # --- snapshots --------------------------------------------------------------------
     def _snapshot(self, pids: Iterable[str]) -> dict[str, list]:
@@ -86,20 +98,21 @@ class KeyframeEditor(QObject):
 
     def edit(self, label: str, pids: Iterable[str], fn: Callable[[], None]) -> None:
         pids = list(dict.fromkeys(pids))
-        before = self._snapshot(pids)
+        before, values = self._snapshot(pids), static_values(self.animation, pids)
         fn()
         after = self._snapshot(pids)
         if before == after:
             return
+        values = (values, static_values(self.animation, pids))
         self.stack.push(
-            AnimationSnapshotCommand(label, self.animation, before, after, self._notify)
+            AnimationSnapshotCommand(label, self.animation, before, after, self._notify, values)
         )
         self._notify()
 
     # --- interactive edits (drags): live changes, one undo step --------------------------
     def begin(self, pids: Iterable[str]) -> None:
         pids = list(dict.fromkeys(pids))
-        self._pending = (pids, self._snapshot(pids))
+        self._pending = (pids, self._snapshot(pids), static_values(self.animation, pids))
 
     def live(self) -> None:
         """Call after changing curves directly during a drag (refreshes views and scene)."""
@@ -109,11 +122,12 @@ class KeyframeEditor(QObject):
         pending, self._pending = self._pending, None
         if pending is None:
             return
-        pids, before = pending
+        pids, before, values = pending
         after = self._snapshot(pids)
         if before != after:
+            values = (values, static_values(self.animation, pids))
             self.stack.push(
-                AnimationSnapshotCommand(label, self.animation, before, after, self._notify)
+                AnimationSnapshotCommand(label, self.animation, before, after, self._notify, values)
             )
         self._notify()
 

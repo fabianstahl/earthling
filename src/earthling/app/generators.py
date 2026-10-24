@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 )
 
 from earthling import scenekit
+from earthling.app.keyframing import static_values
 from earthling.scenekit import Journey
 from earthling.ui.widgets import double_spin, row
 
@@ -31,24 +32,32 @@ CAMERA_STEP = 1.0 / 30.0  # camera samples (key_shots resamples them smoothly)
 
 
 class AnimationCommand(QUndoCommand):
-    """Undo by restoring the whole animation (keys, duration) as it was."""
+    """Undo by restoring the whole animation (keys, duration) as it was, and the values of
+    the properties that were not animated then (see keyframing.static_values)."""
 
-    def __init__(self, label: str, animation, before: dict, after: dict, on_change) -> None:
+    def __init__(self, label: str, animation, before: dict, after: dict, on_change,
+                 values: tuple[dict, dict] = ({}, {})) -> None:  # fmt: skip
         super().__init__(label)
         self.animation, self.before, self.after, self.on_change = (animation, before, after,
                                                                    on_change)  # fmt: skip
+        self.values_before, self.values_after = values
         self._first = True
+
+    def _load(self, doc: dict, values: dict) -> None:
+        self.animation.load_json(doc)
+        for pid, value in values.items():
+            if not self.animation.is_animated(pid):
+                self.animation.store.set(pid, value)
+        self.on_change()
 
     def redo(self) -> None:
         if self._first:  # applied when pushed
             self._first = False
             return
-        self.animation.load_json(self.after)
-        self.on_change()
+        self._load(self.after, self.values_after)
 
     def undo(self) -> None:
-        self.animation.load_json(self.before)
-        self.on_change()
+        self._load(self.before, self.values_before)
 
 
 def window_journey(window) -> Journey | None:
@@ -75,6 +84,8 @@ def run(window, label: str, generate, settings: dict | None = None,
         if not scene.animation.is_animated(pid):
             window.set_property(pid, value)
     before = scene.animation.to_json()
+    pids = [d.id for d in scene.store.registry]
+    static_before = static_values(scene.animation, pids)
     scenekit.set_current(journey)  # (level horizon, local time)
     try:
         generate(journey, scene)
@@ -82,8 +93,9 @@ def run(window, label: str, generate, settings: dict | None = None,
         scenekit.set_current(None)
     after = scene.animation.to_json()
     if after != before:
+        values = (static_before, static_values(scene.animation, pids))
         stack.push(AnimationCommand(label, scene.animation, before, after,
-                                    window.animation_changed))  # fmt: skip
+                                    window.animation_changed, values))  # fmt: skip
     stack.endMacro()
     window.animation_changed()
     return True
