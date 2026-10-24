@@ -135,11 +135,14 @@ def align_hemispheres(quats: list[np.ndarray]) -> list[np.ndarray]:
 
 
 # --- positions ---------------------------------------------------------------------------
-def catmull_rom(p0, p1, p2, p3, u: float, alpha: float = 0.5) -> np.ndarray:
-    """Centripetal (alpha = 0.5) Catmull-Rom point between p1 and p2 at u in [0, 1]."""
+def catmull_rom(p0, p1, p2, p3, u, alpha: float = 0.5) -> np.ndarray:
+    """Centripetal (alpha = 0.5) Catmull-Rom point between p1 and p2 at u in [0, 1]. The points
+    (..., 3) and ``u`` (...) may be arrays that broadcast (all of a path's samples at once)."""
+    p0, p1, p2, p3 = (np.asarray(p, dtype=np.float64) for p in (p0, p1, p2, p3))
+    u = np.asarray(u, dtype=np.float64)[..., None]
 
-    def knot(t: float, a: np.ndarray, b: np.ndarray) -> float:
-        return t + max(float(np.linalg.norm(b - a)), 1e-6) ** alpha
+    def knot(t, a: np.ndarray, b: np.ndarray):
+        return t + np.maximum(np.linalg.norm(b - a, axis=-1, keepdims=True), 1e-6) ** alpha
 
     t0 = 0.0
     t1 = knot(t0, p0, p1)
@@ -199,23 +202,31 @@ class CameraSpline:
 
     # --- arc length (constant speed) ------------------------------------------------------
     def arc_table(self, samples_per_segment: int = 64) -> tuple[np.ndarray, np.ndarray]:
-        """(global parameter g = segment + u, cumulative length) samples."""
-        g_list, lengths = [0.0], [0.0]
-        prev = self.position(0, 0.0)
-        for seg in range(max(1, len(self.points) - 1)):
-            for k in range(1, samples_per_segment + 1):
-                u = k / samples_per_segment
-                p = self.position(seg, u)
-                lengths.append(lengths[-1] + float(np.linalg.norm(p - prev)))
-                g_list.append(seg + u)
-                prev = p
-        return np.array(g_list), np.array(lengths)
+        """(global parameter g = segment + u, cumulative length) samples. All segments at once:
+        point by point, a generated camera (a key every frame) took seconds."""
+        n = len(self.points)
+        segments = max(1, n - 1)
+        u = np.arange(1, samples_per_segment + 1) / samples_per_segment
+        g = np.concatenate([[0.0], (np.arange(segments)[:, None] + u[None, :]).ravel()])
+        if n == 1:
+            return g, np.zeros(len(g))
+        padded = np.array([self._point(i) for i in range(-1, n + 1)])  # (mirrored ends)
+        ends = [padded[k : k + segments][:, None, :] for k in range(4)]
+        points = catmull_rom(*ends, u[None, :]).reshape(-1, 3)
+        points = np.vstack([self.position(0, 0.0), points])
+        steps = np.linalg.norm(np.diff(points, axis=0), axis=1)
+        return g, np.concatenate([[0.0], np.cumsum(steps)])
+
+
+MAX_FRUSTUMS = 40  # a generated camera has a key every frame: hundreds of frustums took
+# seconds to build on every edit (and hid the path)
 
 
 def camera_path_lines(curve, samples: int = 400):
     """Gizmo polylines for an animated camera curve: the path plus a small frustum per key.
 
     Returns [(ENU points (n, 3), rgba, closed)] for an outline layer; empty without keys.
+    Of many keys, MAX_FRUSTUMS evenly spread ones get a frustum (the first and the last too).
     """
     if curve is None or not curve.keys:
         return []
@@ -229,6 +240,8 @@ def camera_path_lines(curve, samples: int = 400):
         size = max(30.0, float(np.linalg.norm(np.diff(pts, axis=0), axis=1).sum()) * 0.02)
     else:
         size = 100.0
+    if len(keys) > MAX_FRUSTUMS:
+        keys = [keys[round(i)] for i in np.linspace(0, len(keys) - 1, MAX_FRUSTUMS)]
     for k in keys:
         x, y, z, heading, pitch, roll = k.value
         m = orientation_matrix(heading, pitch, roll)

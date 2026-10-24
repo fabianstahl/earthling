@@ -123,3 +123,30 @@ def test_identical_keys_hold_the_camera_still():
     curve.set_key(2.0, (5000.0, 3000.0, 1500.0, 40.0, -20.0, 0.0), Interp.LINEAR)
     for t in np.linspace(0.0, 1.0, 21):
         assert curve.evaluate(float(t)) == pytest.approx(hold)
+
+
+def test_a_generated_camera_path_is_quick_to_draw():
+    """A key every frame (a generated camera): the path is drawn in full, frustums only for
+    some keys - every key's took seconds on each edit."""
+    import time
+
+    import numpy as np
+
+    from earthling.core.camera_path import MAX_FRUSTUMS, camera_path_lines
+    from earthling.core.scene import Scene
+
+    anim = Scene().animation
+    anim.duration = 30.0
+    for i in range(901):
+        t = i / 30
+        anim.set_key("camera.pose", t, (np.sin(t) * 1000, t * 100, 2000.0, t * 3 % 360, -30, 0))
+    t0 = time.perf_counter()
+    lines = camera_path_lines(anim.curves["camera.pose"])
+    assert time.perf_counter() - t0 < 0.5
+    frustums = [pts for pts, _, closed in lines if closed]
+    assert len(frustums) == MAX_FRUSTUMS
+    first, last = anim.curves["camera.pose"].keys[0], anim.curves["camera.pose"].keys[-1]
+    eyes = {tuple(np.round(pts[0], 3)) for pts, _, closed in lines if not closed and len(pts) == 2}
+    assert (
+        tuple(np.round(first.value[:3], 3)) in eyes and tuple(np.round(last.value[:3], 3)) in eyes
+    )
