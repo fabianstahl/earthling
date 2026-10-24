@@ -85,3 +85,63 @@ def test_photo_appears_when_reached(gl_ctx):
     layer.time = 5.0
     assert layer._reached(photo, "photo.p.", scene.store) == pytest.approx(1.0)
     assert np.isfinite(layer._passed[next(iter(layer._passed))])
+
+
+def test_photo_form_adds_renames_and_changes_files(qtbot, tmp_path, monkeypatch):
+    """Photos are placed by their GPS, else by their time on the tracks, else at the marker;
+    files inside the scene folder are kept relative."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QUndoStack
+    from PyQt6.QtWidgets import QFileDialog
+
+    from earthling.app.photo_editor import PhotoEditor
+
+    places = {"marker": (7.0, 46.0), "at_time": None}
+    times = []
+    base = tmp_path / "scene"  # (the scene folder)
+    base.mkdir()
+
+    def at_time(when):
+        times.append(when)
+        return places["at_time"]
+
+    editor = PhotoEditor(Scene(), QUndoStack(), lambda: places["marker"], lambda cb: None,
+                         lambda: base, place_at_time=at_time)  # fmt: skip
+    qtbot.addWidget(editor)
+    gps = photo_file(base / "gps.jpg", (45.5, 6.5))
+    timed = photo_file(base / "timed.jpg", taken="2026:09:01 08:00:00")
+    plain = photo_file(base / "plain.jpg")
+    chosen = {"files": []}
+    monkeypatch.setattr(QFileDialog, "getOpenFileNames", lambda *a, **k: (chosen["files"], ""))
+    editor.add_dialog()  # (cancelled)
+    assert editor.items() == []
+    chosen["files"] = [str(gps), str(timed), str(plain)]
+    editor.add_dialog()
+    photos = editor.items()
+    assert [p.path for p in photos] == ["gps.jpg", "timed.jpg", "plain.jpg"]  # (relative)
+    assert (photos[0].lon, photos[0].lat) == (pytest.approx(6.5), pytest.approx(45.5))
+    assert times == [dt.datetime(2026, 9, 1, 8, 0)]  # (not on the tracks: at the marker)
+    assert (photos[1].lon, photos[1].lat) == (7.0, 46.0) == (photos[2].lon, photos[2].lat)
+    places["marker"] = None  # (no tracks drawn either: no place)
+    assert editor.add_photo(plain).lat is None
+    assert editor.item_tooltip(editor.items()[-1]) == ""
+    assert not editor.item_icon(photos[0]).isNull()
+    # renaming by typing, another file through the form
+    editor.select(0)
+    assert editor.file.text() == "gps.jpg"
+    editor.name.selectAll()
+    qtbot.keyClicks(editor.name, "Summit")
+    qtbot.keyClick(editor.name, Qt.Key.Key_Return)
+    assert editor.items()[0].name == "Summit" and editor.items()[0].id == "gps"
+    other = photo_file(tmp_path / "elsewhere.jpg")  # (outside the scene folder)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(other), ""))
+    editor.change_file.click()
+    assert editor.items()[0].path == str(other) and editor.file.text() == str(other)
+    assert not editor.item_icon(editor.items()[0]).isNull()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("", ""))
+    editor.change_file.click()  # (cancelled)
+    assert editor.items()[0].path == str(other)
+    editor.undo_stack.undo()
+    assert editor.items()[0].path == "gps.jpg"
+    editor.select(-1)
+    editor._change_file()  # (no photo selected: nothing happens)

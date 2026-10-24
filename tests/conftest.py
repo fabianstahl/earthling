@@ -18,13 +18,18 @@ def gl_ctx():
 
 
 @pytest.fixture(autouse=True)
-def _isolated_qsettings():
+def _isolated_qsettings(tmp_path_factory):
     """Keep tests from touching the user's real settings (recent projects etc.), and from each
-    other's: every test starts with empty settings."""
+    other's: every test starts with empty settings. They live in an INI file of this session,
+    not in the registry, which test runs in other checkouts share (and clear meanwhile)."""
     from PyQt6.QtCore import QCoreApplication, QSettings
 
     QCoreApplication.setOrganizationName("EarthlingTests")
     QCoreApplication.setApplicationName("EarthlingTests")
+    ini = QSettings.Format.IniFormat
+    QSettings.setDefaultFormat(ini)
+    folder = tmp_path_factory.getbasetemp() / "settings"
+    QSettings.setPath(ini, QSettings.Scope.UserScope, str(folder))
     QSettings().clear()
     yield
 
@@ -61,6 +66,7 @@ def _no_network():
     def refuse(self, request):  # (as if offline: the code handles that)
         raise httpx.ConnectError(f"tests must not touch the network: {request.url}")
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(httpx.HTTPTransport, "handle_request", refuse)
-        yield
+    # Never restored: daemon threads (a label download retrying) may still run while the
+    # interpreter shuts down after the session, and reached the real Overpass server.
+    httpx.HTTPTransport.handle_request = refuse
+    yield

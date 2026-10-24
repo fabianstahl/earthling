@@ -62,6 +62,16 @@ def _parse_number(text: str) -> float:
     return float(text.strip().replace(",", ".").replace("−", "-").split(" ")[0])
 
 
+class _TypingEdit(QLineEdit):
+    """The field a value is typed into. It keeps Enter: QLineEdit passes the key on to its
+    parent, where the drag field took it for "type a value" and opened a new field."""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        super().keyPressEvent(event)
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            event.accept()
+
+
 class DragField(QWidget):
     """A number shown inside a filled bar: drag sideways to change it (Shift: fine, Ctrl:
     coarse), click to type, arrow keys step. ``edited(value, interactive)``."""
@@ -216,7 +226,7 @@ class DragField(QWidget):
     def start_typing(self) -> None:
         if self._edit is not None:
             return
-        edit = self._edit = QLineEdit(self)
+        edit = self._edit = _TypingEdit(self)
         number = self.text().removesuffix(self.unit).strip()
         edit.setText(number)
         edit.setGeometry(self.rect())

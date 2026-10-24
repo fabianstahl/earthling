@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -87,6 +87,8 @@ class SceneList(QWidget):
         layout.addWidget(self.drop_hint)
         self._expanded: dict[str, bool] = {}
         self._updating = False
+        self._in_item_change = False  # (a checkbox is being handled: see refresh)
+        self._refresh_pending = False
         self.refresh()
 
     @staticmethod
@@ -108,6 +110,13 @@ class SceneList(QWidget):
 
     def refresh(self) -> None:
         """Rebuild the tree (keeping the selection and what is expanded)."""
+        if self._in_item_change:
+            # A checkbox's handlers ask for this; clearing the tree now would delete the item
+            # while QTreeWidgetItem::setData still uses it (a crash): rebuild afterwards.
+            if not self._refresh_pending:
+                self._refresh_pending = True
+                QTimer.singleShot(0, self._deferred_refresh)
+            return
         selected = self.current_key()
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
@@ -172,6 +181,10 @@ class SceneList(QWidget):
         self._updating = False
         if selected is not None:
             self.select(selected, notify=False)
+
+    def _deferred_refresh(self) -> None:
+        self._refresh_pending = False
+        self.refresh()
 
     def _all_items(self) -> list[QTreeWidgetItem]:
         out, stack = [], [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
@@ -259,15 +272,19 @@ class SceneList(QWidget):
         if self._updating or column != 0:
             return
         on = item.checkState(0) == Qt.CheckState.Checked
-        key = item.data(0, KEY)
+        key, pid = item.data(0, KEY), item.data(1, KEY)
         w = self.window
-        if key[0] == "track":
-            w.tracks[key[1]].visible = on
-            w.tracks_changed.emit()
-        elif key[0] == "group":
-            w.set_property(f"trackgroup.{key[1]}.visible", on)
-        elif item.data(1, KEY):
-            w.set_property(item.data(1, KEY), on)
+        self._in_item_change = True
+        try:
+            if key[0] == "track":
+                w.tracks[key[1]].visible = on
+                w.tracks_changed.emit()
+            elif key[0] == "group":
+                w.set_property(f"trackgroup.{key[1]}.visible", on)
+            elif pid:
+                w.set_property(pid, on)
+        finally:
+            self._in_item_change = False
 
     def _on_double_click(self, item: QTreeWidgetItem, column: int) -> None:
         key = item.data(0, KEY)

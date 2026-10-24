@@ -149,7 +149,8 @@ class ExportDialog(QDialog):
             return
         vp.doneCurrent()
         self.index += 1
-        elapsed = time.monotonic() - self.started
+        # (monotonic() ticks every 15.6 ms on Windows: a fast first frame took "0 s")
+        elapsed = max(time.monotonic() - self.started, 1e-3)
         eta = elapsed / self.index * (self.count - self.index)
         self.bar.setValue(self.index)
         self.status.setText(

@@ -189,3 +189,34 @@ def mock_http(monkeypatch, handler) -> list:
     for module in (downloader, dem, check, labels):
         monkeypatch.setattr(module, "http_client", client)
     return requests
+
+
+def menu_choices(monkeypatch, *picks) -> list[dict[str, bool]]:
+    """Context menus do not block: ``QMenu.exec`` records each menu's entries (text -> enabled;
+    submenu entries as "Submenu › entry") and triggers the entry named by the next of
+    ``picks`` (None or none left: closed without a choice)."""
+    from PyQt6.QtWidgets import QMenu
+
+    shown, queue = [], list(picks)
+
+    def entries(menu, prefix: str = "") -> dict:
+        out = {}
+        for action in menu.actions():
+            if action.isSeparator():
+                continue
+            if action.menu() is not None:
+                out.update(entries(action.menu(), f"{prefix}{action.text()} › "))
+            else:
+                out[prefix + action.text()] = action
+        return out
+
+    def run(menu, *args, **kwargs):
+        found = entries(menu)
+        shown.append({text: action.isEnabled() for text, action in found.items()})
+        pick = queue.pop(0) if queue else None
+        if pick is not None:
+            found[pick].trigger()
+        return found.get(pick)
+
+    monkeypatch.setattr(QMenu, "exec", run)
+    return shown
