@@ -137,3 +137,6 @@ after, and check that the differences stay within that noise. Unit tests
 slow suite (`uv run pytest -m slow`, about 10 minutes, also offline) chains whole workflows
 (GPX to video), checks that large journeys and the most expensive settings stay within time
 budgets, and measures how long the interface freezes (`helpers.longest_freeze`).
+`tests/test_monkey.py` takes 1500 random steps through the interface (menus, buttons, keys,
+the scene list, the inspector, the palette, value drags, undo) from a fixed seed: a failure
+repeats, and its message lists the steps that led there.

@@ -26,7 +26,11 @@ def menu_actions(menu) -> list[tuple[str, QAction]]:
 
 
 def close_dialogs() -> None:
-    """Reject whatever dialog an action opened (modal ones run their own event loop)."""
+    """Reject whatever dialog or popup menu an action opened (modal ones and a button's menu
+    run their own event loop)."""
+    popup = QApplication.activePopupWidget()
+    if popup is not None:
+        popup.close()
     modal = QApplication.activeModalWidget()
     if modal is not None:
         modal.close()
@@ -140,3 +144,21 @@ def test_what_the_scene_list_adds_is_in_the_menus(window):
     for title in ("GPX Files…", "New Line (Flight, Ferry, Road)…", "POI at the Marker",
                   "POI Where I Click…", "POI at a Place…", "Photos…"):  # fmt: skip
         assert ("Add", title) in crumbs, title
+
+
+def test_a_new_view_keeps_the_focus_in_the_inspector(window, qtbot):
+    """A field of the shown view has the focus when the inspector shows another: the focus
+    fell to the next widget (the scene list selected its first row, the inspector jumped)."""
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QWidget
+
+    inspector = window.inspector
+    inspector.show_category("weather")
+    window.activateWindow()
+    field = next(w for w in inspector.scroll.widget().findChildren(QWidget)
+                 if w.isVisible() and w.focusPolicy() & Qt.FocusPolicy.TabFocus)  # fmt: skip
+    field.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is field)
+    inspector.show_category("light")
+    assert inspector.category == "light"
+    assert inspector.isAncestorOf(QApplication.focusWidget())

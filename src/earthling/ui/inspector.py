@@ -17,6 +17,7 @@ from typing import Any
 from PyQt6.QtCore import QSettings, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QFrame,
     QGridLayout,
@@ -275,6 +276,7 @@ class Inspector(QWidget):
         self._pages: dict[str, _Page] = {}
         self._section_state: dict[str, tuple[bool, bool, str | None]] = {}
         self._shown_top: QWidget | None = None
+        self._rebuilding = self._rebuild_again = False
         self.reveal_item: Callable[[str], bool] | None = None  # shows an item's section
         self.looks: dict[str, list] = {}  # category id -> looks (name, icon, tooltip, apply)
         self._build()
@@ -444,7 +446,22 @@ class Inspector(QWidget):
         return CATEGORIES + ([OTHER] if extra else [])
 
     def rebuild(self) -> None:
-        """Rebuild the shown sections (category, item, or search / filter results)."""
+        """Rebuild the shown sections (category, item, or search / filter results). One asked
+        for meanwhile (e.g. by an edit committed as its field loses the focus) follows it: a
+        nested one left the view shown with the sections of a deleted one."""
+        if self._rebuilding:
+            self._rebuild_again = True
+            return
+        self._rebuilding = True
+        try:
+            self._rebuild()
+            if self._rebuild_again:
+                self._rebuild_again = False
+                self._rebuild()
+        finally:
+            self._rebuilding = self._rebuild_again = False
+
+    def _rebuild(self) -> None:
         self._remember_sections()
         # an item's form belongs to the application: take it out before the view is deleted
         previous_top = self._shown_top
@@ -458,6 +475,10 @@ class Inspector(QWidget):
             container = self._category_page()
         if previous_top is not None and previous_top is not (self.item or {}).get("top"):
             previous_top.hide()
+        focus = QApplication.focusWidget()
+        if focus is not None and self.scroll.isAncestorOf(focus):
+            # (else it falls to the next widget: the scene list selected its first row)
+            self.scroll.setFocus()
         old = self.scroll.takeWidget()
         self.scroll.setWidget(container)
         if old is not None and old is not container:

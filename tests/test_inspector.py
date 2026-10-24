@@ -75,6 +75,27 @@ def test_sections_keep_their_state_between_categories(qtbot, tmp_path):
     assert not inspector.sections["Sky & Atmosphere"].is_open
 
 
+def test_a_rebuild_asked_for_during_a_rebuild_follows_it(qtbot, tmp_path):
+    """The monkey test found a rebuild inside a rebuild (focus leaving the old view selected a
+    scene list row): the view shown then kept the sections of another, deleted one."""
+    inspector, store = make_inspector(qtbot, tmp_path)
+    inspector.show_category("weather")
+    build = inspector._build_category
+
+    def build_and_ask_again(layout):
+        inspector._build_category = build
+        inspector.show_category("tracks")
+        build(layout)
+
+    inspector._build_category = build_and_ask_again
+    inspector.show_category("light")
+    assert inspector.category == "tracks" and "tracks.width" in inspector.editors
+    for category in ("tracks", "weather", "tracks", "light"):  # (the kept views too)
+        inspector.show_category(category)
+        shown = inspector.scroll.widget()
+        assert all(shown.isAncestorOf(s) for s in inspector.sections.values()), category
+
+
 def test_category_views_are_kept_and_brought_up_to_date(qtbot, tmp_path):
     """Switching back to a category shows its kept view (no rebuild), with the values that
     changed meanwhile; a changed set of settings builds it anew."""
