@@ -37,7 +37,7 @@ class ActionsMixin:
                          "house-line")  # fmt: skip
         self._add_action(self.file_menu, "Re&load Project", self._reload_project, "F5",
                          "arrows-clockwise")  # fmt: skip
-        self.settings_action = self._add_action(
+        self._add_action(
             self.file_menu, "Project Se&ttings…", self.edit_settings, "Ctrl+,", "gear-six"
         )
         self.file_menu.addSeparator()

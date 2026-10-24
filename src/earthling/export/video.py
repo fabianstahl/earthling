@@ -121,7 +121,6 @@ class VideoWriter:
         self._error: BaseException | None = None
         self._writer = threading.Thread(target=self._write_loop, daemon=True, name="ffmpeg-writer")
         self._writer.start()
-        self.frames_written = 0
 
     def _read_stderr(self) -> None:
         assert self._proc.stderr is not None
@@ -140,7 +139,6 @@ class VideoWriter:
                 else:
                     data = np.ascontiguousarray(frame, dtype=np.uint8).tobytes()
                 self._proc.stdin.write(data)
-                self.frames_written += 1
             except BaseException as exc:  # broken pipe: ffmpeg died
                 self._error = exc
                 break

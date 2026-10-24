@@ -346,9 +346,6 @@ def build_tracks(tracks: list[Track], frame: LocalFrame, options: TrackGeometryO
     return built
 
 
-TRACK_POINTS = ("start", "end", "highest", "lowest", "distance")
-
-
 def track_point(g: BuiltTrack, where: str, km: float = 0.0) -> np.ndarray:
     """ENU point of a built track: its start, end, highest or lowest point, or the point at
     ``km`` walked kilometres (with the track's distance marks, as the stats count them)."""
