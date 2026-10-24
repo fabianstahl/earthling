@@ -829,12 +829,14 @@ class MainWindow(QMainWindow):
         return action
 
     def _add_action(self, menu, text, slot, shortcut=None, icon_name: str = "") -> QAction:
+        """A menu entry calling ``slot()`` - without the ``checked`` flag of ``triggered``,
+        which would land in a slot's first optional parameter (show_palette(text) got False)."""
         action = QAction(text, self)
         if shortcut is not None:
             action.setShortcut(QKeySequence(shortcut))
         if icon_name:
             action.setIcon(theme.icon(icon_name))
-        action.triggered.connect(slot)
+        action.triggered.connect(lambda _checked=False: slot())
         menu.addAction(action)
         return action
 

@@ -86,3 +86,17 @@ def longest_freeze(qtbot, action=None, until=None, timeout: float = 10.0) -> flo
     finally:
         timer.stop()
     return max(gaps)
+
+
+def offline_demo(folder: Path) -> Path:
+    """A copy of the demo project in ``folder`` with its own (empty) tile cache: tests that open
+    it neither read the user's cache nor download (the network is refused anyway)."""
+    import shutil
+
+    target = folder / "alps_demo"
+    shutil.copytree(DEMO, target)
+    config = target / "earthling.toml"
+    cache = (folder / "cache").as_posix()
+    text = config.read_text(encoding="utf-8").replace('"~/earthling-cache"', f'"{cache}"')
+    config.write_text(text, encoding="utf-8", newline="\n")
+    return target

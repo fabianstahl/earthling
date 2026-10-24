@@ -105,7 +105,10 @@ def frustum_planes(view_proj: glm.mat4) -> np.ndarray:
     m = np.array(view_proj.to_list(), dtype=np.float64).T  # row-major
     rows = [m[3] + m[0], m[3] - m[0], m[3] + m[1], m[3] - m[1], m[3] + m[2], m[3] - m[2]]
     planes = np.array(rows)
-    planes /= np.linalg.norm(planes[:, :3], axis=1, keepdims=True)
+    # (the near and far rows of a perspective matrix can cancel out to zero once far / near
+    # is huge: with_depth_planes replaces them)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        planes /= np.linalg.norm(planes[:, :3], axis=1, keepdims=True)
     return planes
 
 

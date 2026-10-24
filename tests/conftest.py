@@ -32,11 +32,13 @@ def _no_network(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolated_qsettings():
-    """Keep tests from touching the user's real settings (recent projects etc.)."""
-    from PyQt6.QtCore import QCoreApplication
+    """Keep tests from touching the user's real settings (recent projects etc.), and from each
+    other's: every test starts with empty settings."""
+    from PyQt6.QtCore import QCoreApplication, QSettings
 
     QCoreApplication.setOrganizationName("EarthlingTests")
     QCoreApplication.setApplicationName("EarthlingTests")
+    QSettings().clear()
     yield
 
 
