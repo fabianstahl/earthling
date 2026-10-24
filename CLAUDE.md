@@ -60,6 +60,12 @@ Scene scripts are deterministic: regenerate the showcase scenes
 files; render stills (`earthling stills ... --out DIR`) before and after and compare pixels
 (twice before, to know the run-to-run noise).
 
+`tests/test_visual.py` compares small offline renders (tracks, labels, POIs, weather, HUD,
+mini-map, glow, light) with the PNGs in `tests/fixtures/visual/` in every normal test run. A
+failure prints the measured difference and where the actual and difference images are. For an
+intended change, regenerate them deliberately and look at them before committing:
+`.venv/Scripts/python.exe -m pytest tests/test_visual.py --update-visual` (`-k name` for one).
+
 ## Known pitfalls
 
 - Colour properties reach the shaders as sRGB (`bind_uniforms`); a shader linearises them

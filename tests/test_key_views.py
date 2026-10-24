@@ -294,6 +294,7 @@ def test_graph_view_by_keyboard(graph, qtbot, monkeypatch):
     graph.stack.undo()
     graph.stack.undo()
     assert [(k.time, k.value) for k in fov().keys] == [(0.0, 30.0), (4.0, 70.0), (8.0, 50.0)]
+    menu_choices(monkeypatch)  # (a right-click opens the context menu: it must not block)
     press(graph, gpoint(graph, "view.fov", 8.0), R)  # (a right-click makes the key current)
     qtbot.keyClick(graph, Qt.Key.Key_Escape)
     assert graph.selection == set() and graph.current == ("view.fov", 8.0)

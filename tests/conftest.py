@@ -2,6 +2,11 @@ import moderngl
 import pytest
 
 
+def pytest_addoption(parser):
+    parser.addoption("--update-visual", action="store_true",
+                     help="rewrite the reference images of tests/test_visual.py")  # fmt: skip
+
+
 @pytest.fixture
 def gl_ctx():
     """Standalone OpenGL context for renderer tests; skipped where no GPU is available.

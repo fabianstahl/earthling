@@ -92,7 +92,10 @@ class FontAtlas:
             self._pack()
 
     def _pack(self) -> None:
-        drawn = sorted((g for g in self.glyphs.values() if g.image is not None), key=lambda g: -g.h)
+        # by height, then by character: the layout must not depend on the order glyphs were
+        # added (set order varies with the string hash seed: renders differed between runs)
+        order = sorted(self.glyphs.items(), key=lambda item: (-item[1].h, item[0]))
+        drawn = [g for _, g in order if g.image is not None]
         x = y = row = 0
         places = []
         for g in drawn:

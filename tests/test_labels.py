@@ -127,6 +127,27 @@ def test_font_atlas(gl_ctx):
     atlas.release()
 
 
+def test_font_atlas_layout_does_not_depend_on_the_hash_seed():
+    """The glyphs were packed in set order, which changes with Python's string hash seed: the
+    same frame differed between runs (text by up to 30 colour levels at 180p)."""
+    import os
+    import subprocess
+    import sys
+
+    script = "; ".join([
+        "from types import SimpleNamespace as N",
+        "from earthling.render.text import FontAtlas",
+        "atlas = FontAtlas(N(texture=lambda *a, **k: N(release=lambda: None)))",
+        "atlas.ensure('Testhorn 2834 m - Day 1: 12.4 km, 5 h 10 min')",
+        "print(sorted((c, g.uv) for c, g in atlas.glyphs.items()))",
+    ])  # fmt: skip
+    runs = [subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, text=True,
+                             env={**os.environ, "PYTHONHASHSEED": seed})
+            for seed in ("1", "2")]  # fmt: skip
+    layouts = {run.communicate(timeout=60)[0] for run in runs}
+    assert all(run.returncode == 0 for run in runs) and len(layouts) == 1
+
+
 def render_labels(gl_ctx, tmp_path, features, **props):
     renderer = Renderer(gl_ctx)
     renderer.set_scene(FRAME, [])
