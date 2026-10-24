@@ -116,3 +116,30 @@ def test_download_dialog_runs_jobs(qtbot, tmp_path):
         dialog.start()
     qtbot.waitUntil(lambda: dialog.start_btn.isEnabled(), timeout=5000)
     assert ran and "fake: done" in dialog.log.toPlainText()
+
+
+def test_an_unreachable_server_fails_fast_and_is_tried_again_later(tmp_path, monkeypatch):
+    """Offline (connection refused, no DNS) every tile would wait through its retries - half
+    a minute each, minutes for an export. After a connection error the downloader fails tiles
+    at once for a while, then tries again."""
+    import earthling.data.downloader as downloader
+
+    calls, sleeps = [], []
+    online = {"up": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if not online["up"]:
+            raise httpx.ConnectError("no route to host", request=request)
+        return httpx.Response(200, content=b"tile")
+
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(downloader.time, "monotonic", lambda: clock["now"])
+    provider = TileProvider(**{**PROVIDER.__dict__, "concurrency": 1})
+    dl = TileDownloader(provider, TileCache(tmp_path), http_client(httpx.MockTransport(handler)),
+                        sleep=sleeps.append)  # fmt: skip
+    progress = dl.run([(5, x, 0) for x in range(20)])
+    assert progress.failed == 20 and len(calls) == 1 and sleeps == []
+    online["up"] = True
+    clock["now"] += downloader.OFFLINE_PAUSE_S + 1.0  # (the pause is over)
+    assert dl.run([(5, x, 0) for x in range(20)]).downloaded == 20

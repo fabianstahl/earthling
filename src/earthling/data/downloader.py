@@ -18,6 +18,7 @@ from earthling.data.providers import USER_AGENT, TileProvider
 log = logging.getLogger(__name__)
 
 MAX_RETRIES = 4
+OFFLINE_PAUSE_S = 30.0  # after a connection error, tiles fail at once for this long
 
 
 class RateLimiter:
@@ -85,6 +86,7 @@ class TileDownloader:
         self._limiter = RateLimiter(provider.max_requests_per_second)
         self._cancel = threading.Event()
         self._lock = threading.Lock()
+        self._offline_until = 0.0
 
     def cancel(self) -> None:
         self._cancel.set()
@@ -152,9 +154,17 @@ class TileDownloader:
         for _attempt in range(MAX_RETRIES + 1):
             if self._cancel.is_set():
                 return "failed", 0, "cancelled"
+            if time.monotonic() < self._offline_until:
+                return "failed", 0, f"{z}/{x}/{y}: offline"
             self._limiter.wait()
             try:
                 response = self.client.get(url, headers=p.headers)
+            except httpx.ConnectError as exc:
+                # the server cannot be reached (offline, DNS): retrying every tile for half a
+                # minute would stall an export for many minutes; try again after a pause
+                self._offline_until = time.monotonic() + OFFLINE_PAUSE_S
+                log.warning("cannot reach %s, pausing downloads: %s", p.id, exc)
+                return "failed", 0, f"{z}/{x}/{y}: {type(exc).__name__}: {exc}"
             except httpx.HTTPError as exc:
                 last_error = f"{z}/{x}/{y}: {type(exc).__name__}: {exc}"
             else:
