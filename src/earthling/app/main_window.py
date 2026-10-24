@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from earthling.app.activity import ActivityLabel
 from earthling.app.keyframing import KeyframeEditor
 from earthling.app.looks import make_looks
 from earthling.app.photo_editor import PhotoEditor
@@ -186,6 +187,8 @@ class MainWindow(ActionsMixin, PaletteMixin, ProjectMixin, ItemsMixin, QMainWind
         self._camera_label = QLabel()
         self.statusBar().addPermanentWidget(self._camera_label)
         self.viewport.camera_changed.connect(self._camera_label.setText)
+        self.activity = ActivityLabel(self.viewport)
+        self.statusBar().addPermanentWidget(self.activity)
         self._fps_label = QLabel()
         self.statusBar().addPermanentWidget(self._fps_label)
         self.viewport.stats_changed.connect(self._fps_label.setText)
