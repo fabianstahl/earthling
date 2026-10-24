@@ -204,6 +204,14 @@ class KeyframeEditor(QObject):
 
         self.edit(f"Interpolation: {interp.value}", [pid for pid, _ in keys], run)
 
+    def set_key_value(self, pid: str, t: float, value: Any) -> None:
+        def run() -> None:
+            curve, key = self._key_at(pid, t)
+            if key is not None:
+                key.value = curve.definition.coerce(value)
+
+        self.edit("Edit key value", [pid], run)
+
     def copy(self, keys: Iterable[KeyRef]) -> None:
         self.clipboard = []
         for pid, t in keys:

@@ -126,3 +126,27 @@ def test_transport_has_key_buttons(qtbot):
     assert "Alt+." in widget.buttons["next_key"].toolTip()
     widget.buttons["prev_key"].click()
     assert tl.time == 0.0  # (the sun's first key)
+
+
+def test_the_dope_sheet_scrolls_to_the_current_key(qtbot):
+    from PyQt6.QtGui import QUndoStack
+
+    from earthling.app.keyframing import KeyframeEditor
+    from earthling.core.properties import PType
+
+    scene, tl = make(None)
+    editor = KeyframeEditor(scene.animation, tl, QUndoStack())
+    floats = [d.id for d in scene.store.registry if d.type is PType.FLOAT and d.animatable][:20]
+    for pid in floats:
+        scene.animation.set_key(pid, 1.0)
+    widget = TimelineWidget(tl, editor)
+    qtbot.addWidget(widget)
+    editor.changed.emit()
+    widget.resize(900, 250)
+    widget.show()
+    qtbot.waitExposed(widget)
+    sheet = widget.dope_sheet
+    bar = sheet.parentWidget().parentWidget().verticalScrollBar()
+    for _ in range(len(floats) + 1):
+        qtbot.keyClick(sheet, Qt.Key.Key_Down)
+    assert sheet.current[0] == sheet.rows()[-1] and bar.value() == bar.maximum() > 0

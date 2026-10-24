@@ -91,7 +91,8 @@ timeline and export 4K video.
 Every setting and action is also in the command palette; F1 lists the keyboard shortcuts.
 Without a mouse: Ctrl+1 to Ctrl+0 open the inspector's categories, F6 / Shift+F6 move between
 the scene list, the viewport, the inspector and the timeline, and arrow keys, Enter and Esc
-do the rest.
+do the rest: in the timeline the arrows walk the keys, Alt+Left / Right moves them, Enter
+edits a key's value; in the scene list Space ticks a row, F2 renames a POI or photo.
 
 ## Gallery
 

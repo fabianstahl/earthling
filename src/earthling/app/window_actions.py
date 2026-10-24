@@ -302,10 +302,13 @@ class ActionsMixin:
         rows += [("Tab", "Orbit / fly camera (in the viewport)"),
                  ("W A S D, arrows", "Fly (in the viewport; Q E or Page Up / Down: down, up)"),
                  ("Up / Down", "Change a value (in a field; Shift: finer, Ctrl: coarser)"),
-                 ("Enter, F2", "Type a value (in a field)"),
+                 ("Enter, F2", "Type a value (in a field; in the timeline: the key's value)"),
+                 ("Arrows", "Go to the next key / row (in the timeline; Shift: add to selection)"),
+                 ("Alt+Left / Right", "Move the selected keys a frame (Shift: 10 frames)"),
+                 ("Space, F2, Menu", "Tick, rename, the menu of a row (in the scene list)"),
                  ("Delete", "Delete the selected keys, POI or photo"),
                  ("Ctrl+A", "Select all keys (in the timeline)"),
-                 ("Esc", "Close a dialog or the palette")]  # fmt: skip
+                 ("Esc", "Close a dialog or the palette; deselect the keys")]  # fmt: skip
         text = "\n".join(f"{key:<18} {what}" for key, what in sorted(rows))
         box = QMessageBox(self)
         box.setWindowTitle("Keyboard shortcuts")

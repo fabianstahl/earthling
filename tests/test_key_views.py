@@ -167,6 +167,138 @@ def test_dope_sheet_paints_warnings_and_its_empty_state(qtbot):
     assert [w[:2] for w in sheet._warnings] == [("layers.a", 2.0)]
 
 
+# --- keyboard --------------------------------------------------------------------------------
+FOV, DIST = "view.fov", "follow.distance"  # the rows of the dope sheet: keys at 0 2 4 / 1 3 s
+
+
+def test_dope_sheet_walks_the_keys_with_the_arrows(dope, qtbot, monkeypatch):
+    assert dope.focusPolicy() == Qt.FocusPolicy.StrongFocus  # (F6 and Tab give it the focus)
+    assert dope.rows() == [FOV, DIST]
+    changed = []
+    dope.selection_changed.connect(lambda: changed.append(1))
+    dope.editor.timeline.set_time(2.2)
+    qtbot.keyClick(dope, Qt.Key.Key_Right)  # no current key yet: the first row, at the playhead
+    assert dope.current == (FOV, 2.0) and dope.selection == {(FOV, 2.0)} and changed
+    for k, current in ((Qt.Key.Key_Right, (FOV, 4.0)), (Qt.Key.Key_Right, (FOV, 4.0)),
+                       (Qt.Key.Key_Left, (FOV, 2.0)), (Qt.Key.Key_Right, (FOV, 4.0)),
+                       (Qt.Key.Key_Down, (DIST, 3.0)), (Qt.Key.Key_Down, (DIST, 3.0))):  # fmt: skip
+        qtbot.keyClick(dope, k)
+        assert dope.current == current and dope.selection == {current}
+    assert dope.editor.timeline.time == 2.2  # (like a click: the playhead stays)
+    # Shift extends the selection
+    qtbot.keyClick(dope, Qt.Key.Key_Left, SHIFT)
+    qtbot.keyClick(dope, Qt.Key.Key_Up, SHIFT)  # (a tie: the earlier key)
+    assert dope.current == (FOV, 0.0)
+    assert dope.selection == {(DIST, 3.0), (DIST, 1.0), (FOV, 0.0)}
+    qtbot.keyClick(dope, Qt.Key.Key_Left, CTRL)  # (other modifiers: not ours)
+    assert len(dope.selection) == 3
+    monkeypatch.setattr(dope, "hasFocus", lambda: True)
+    dope.grab()  # (the focus frame and the ring around the current key)
+    qtbot.keyClick(dope, Qt.Key.Key_Escape)
+    assert dope.selection == set() and dope.current == (FOV, 0.0)
+    # a click makes the clicked key current
+    press(dope, at(dope, DIST, 3.0))
+    release(dope, at(dope, DIST, 3.0))
+    qtbot.keyClick(dope, Qt.Key.Key_Left)
+    assert dope.selection == {(DIST, 1.0)}
+
+
+def test_dope_sheet_nudges_keys_by_frames_one_undo_step_each(dope, qtbot):
+    def times(pid):
+        return [k.time for k in dope.anim.curves[pid].keys]  # (undo replaces the curves)
+
+    press(dope, at(dope, FOV, 2.0))
+    release(dope, at(dope, FOV, 2.0))
+    qtbot.keyClick(dope, Qt.Key.Key_Right, ALT)  # one frame (10 fps)
+    assert times(FOV) == [0.0, 2.1, 4.0] and dope.selection == {(FOV, 2.1)}
+    qtbot.keyClick(dope, Qt.Key.Key_Right, ALT | SHIFT)  # ten frames
+    assert times(FOV) == [0.0, 3.1, 4.0] and dope.current == (FOV, 3.1)
+    qtbot.keyClick(dope, Qt.Key.Key_Down, SHIFT)  # both rows
+    qtbot.keyClick(dope, Qt.Key.Key_Left, ALT)
+    assert times(FOV) == [0.0, 3.0, 4.0] and times(DIST) == [1.0, 2.9]
+    assert dope.selection == {(FOV, 3.0), (DIST, 2.9)} and dope.stack.count() == 3
+    qtbot.keyClick(dope, Qt.Key.Key_Right)  # (the walk goes on from the moved key)
+    assert dope.current == (DIST, 2.9)
+    dope.stack.undo()
+    assert times(FOV) == [0.0, 3.1, 4.0] and times(DIST) == [1.0, 3.0]
+    dope.stack.undo()
+    dope.stack.undo()
+    assert times(FOV) == [0.0, 2.0, 4.0] and dope.stack.index() == 0
+
+
+def test_enter_and_f2_edit_the_value_of_the_current_key(dope, qtbot, monkeypatch):
+    from earthling.ui import key_views
+
+    answers = [65.0, None]  # a new value, then cancelled
+    monkeypatch.setattr(key_views, "ask_key_value", lambda parent, d, value: answers.pop(0))
+    qtbot.keyClick(dope, Qt.Key.Key_Return)  # (no current key: nothing)
+    assert answers == [65.0, None]
+    qtbot.keyClick(dope, Qt.Key.Key_Right)
+    qtbot.keyClick(dope, Qt.Key.Key_Right)  # (the playhead is at 0: the key at 2 s)
+    qtbot.keyClick(dope, Qt.Key.Key_Return)
+    assert dope.anim.curves[FOV].key_at(2.0).value == 65.0 and dope.stack.count() == 1
+    qtbot.keyClick(dope, Qt.Key.Key_F2)
+    assert not answers and dope.stack.count() == 1
+    dope.stack.undo()
+    assert dope.anim.curves[FOV].key_at(2.0).value == 60.0
+    key(dope, Qt.Key.Key_Delete)  # Delete still deletes
+    assert dope.anim.curves[FOV].key_at(2.0) is None
+
+
+def test_the_key_value_dialog_shows_the_property_editor(qtbot, monkeypatch):
+    from PyQt6.QtWidgets import QDialog, QLineEdit
+
+    from earthling.core.scene import Scene
+    from earthling.ui.key_views import ask_key_value
+
+    def run(dialog, confirm):
+        edit = dialog.findChild(QLineEdit)  # a number field: typed into right away
+        edit.selectAll()
+        qtbot.keyClicks(edit, "42")
+        if confirm:
+            qtbot.keyClick(edit, Qt.Key.Key_Return)  # (Enter confirms the dialog)
+        else:
+            dialog.reject()
+        return dialog.result()
+
+    d = Scene().store.registry["view.fov"]
+    monkeypatch.setattr(QDialog, "exec", lambda dialog: run(dialog, True))
+    assert ask_key_value(None, d, 30.0) == 42.0
+    monkeypatch.setattr(QDialog, "exec", lambda dialog: run(dialog, False))
+    assert ask_key_value(None, d, 30.0) is None
+    monkeypatch.setattr(QDialog, "exec", lambda dialog: QDialog.DialogCode.Accepted)
+    layers = Scene().store.registry["layers.a"]  # (other editors: no typing field)
+    assert ask_key_value(None, layers, layers.options[1][0]) == layers.options[1][0]
+
+
+def test_graph_view_by_keyboard(graph, qtbot, monkeypatch):
+    from earthling.ui import key_views
+
+    def fov():
+        return graph.anim.curves["view.fov"]
+
+    assert graph.focusPolicy() == Qt.FocusPolicy.StrongFocus
+    graph.editor.timeline.set_time(5.0)
+    qtbot.keyClick(graph, Qt.Key.Key_Right)  # nearest the playhead
+    assert graph.current == ("view.fov", 4.0) and graph.selection == {("view.fov", 4.0)}
+    qtbot.keyClick(graph, Qt.Key.Key_Right, SHIFT)
+    assert graph.selection == {("view.fov", 4.0), ("view.fov", 8.0)}
+    qtbot.keyClick(graph, Qt.Key.Key_Left)
+    qtbot.keyClick(graph, Qt.Key.Key_Left, ALT)
+    assert [k.time for k in fov().keys] == [0.0, 3.9, 8.0] and graph.stack.count() == 1
+    monkeypatch.setattr(key_views, "ask_key_value", lambda parent, d, value: value + 1)
+    qtbot.keyClick(graph, Qt.Key.Key_F2)
+    assert fov().key_at(3.9).value == 71.0
+    monkeypatch.setattr(graph, "hasFocus", lambda: True)
+    graph.grab()  # (the focus frame and the ring around the current key)
+    graph.stack.undo()
+    graph.stack.undo()
+    assert [(k.time, k.value) for k in fov().keys] == [(0.0, 30.0), (4.0, 70.0), (8.0, 50.0)]
+    press(graph, gpoint(graph, "view.fov", 8.0), R)  # (a right-click makes the key current)
+    qtbot.keyClick(graph, Qt.Key.Key_Escape)
+    assert graph.selection == set() and graph.current == ("view.fov", 8.0)
+
+
 # --- key button ------------------------------------------------------------------------------
 def test_key_button_toggles_a_key_at_the_playhead(qtbot):
     from earthling.ui.dope_sheet import KeyButton

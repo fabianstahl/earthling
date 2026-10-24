@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QKeyEvent, QKeySequence, QMouseEvent, QPainter, QPaintEvent, QPen
-from PyQt6.QtWidgets import QMenu, QSizePolicy, QToolButton, QWidget
+from PyQt6.QtGui import (
+    QColor,
+    QFocusEvent,
+    QKeyEvent,
+    QKeySequence,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+)
+from PyQt6.QtWidgets import QMenu, QScrollArea, QSizePolicy, QToolButton, QWidget
 
 from earthling.app.keyframing import KeyframeEditor, KeyRef
-from earthling.core.animation import Interp, layer_switch_warnings, snap_to_frame
+from earthling.core.animation import Curve, Interp, layer_switch_warnings, snap_to_frame
 from earthling.ui.key_views import (
     ADDITIVE,
     KEY_COLOR,
@@ -20,6 +29,8 @@ from earthling.ui.key_views import (
     all_keys,
     diamond,
     paint_band,
+    paint_current,
+    paint_focus,
 )
 
 LABEL_WIDTH = 200
@@ -42,7 +53,7 @@ class DopeSheet(QWidget, KeySelection):
         self._drag_dt = 0.0
         self._band: QRectF | None = None
         self._warnings: list = []
-        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # (F6 and Tab reach it)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(ROW_HEIGHT * 3)
         editor.changed.connect(self._on_animation_changed)
@@ -55,6 +66,9 @@ class DopeSheet(QWidget, KeySelection):
         order = {d.id: i for i, d in enumerate(registry)}
         pids = [pid for pid, c in self.editor.animation.curves.items() if c.keys]
         return sorted(pids, key=lambda pid: order.get(pid, 1_000_000))
+
+    def key_rows(self) -> list[tuple[str, Curve]]:
+        return [(pid, self.editor.animation.curves[pid]) for pid in self.rows()]
 
     def row_y(self, index: int) -> float:
         return index * ROW_HEIGHT + ROW_HEIGHT / 2
@@ -117,6 +131,10 @@ class DopeSheet(QWidget, KeySelection):
                 p.setPen(QPen(KEY_OUTLINE, 1))
                 p.setBrush(SELECTED_COLOR if selected else (WARN_COLOR if warned else KEY_COLOR))
                 p.drawPolygon(diamond(QPointF(self.time_to_x(t), y0 + ROW_HEIGHT / 2), KEY_RADIUS))
+        current = self.current_key() if self.hasFocus() else None
+        if current is not None:
+            paint_current(p, QPointF(self.time_to_x(current[1]),
+                                     self.row_y(rows.index(current[0]))))  # fmt: skip
         if not rows:
             p.setPen(pal.placeholderText().color())
             p.drawText(
@@ -131,13 +149,24 @@ class DopeSheet(QWidget, KeySelection):
         p.drawLine(QPointF(x, 0), QPointF(x, self.height()))
         if self._band is not None:
             paint_band(p, self._band)
+        paint_focus(p, self)
         p.end()
+
+    def focusInEvent(self, event: QFocusEvent) -> None:
+        super().focusInEvent(event)
+        self.update()
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:
+        super().focusOutEvent(event)
+        self.update()
 
     # --- mouse ------------------------------------------------------------------------
     def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = event.position()
         key = self.key_at(pos)
         additive = bool(event.modifiers() & ADDITIVE)
+        if key is not None:
+            self.current = key
         if event.button() == Qt.MouseButton.RightButton:
             if key is not None and key not in self.selection:
                 self.selection = {key}
@@ -195,6 +224,7 @@ class DopeSheet(QWidget, KeySelection):
     # --- keyboard / menu --------------------------------------------------------------
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self.handle_selection_key(event):
+            self._scroll_to_current()
             return
         if event.matches(QKeySequence.StandardKey.Copy):
             self.editor.copy(self.selection)
@@ -203,6 +233,13 @@ class DopeSheet(QWidget, KeySelection):
             self.update()
         else:
             super().keyPressEvent(event)
+
+    def _scroll_to_current(self) -> None:
+        """Keep the row of the current key in view (the sheet scrolls in the timeline)."""
+        scroll = self.parentWidget().parentWidget() if self.parentWidget() else None
+        current, rows = self.current_key(), self.rows()
+        if isinstance(scroll, QScrollArea) and current is not None:
+            scroll.ensureVisible(0, int(self.row_y(rows.index(current[0]))), 0, ROW_HEIGHT)
 
     def select_all(self) -> None:
         self.selection = all_keys(self.editor.animation.curves.items())

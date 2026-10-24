@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
+    QFocusEvent,
     QIcon,
     QKeyEvent,
     QMouseEvent,
@@ -50,6 +51,8 @@ from earthling.ui.key_views import (
     all_keys,
     diamond,
     paint_band,
+    paint_current,
+    paint_focus,
 )
 from earthling.ui.timeline_widget import nice_tick_step, tick_label
 from earthling.ui.widgets import tool_button
@@ -98,7 +101,7 @@ class GraphView(QWidget, KeySelection):
         self._drag: _Drag | None = None
         self._band: QRectF | None = None
         self._frozen: dict[str, tuple[float, float]] | None = None  # normalisation during drags
-        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(False)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(120)
@@ -118,6 +121,9 @@ class GraphView(QWidget, KeySelection):
             if curve is not None and curve.graph_kind is not None:
                 out.append((pid, curve))
         return out
+
+    def key_rows(self) -> list[tuple[str, Curve]]:
+        return self.visible_curves()
 
     def _on_time_changed(self, time: float) -> None:
         self.update()
@@ -256,6 +262,11 @@ class GraphView(QWidget, KeySelection):
         p.setClipRect(r)
         for pid, curve in curves:
             self._paint_curve(p, pid, curve)
+        current = self.current_key() if self.hasFocus() else None
+        if current is not None:
+            curve = self.curve(current[0])
+            i = curve.keys.index(curve.key_at(current[1]))
+            paint_current(p, self.point(current[0], curve, current[1], curve.scalars()[i]))
         x = self.tx(self.editor.timeline.time)
         p.setPen(QPen(PLAYHEAD_COLOR, 2))
         p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom() + AXIS_BOTTOM))
@@ -266,7 +277,16 @@ class GraphView(QWidget, KeySelection):
             p.setPen(pal.placeholderText().color())
             hint = "No curves to show – animate a numeric property or tick a channel"
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, hint)
+        paint_focus(p, self)
         p.end()
+
+    def focusInEvent(self, event: QFocusEvent) -> None:
+        super().focusInEvent(event)
+        self.update()
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:
+        super().focusOutEvent(event)
+        self.update()
 
     def _paint_grid(self, p: QPainter, r: QRectF) -> None:
         pal = self.palette()
@@ -361,9 +381,11 @@ class GraphView(QWidget, KeySelection):
             return
         if button == Qt.MouseButton.RightButton:
             hit = self.hit(pos)
-            if hit is not None and hit[0] == "key" and (hit[1], hit[2].time) not in self.selection:
-                self.selection = {(hit[1], hit[2].time)}
-                self.selection_changed.emit()
+            if hit is not None and hit[0] == "key":
+                self.current = (hit[1], hit[2].time)
+                if self.current not in self.selection:
+                    self.selection = {self.current}
+                    self.selection_changed.emit()
             self._context_menu(event.globalPosition().toPoint())
             return
         if button != Qt.MouseButton.LeftButton:
@@ -381,7 +403,7 @@ class GraphView(QWidget, KeySelection):
             self._drag = _Drag("handle", pos, handle=(pid, key, side))
         elif hit is not None:
             _, pid, key = hit
-            ref = (pid, key.time)
+            ref = self.current = (pid, key.time)
             if additive:
                 self.selection ^= {ref}
             elif ref not in self.selection:
