@@ -155,7 +155,7 @@ def cmd_render(args) -> int:
         print("\ncancelled")
         return 130
     finally:
-        renderer.terrain.shutdown()
+        renderer.shutdown()
     print(f"\nwrote {count} frames to {out}")
     return 0
 
@@ -209,7 +209,7 @@ def cmd_stills(args) -> int:
         paths = render_stills(FrameRenderer(renderer, anim), times, width, height, out, stem,
                               args.sequence)  # fmt: skip
     finally:
-        renderer.terrain.shutdown()
+        renderer.shutdown()
     if len(paths) > 1:
         print(contact_sheet(paths, out / f"{stem}_sheet.jpg", width, height))
     return 0

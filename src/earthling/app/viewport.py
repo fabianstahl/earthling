@@ -243,7 +243,7 @@ class Viewport(QOpenGLWidget):
         if self.renderer is not None and not self._shut_down:
             self._shut_down = True
             self.makeCurrent()
-            self.renderer.terrain.shutdown()
+            self.renderer.shutdown()
             self.doneCurrent()
 
     # --- camera ------------------------------------------------------------------------

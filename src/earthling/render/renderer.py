@@ -205,12 +205,21 @@ class Renderer:
 
     def set_labels(self, data, session=None) -> None:
         """Label features (LabelData) plus what enriches them: DEM heights and the tracks."""
+        old = self.labels.data
+        if old is not None and old is not data:
+            old.close()  # (its background load would go on for a project no longer shown)
         self.labels.data = data
         if data is not None:  # the Data > on-demand switch also covers the label download
             data.allow_download = bool(getattr(self.terrain.data, "on_demand", True))
         self.labels.enricher = self.labels.make_enricher(
             self.frame, self.terrain.data, self.tracks.walked()
         )
+
+    def shutdown(self) -> None:
+        """Stop the background work: terrain workers, a label load."""
+        self.terrain.shutdown()
+        if self.labels.data is not None:
+            self.labels.data.close()
 
     def scene_bounds(self):
         return self.terrain.bounds() or self.tracks.bounds

@@ -448,3 +448,27 @@ def test_a_newcomer_waits_until_a_hidden_label_has_faded():
     first = next(i for i, s in enumerate(shown) if s[0] > 0.0)
     assert shown[first - 1][1] <= 0.02  # 10 comes once 20 is gone
     assert shown[-1][0] == 1.0 and shown[-1][1] == 0.0
+
+
+def test_a_closed_label_load_stops(tmp_path, monkeypatch, gl_ctx):
+    """A project closed or replaced: its label load makes no more requests, enriches and
+    publishes nothing; the renderer closes the labels of the project it no longer shows."""
+    import httpx
+
+    from helpers import mock_http
+
+    requests = mock_http(monkeypatch, lambda request: httpx.Response(503))
+    enriched = []
+    data = LabelData(TileCache(tmp_path), (6.9, 45.9, 7.1, 46.1))
+    data.close()
+    data.start(enricher=enriched.append)
+    assert not data.wait(5.0) and data.features is None
+    assert requests == [] and enriched == []
+    renderer = Renderer(gl_ctx)
+    renderer.set_scene(FRAME, [])
+    first = LabelData(TileCache(tmp_path), (6.9, 45.9, 7.1, 46.1))
+    renderer.set_labels(first)
+    renderer.set_labels(LabelData(TileCache(tmp_path), (7.9, 45.9, 8.1, 46.1)))
+    assert first._closed.is_set()
+    renderer.shutdown()
+    assert renderer.labels.data._closed.is_set()

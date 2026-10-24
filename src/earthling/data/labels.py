@@ -151,14 +151,15 @@ def cache_path(cache: TileCache, bounds) -> Path:
     return cache.root / "_vector" / "osm" / f"labels_{key}.json"
 
 
-def download_labels(cache: TileCache, bounds, client=None) -> Path:
-    """Fetch the features of ``bounds`` (lon/lat) from Overpass into the cache."""
+def download_labels(cache: TileCache, bounds, client=None, cancel=None) -> Path:
+    """Fetch the features of ``bounds`` (lon/lat) from Overpass into the cache (``cancel``: a
+    threading.Event that ends the request and its retries)."""
     path = cache_path(cache, bounds)
     own = client is None
     client = client or net.client()
     try:
         query = {"data": overpass_query(bounds)}
-        response = net.post(client, OVERPASS_URL, data=query, timeout=180.0)
+        response = net.post(client, OVERPASS_URL, data=query, timeout=180.0, cancel=cancel)
         response.raise_for_status()
         data = response.json()
     finally:
@@ -337,6 +338,7 @@ class LabelData:
         self.error: str | None = None
         self._lock = threading.Lock()
         self._loader: threading.Thread | None = None
+        self._closed = threading.Event()
         self.version = 0  # increases when features change (layers rebuild their caches)
 
     @property
@@ -355,7 +357,9 @@ class LabelData:
             if not self.allow_download:
                 return None
             try:
-                download_labels(self.cache, self.bounds)
+                download_labels(self.cache, self.bounds, cancel=self._closed)
+            except net.CancelledError:
+                return None
             except Exception as exc:  # offline / Overpass busy: labels are optional
                 self.error = f"{type(exc).__name__}: {exc}"
                 log.warning("cannot download labels: %s", self.error)
@@ -370,8 +374,10 @@ class LabelData:
         """Synchronous: read the cache (downloading first if allowed); ``enricher(features)``
         runs before the features become visible (e.g. DEM heights, see LabelLayer)."""
         osm = self._load_osm()
+        if self._closed.is_set():
+            return None
         ne = natural_earth_features(self.cache, self.bounds, self.allow_download)
-        if osm is None and not ne:
+        if (osm is None and not ne) or self._closed.is_set():
             return None
         features = (osm or []) + ne
         if enricher is not None:
@@ -379,10 +385,17 @@ class LabelData:
                 enricher(features)
             except Exception:  # never lose the labels over missing DEM data
                 log.exception("enriching labels failed")
+        if self._closed.is_set():  # (enriching takes a while)
+            return None
         with self._lock:
             self.features = features
             self.version += 1
         return features
+
+    def close(self) -> None:
+        """Stop loading in the background (its project was closed or replaced): a running
+        download ends, nothing is enriched or published afterwards."""
+        self._closed.set()
 
     def start(self, enricher=None) -> None:
         """Load in a background thread (no-op when loaded or loading)."""
