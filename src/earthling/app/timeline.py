@@ -93,6 +93,21 @@ class TimelineController(QObject):
         self.pause()
         self.set_time(self.time + frames / self.fps)
 
+    def step_key(self, direction: int) -> None:
+        """Jump to the previous (``direction`` -1) or next (1) key of any animated setting,
+        the camera included; stay if there is none."""
+        self.pause()
+        half_frame = 0.5 / self.fps
+        times = sorted({k.time for curve in self.animation.curves.values() for k in curve.keys})
+        if direction > 0:
+            later = [t for t in times if t > self.time + half_frame]
+            target = later[0] if later else None
+        else:
+            earlier = [t for t in times if t < self.time - half_frame]
+            target = earlier[-1] if earlier else None
+        if target is not None:
+            self.set_time(target, snap=False)  # (exactly on the key, also between frames)
+
     def go_start(self) -> None:
         self.set_time(0.0)
 

@@ -93,3 +93,36 @@ def test_window_has_timeline_and_scene_stays_clean_during_playback(qtbot):
     window.timeline.set_time(0.5)
     assert window.scene.store["view.fov"] == pytest.approx(45.0)
     assert not window.scene.dirty
+
+
+def test_step_key_jumps_between_the_keys_of_all_settings(qapp):
+    """Previous / next key (Alt+, / Alt+.): the keys of every animated setting, the camera
+    included (here also the sun's at 0 and 10 s); at the last key the time stays."""
+    _, tl = make(qapp)
+    anim = tl.animation
+    anim.set_key("fog.density", 1.0, 0.5)
+    anim.set_key("fog.density", 4.0, 2.0)
+    anim.set_key("camera.pose", 2.6, (0.0, 0.0, 1000.0, 0.0, -30.0, 0.0))
+    tl.set_time(0.0)
+    visited = []
+    for _ in range(5):
+        tl.step_key(1)
+        visited.append(tl.time)
+    assert visited == [1.0, 2.6, 4.0, 10.0, 10.0]
+    tl.step_key(-1)
+    assert tl.time == 4.0
+    tl.set_time(2.6 + 0.2 / tl.fps, snap=False)  # (within half a frame of a key: not counted)
+    tl.step_key(-1)
+    assert tl.time == 1.0
+
+
+def test_transport_has_key_buttons(qtbot):
+    _, tl = make(None)
+    tl.animation.set_key("fog.density", 2.0, 1.0)
+    widget = TimelineWidget(tl)
+    qtbot.addWidget(widget)
+    widget.buttons["next_key"].click()
+    assert tl.time == 2.0
+    assert "Alt+." in widget.buttons["next_key"].toolTip()
+    widget.buttons["prev_key"].click()
+    assert tl.time == 0.0  # (the sun's first key)

@@ -152,9 +152,11 @@ class TimelineWidget(QWidget):
         self.buttons: dict[str, QToolButton] = {}
         for name, icon, tip, slot in (
             ("start", "skip-back", "Jump to start (Ctrl+Home)", controller.go_start),
+            ("prev_key", "key-previous", "Previous key (Alt+,)", lambda: controller.step_key(-1)),
             ("prev", "caret-left", "Previous frame (,)", lambda: controller.step(-1)),
             ("play", "play", "Play (Space)", controller.toggle),
             ("next", "caret-right", "Next frame (.)", lambda: controller.step(1)),
+            ("next_key", "key-next", "Next key (Alt+.)", lambda: controller.step_key(1)),
             ("end", "skip-forward", "Jump to end (Ctrl+End)", controller.go_end),
         ):
             button = tool_button("", tip, slot)

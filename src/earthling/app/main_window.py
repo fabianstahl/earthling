@@ -644,6 +644,7 @@ class MainWindow(QMainWindow):
         rows = [(e.right, f"{e.title}  ({e.crumb})") for e in menu_entries(self.menuBar())
                 if e.right]  # fmt: skip
         rows += [("Space", "Play / pause"), (", .", "Previous / next frame"),
+                 ("Alt+, / Alt+.", "Previous / next key"),
                  ("Ctrl+Home / End", "Start / end"),
                  ("Tab", "Orbit / fly camera (in the viewport)"),
                  ("W A S D, arrows", "Fly (in the viewport; Q E or Page Up / Down: down, up)"),
@@ -842,6 +843,8 @@ class MainWindow(QMainWindow):
             ("Space", self.timeline.toggle),
             (",", lambda: self.timeline.step(-1)),
             (".", lambda: self.timeline.step(1)),
+            ("Alt+,", lambda: self.timeline.step_key(-1)),
+            ("Alt+.", lambda: self.timeline.step_key(1)),
             ("Ctrl+Home", self.timeline.go_start),
             ("Ctrl+End", self.timeline.go_end),
         ):
