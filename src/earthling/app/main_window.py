@@ -129,7 +129,6 @@ class MainWindow(ActionsMixin, PaletteMixin, ProjectMixin, ItemsMixin, QMainWind
         self.tracks_dock = self._add_dock(bottom, TracksDock(self))
         self.tabifyDockWidget(self.timeline_dock, self.tracks_dock)
         self.timeline_dock.raise_()
-        self._install_timeline_shortcuts()
         self.tracks_dock.visibility_changed.connect(self.tracks_changed.emit)
         self.tracks_changed.connect(self.viewport.request_render)
         self.tracks_dock.track_activated.connect(self._frame_track)

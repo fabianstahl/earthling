@@ -434,3 +434,28 @@ def test_animation_menu_generators_are_undoable(qtbot, journey, monkeypatch):  #
     assert anim.curves.get("camera.pose") is None or not anim.curves["camera.pose"].keys
     assert anim.duration == 2.0 and window.scene.store["camera.mode"] == "follow"
     window.undo_stack.setClean()
+
+
+def test_export_dialog_remembers_the_last_export(export, tmp_path):
+    """The format of the last export, and per scene its file and range (within the scene's
+    current length)."""
+    from earthling.app import export_dialog
+
+    window = export.main_window
+    window.viewport.renderer = object()
+    window.scene.animation.duration = 10.0
+    last = export.preset.count() - 1
+    export.preset.setCurrentIndex(last)
+    export.path.setText(str(tmp_path / "trip" / f"clip{export.preset.currentData().extension}"))
+    export.start.setValue(0.0)  # (the dialog was made for the default length)
+    export.end.setValue(2.0)
+    export.start_export()
+    export.close()
+    again = export_dialog.ExportDialog(window)
+    assert again.preset.currentIndex() == last
+    assert again.path.text() == export.path.text()
+    assert (again.start.value(), again.end.value()) == (0.0, 2.0)
+    window.scene.path = tmp_path / "other.json"  # another scene: its own file and range
+    other = export_dialog.ExportDialog(window)
+    assert other.preset.currentIndex() == last and other.path.text() != export.path.text()
+    window.viewport.renderer = None

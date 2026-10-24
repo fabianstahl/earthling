@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
@@ -135,6 +135,19 @@ class ActionsMixin:
         self.view_menu.addAction(self._store_toggle("view.show_outlines", "Show &Area Outlines"))
         self.view_menu.addSeparator()
 
+        # the timeline's keys as menu entries: in the command palette and in F1's list
+        playback = bar.addMenu("&Playback")
+        for text, slot, key, icon_name in (
+            ("&Play / Pause", self.timeline.toggle, "Space", "play"),
+            ("Previous &Frame", lambda: self.timeline.step(-1), ",", "caret-left"),
+            ("&Next Frame", lambda: self.timeline.step(1), ".", "caret-right"),
+            ("Previous &Key", lambda: self.timeline.step_key(-1), "Alt+,", "key-previous"),
+            ("Next K&ey", lambda: self.timeline.step_key(1), "Alt+.", "key-next"),
+            ("Go to &Start", self.timeline.go_start, "Ctrl+Home", "skip-back"),
+            ("Go to &End", self.timeline.go_end, "Ctrl+End", "skip-forward"),
+        ):
+            self._add_action(playback, text, slot, key, icon_name)
+
         self.data_menu = bar.addMenu("&Data")
         self._add_action(self.data_menu, "Download &Plan…", self._show_plan, None, "list-bullets")
         self._add_action(self.data_menu, "&Download Data…", self._show_download, "Ctrl+D",
@@ -262,30 +275,13 @@ class ActionsMixin:
                        -1)  # fmt: skip
         panes[(current + step) % len(panes)][1].setFocus(Qt.FocusReason.OtherFocusReason)
 
-    def _install_timeline_shortcuts(self) -> None:
-        for key, slot in (
-            ("Space", self.timeline.toggle),
-            (",", lambda: self.timeline.step(-1)),
-            (".", lambda: self.timeline.step(1)),
-            ("Alt+,", lambda: self.timeline.step_key(-1)),
-            ("Alt+.", lambda: self.timeline.step_key(1)),
-            ("Ctrl+Home", self.timeline.go_start),
-            ("Ctrl+End", self.timeline.go_end),
-        ):
-            shortcut = QShortcut(QKeySequence(key), self)
-            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
-            shortcut.activated.connect(slot)
-
     def show_shortcuts(self) -> None:
         """A list of every keyboard shortcut."""
         from earthling.ui.palette import menu_entries
 
         rows = [(e.right, f"{e.title}  ({e.crumb})") for e in menu_entries(self.menuBar())
                 if e.right]  # fmt: skip
-        rows += [("Space", "Play / pause"), (", .", "Previous / next frame"),
-                 ("Alt+, / Alt+.", "Previous / next key"),
-                 ("Ctrl+Home / End", "Start / end"),
-                 ("Tab", "Orbit / fly camera (in the viewport)"),
+        rows += [("Tab", "Orbit / fly camera (in the viewport)"),
                  ("W A S D, arrows", "Fly (in the viewport; Q E or Page Up / Down: down, up)"),
                  ("Up / Down", "Change a value (in a field; Shift: finer, Ctrl: coarser)"),
                  ("Enter, F2", "Type a value (in a field)"),

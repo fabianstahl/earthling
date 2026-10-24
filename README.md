@@ -76,9 +76,10 @@ timeline and export 4K video.
 - **Looks:** one click sets the light (Noon, Golden hour, Blue hour, Night, with the sun
   times of the scene's day and place) or the weather (Clear, Hazy, Morning fog, Storm,
   Snowfall).
-- **Timeline:** play, frame steps (`,` `.`), jumps to the previous / next key (Alt+, Alt+.),
-  loop, Auto-key (red while it records), camera keys and the generators; "Keys" is the dope
-  sheet, "Curves" the graph editor.
+- **Timeline:** play (Space), frame steps (`,` `.`), jumps to the previous / next key (Alt+,
+  Alt+.) - also in the Playback menu -, loop, Auto-key (red while it records), camera keys and
+  the generators; "Keys" is the dope sheet, "Curves" the graph editor. The export dialog
+  remembers the format, and per scene the file and the range.
 - **Export frame:** on a wide or ultra-wide screen the view darkens what a video does not
   show, and the stats, the mini-map and the photos sit in the frame as in the video.
 

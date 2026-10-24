@@ -4,6 +4,7 @@ so the application stays responsive."""
 from __future__ import annotations
 
 import time
+from hashlib import sha1
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
@@ -81,12 +82,45 @@ class ExportDialog(QDialog):
         folder = window.project.folder if window.project else Path.cwd()
         scene = window.scene.path.stem if window.scene.path else "earthling"
         self.path.setText(str(folder / f"{scene}.mov"))
+        self._restore()
         self._update_extension()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._render_next)
         self._writer: VideoWriter | None = None
         self._frames = None
         self._images = None
+
+    # --- what the last export of this scene used ------------------------------------------
+    def _key(self) -> str:
+        """Settings key of the scene (a hash of its file; unsaved scenes share one)."""
+        path = self.main_window.scene.path
+        return "export/" + (
+            sha1(str(Path(path).resolve()).encode()).hexdigest()[:12] if path else "unsaved"
+        )
+
+    def _restore(self) -> None:
+        """The format of the last export, and this scene's last file and range (within the
+        scene's current length)."""
+        settings = self.main_window.settings
+        index = self.preset.findText(str(settings.value("export/preset", "")))
+        if index >= 0:
+            self.preset.setCurrentIndex(index)
+        key = self._key()
+        path = settings.value(f"{key}/path")
+        if path:
+            self.path.setText(str(path))
+        start, end = settings.value(f"{key}/start"), settings.value(f"{key}/end")
+        if start is not None and end is not None and float(start) < float(end):
+            self.start.setValue(float(start))  # (the spin boxes clamp to the duration)
+            self.end.setValue(float(end))
+
+    def _remember(self) -> None:
+        settings = self.main_window.settings
+        settings.setValue("export/preset", self.preset.currentText())
+        key = self._key()
+        settings.setValue(f"{key}/path", self.path.text())
+        settings.setValue(f"{key}/start", self.start.value())
+        settings.setValue(f"{key}/end", self.end.value())
 
     def _update_extension(self) -> None:
         preset = self.preset.currentData()
@@ -116,6 +150,7 @@ class ExportDialog(QDialog):
         self.count = max(0, int(round(self.end.value() * self.fps)) - self.first)
         if self.count == 0:
             return
+        self._remember()
         try:
             self._writer = VideoWriter(Path(self.path.text()), width, height, self.fps, preset)
         except OSError as exc:

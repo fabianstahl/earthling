@@ -64,3 +64,13 @@ def test_f6_moves_between_the_panes(window):  # noqa: F811
     window.inspector.search.setFocus()
     window.focus_pane(1)
     assert window.focusWidget() is window.scene_list.tree
+
+
+def test_the_timeline_keys_are_in_the_palette(window):  # noqa: F811
+    """Play, frame and key steps are menu entries: Ctrl+K finds them ("next key")."""
+    from earthling.ui.palette import menu_entries
+
+    found = {(e.crumb, e.title): e.right for e in menu_entries(window.menuBar())}
+    assert found[("Playback", "Play / Pause")] == "Space"
+    assert found[("Playback", "Next Key")] == "Alt+."
+    assert found[("Playback", "Previous Frame")] == ","
