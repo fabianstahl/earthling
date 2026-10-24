@@ -19,8 +19,9 @@ src/earthling/
               labels, POIs, HUD, mini-map, photos; shaders/ holds the GLSL
   export/     offscreen frames, stills, video encoding (ffmpeg), video QA
   scenekit/   helpers for scene scripts (Python files that build scenes)
-  app/        PyQt6 application: main window, viewport (+ its overlay), scene list, item
-              editors (POIs, photos), looks, start screen, dialogs, controllers
+  app/        PyQt6 application: main window (main_window + window_* mixins: actions,
+              palette, project, items), viewport (+ its overlay), scene list, item editors
+              (POIs, photos), looks, start screen, dialogs, controllers
   ui/         reusable Qt widgets: theme (colour tokens, Inter, Phosphor icons), property
               editors and sections, inspector, command palette, timeline, dope sheet,
               graph editor

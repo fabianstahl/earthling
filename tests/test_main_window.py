@@ -10,7 +10,8 @@ from PyQt6.QtCore import QEvent, QMimeData, QPoint, QPointF, Qt, QUrl
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent
 from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
-from earthling.app.main_window import MAX_RECENT, MainWindow
+from earthling.app.main_window import MainWindow
+from earthling.app.window_project import MAX_RECENT
 from helpers import gpx_text, make_project, walk
 from test_photo_editor import photo_file
 from test_ui_actions import menu_actions, window  # noqa: F401 (the fixture)

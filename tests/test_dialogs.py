@@ -377,8 +377,6 @@ def test_export_dialog_renders_frame_by_frame(export, qtbot, monkeypatch):
 def test_animation_menu_generators_are_undoable(qtbot, journey, monkeypatch):  # noqa: F811
     from earthling.app import generators, main_window
 
-    # (the camera path drawn in the view: 0.3 s per change with generated camera keys)
-    monkeypatch.setattr(main_window, "camera_path_lines", lambda curve: [])
     window = main_window.MainWindow()
     qtbot.addWidget(window)
     anim = window.scene.animation
