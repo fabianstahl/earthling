@@ -110,7 +110,7 @@ def cmd_render(args) -> int:
 
     import moderngl
 
-    from earthling.export.frames import FrameRenderer, parse_resolution, scene_renderer
+    from earthling.export.frames import FrameRenderer, scene_renderer
     from earthling.export.video import PRESETS, available_presets, export_video
 
     if args.list_presets:
@@ -124,9 +124,14 @@ def cmd_render(args) -> int:
     if session is None:
         return 1
     scene = _load_scene(session, args.scene)
+    if scene is None:
+        return 1
     scene_path = scene.path
     preset = PRESETS[args.preset]
-    width, height = parse_resolution(args.resolution or scene.store["export.resolution"])
+    size = _resolution(args.resolution or scene.store["export.resolution"])
+    if size is None:
+        return 2
+    width, height = size
     anim = scene.animation
     end = anim.duration if args.end is None else args.end
     out = Path(args.out) if args.out else scene_path.with_suffix(preset.extension)
@@ -177,13 +182,15 @@ def cmd_stills(args) -> int:
 
     import moderngl
 
-    from earthling.export.frames import FrameRenderer, parse_resolution, scene_renderer
+    from earthling.export.frames import FrameRenderer, scene_renderer
     from earthling.export.stills import apply_overrides, auto_times, contact_sheet, render_stills
 
     session = _load_session(args.project)
     if session is None:
         return 1
     scene = _load_scene(session, args.scene)
+    if scene is None:
+        return 1
     scene.store.set("export.samples", args.samples)
     apply_overrides(scene, args.set)
     anim = scene.animation
@@ -191,7 +198,10 @@ def cmd_stills(args) -> int:
     if not times:
         print("no times given (list them or use --auto N)", file=sys.stderr)
         return 2
-    width, height = parse_resolution(args.size)
+    size = _resolution(args.size)
+    if size is None:
+        return 2
+    width, height = size
     out = Path(args.out) if args.out else session.project.folder / "renders" / "stills"
     stem = scene.path.stem + args.tag
     renderer = scene_renderer(moderngl.create_standalone_context(require=430), session, scene)
@@ -220,10 +230,30 @@ def cmd_qa(args) -> int:
 
 
 def _load_scene(session, scene_file: str):
-    scene, problems = session.load_scene(scene_file)
+    from earthling.core.scene import SceneError
+
+    try:
+        scene, problems = session.load_scene(scene_file)
+    except SceneError as exc:
+        print(exc, file=sys.stderr)
+        return None
     for problem in problems:
         print(f"warning: {problem}", file=sys.stderr)
     return scene
+
+
+def _resolution(text: str) -> tuple[int, int] | None:
+    """(width, height) of "WIDTHxHEIGHT", or None after an error message."""
+    from earthling.export.frames import parse_resolution
+
+    try:
+        width, height = parse_resolution(text)
+    except ValueError:
+        width = height = 0
+    if width <= 0 or height <= 0:
+        print(f"bad resolution '{text}' (expected WIDTHxHEIGHT, e.g. 1920x1080)", file=sys.stderr)
+        return None
+    return width, height
 
 
 def _progress_printer():

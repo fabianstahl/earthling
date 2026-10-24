@@ -100,3 +100,70 @@ def offline_demo(folder: Path) -> Path:
     text = config.read_text(encoding="utf-8").replace('"~/earthling-cache"', f'"{cache}"')
     config.write_text(text, encoding="utf-8", newline="\n")
     return target
+
+
+class FlatTerrain:
+    """Terrain stub for scene scripts: everything at ``height`` m (no downloads in tests)."""
+
+    def __init__(self, height: float = 1000.0):
+        self.height = height
+
+    def height_at(self, lon, lat, z=None):
+        return self.height
+
+    def heights_at(self, lon, lat, z=None):
+        return np.full(np.shape(lon), self.height)
+
+
+def gpx_text(tracks: dict[str, list[tuple]]) -> str:
+    """GPX 1.1 with one <trk> per entry: name -> [(lat, lon, ele, iso time or None), ...]."""
+    out = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">',
+    ]
+    for name, points in tracks.items():
+        out.append(f"<trk><name>{name}</name><trkseg>")
+        for lat, lon, ele, when in points:
+            stamp = f"<time>{when}</time>" if when else ""
+            out.append(f'<trkpt lat="{lat:.6f}" lon="{lon:.6f}"><ele>{ele}</ele>{stamp}</trkpt>')
+        out.append("</trkseg></trk>")
+    out.append("</gpx>\n")
+    return "\n".join(out)
+
+
+def walk(lat0: float, lon0: float, start: str | None, minutes: int, north_m: float = 0.0,
+         east_m: float = 0.0, pause: tuple[int, int] | None = None) -> list[tuple]:  # fmt: skip
+    """A straight walk sampled every minute from ``start`` (ISO UTC, None: no timestamps),
+    ``north_m``/``east_m`` per minute; ``pause`` = (from, to) minutes standing still."""
+    import datetime as dt
+
+    t0 = dt.datetime.fromisoformat(start) if start else None
+    points, moved = [], 0
+    for i in range(minutes + 1):
+        if i and not (pause and pause[0] < i <= pause[1]):
+            moved += 1
+        lat = lat0 + moved * north_m / 111_320.0
+        lon = lon0 + moved * east_m / (111_320.0 * np.cos(np.radians(lat0)))
+        time = (t0 + dt.timedelta(minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ") if t0 else None
+        points.append((lat, lon, 1000.0 + moved, time))
+    return points
+
+
+def make_project(folder: Path, gpx: dict[str, str], *, timezone: str = "Europe/Zurich",
+                 extra: str = "") -> Path:  # fmt: skip
+    """A tiny project (coarse zooms, the tile cache inside ``folder``): GPX files by name."""
+    (folder / "gpx").mkdir(parents=True)
+    for name, text in gpx.items():  # (names may contain a sub folder: "walked/day1.gpx")
+        (folder / "gpx" / name).parent.mkdir(parents=True, exist_ok=True)
+        (folder / "gpx" / name).write_bytes(text.encode("utf-8"))
+    toml = f"""[project]
+gpx_dir   = "gpx/"
+cache_dir = "cache"
+timezone  = "{timezone}"
+
+[area]
+border_km = 1.0
+zones = [{{ within_km = 1.0, imagery_zoom = 12, dem_zoom = 10 }}]
+{extra}"""
+    (folder / "earthling.toml").write_bytes(toml.encode("utf-8"))
+    return folder

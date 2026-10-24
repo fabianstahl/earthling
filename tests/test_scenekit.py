@@ -6,17 +6,7 @@ import pytest
 
 from earthling import scenekit as sk
 from earthling.session import Session
-from helpers import DEMO
-
-
-class FlatTerrain:
-    """Terrain stub: everything at 1000 m (no downloads in tests)."""
-
-    def height_at(self, lon, lat, z=None):
-        return 1000.0
-
-    def heights_at(self, lon, lat, z=None):
-        return np.full(np.shape(lon), 1000.0)
+from helpers import DEMO, FlatTerrain
 
 
 @pytest.fixture

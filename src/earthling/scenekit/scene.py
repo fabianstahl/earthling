@@ -141,7 +141,7 @@ def head_keys_for(scene: Scene, hike: Journey, day, t_from: float, t_to: float, 
     this path distance (the rest of the track is not drawn). ``slow`` = (d_a, d_b, factor):
     distance mode only, the head is ``factor`` times slower between the path distances d_a and
     d_b. Returns head_of(t) -> path distance (for the chase camera)."""
-    e0, e1 = hike.day_times(day)
+    e0, e1 = hike.day_times(day) if realtime else (None, None)  # (tracks without timestamps)
     d0, d1 = hike.path.track_range(hike.day_index(day))
     if d_end is not None:
         d1 = min(d1, d_end)
