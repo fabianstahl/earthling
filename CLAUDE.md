@@ -7,7 +7,9 @@ made) and [docs/configuration.md](docs/configuration.md) (`earthling.toml`).
 ## Commands
 
 ```powershell
-uv run pytest                      # ~70 s, no network; GL tests skip without OpenGL 4.3
+uv run pytest                      # ~80 s, no network; GL tests skip without OpenGL 4.3
+uv run pytest -m slow              # ~10 min: chained workflows, scaling, UI freezes (offline)
+uv run pytest --cov                # coverage per module (branches too)
 uv run ruff check; uv run ruff format
 uv run earthling gui examples/alps_demo
 uv run earthling render|stills|qa|plan|fetch|check-source ...   # see `earthling -h`
@@ -38,8 +40,9 @@ Where `uv` is not on PATH (e.g. Git Bash), use `.venv/Scripts/python.exe -m pyte
 - Line length 100; hand-aligned tables and argument lists keep `# fmt: skip`.
 - LF line endings (`.gitattributes`); write files with `newline="\n"` / bytes on Windows.
 - Comments: short, explain why. On-screen text is English or German (`stats.language`).
-- Tests never touch the network (mock HTTP, fixtures in `tests/fixtures/`, shared helpers in
-  `tests/helpers.py`).
+- Tests never touch the network (a conftest guard refuses real HTTP; mock with
+  `httpx.MockTransport`, fixtures in `tests/fixtures/`, shared helpers in `tests/helpers.py`).
+  Larger chained and scaling tests carry `@pytest.mark.slow` (not in the normal run).
 
 ## Compatibility
 

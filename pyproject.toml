@@ -27,6 +27,7 @@ earthling = "earthling.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "pytest-cov>=7.1.0",
     "pytest-qt>=4.4",
     "ruff>=0.6",
 ]
@@ -56,3 +57,13 @@ testpaths = ["tests"]
 pythonpath = ["tests"]
 qt_api = "pyqt6"
 filterwarnings = ["ignore::PendingDeprecationWarning:rasterio.*"]
+markers = ["slow: chained workflows and scaling checks (pytest -m slow, ~10 min, offline)"]
+addopts = "-m 'not slow'"  # (`-m slow` on the command line replaces it)
+
+[tool.coverage.run]
+source = ["earthling"]
+branch = true
+
+[tool.coverage.report]
+skip_covered = true
+sort = "cover"

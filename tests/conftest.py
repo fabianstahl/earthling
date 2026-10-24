@@ -18,6 +18,19 @@ def gl_ctx():
 
 
 @pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """Tests never touch the network: real HTTP transports refuse (httpx.MockTransport, which
+    the download tests use, still works)."""
+    import httpx
+
+    def refuse(self, request):
+        raise httpx.ConnectError(f"tests must not touch the network: {request.url}")
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolated_qsettings():
     """Keep tests from touching the user's real settings (recent projects etc.)."""
     from PyQt6.QtCore import QCoreApplication

@@ -1,6 +1,8 @@
-"""Shared test helpers: the demo project, a local frame, PNG bytes and terrain fakes."""
+"""Shared test helpers: the demo project, a local frame, PNG bytes, terrain fakes and a meter
+for how long the user interface freezes."""
 
 import io
+import time
 from pathlib import Path
 
 import numpy as np
@@ -54,3 +56,33 @@ class SlopeTerrainData(FakeTerrainData):
 
     def imagery_for(self, key):
         return np.full((64, 64, 3), 128, dtype=np.uint8)
+
+
+def longest_freeze(qtbot, action=None, until=None, timeout: float = 10.0) -> float:
+    """Seconds the Qt event loop could not run (the longest gap between ticks of a 5 ms timer)
+    while ``action()`` runs and, afterwards, until ``until()`` is true: what the user sees as
+    a frozen window."""
+    from PyQt6.QtCore import Qt, QTimer
+
+    ticks = [time.perf_counter()]
+    gaps = [0.0]
+
+    def tick() -> None:
+        now = time.perf_counter()
+        gaps.append(now - ticks[-1])
+        ticks.append(now)
+
+    timer = QTimer()
+    timer.setTimerType(Qt.TimerType.PreciseTimer)
+    timer.timeout.connect(tick)
+    timer.start(5)
+    qtbot.wait(20)
+    try:
+        if action is not None:
+            action()
+        if until is not None:
+            qtbot.waitUntil(until, timeout=int(timeout * 1000))
+        qtbot.wait(30)
+    finally:
+        timer.stop()
+    return max(gaps)

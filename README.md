@@ -196,7 +196,9 @@ overlay. To add a region, see [docs/adding-a-region.md](docs/adding-a-region.md)
 ## Development
 
 ```powershell
-uv run pytest
+uv run pytest            # unit and UI tests, about 80 s
+uv run pytest -m slow    # chained workflows, scaling and UI responsiveness, about 10 min
+uv run pytest --cov      # test coverage per module
 uv run ruff check
 ```
 

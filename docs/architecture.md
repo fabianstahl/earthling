@@ -131,4 +131,7 @@ The scene scripts of the showcase (and of private projects) are deterministic: r
 their scenes before and after a change and compare the JSON files byte for byte; render a few
 stills per scene with `earthling stills` before (twice: that is the run-to-run noise) and
 after, and check that the differences stay within that noise. Unit tests
-(`uv run pytest`, about 70 s) never touch the network; GL tests skip without OpenGL 4.3.
+(`uv run pytest`, about 80 s) never touch the network; GL tests skip without OpenGL 4.3. The
+slow suite (`uv run pytest -m slow`, about 10 minutes, also offline) chains whole workflows
+(GPX to video), checks that large journeys and the most expensive settings stay within time
+budgets, and measures how long the interface freezes (`helpers.longest_freeze`).
