@@ -86,6 +86,7 @@ class MainWindow(ActionsMixin, PaletteMixin, ProjectMixin, ItemsMixin, QMainWind
         self.data_changed.connect(self._reload_terrain)
         self.statusBar().showMessage("Ready")
         self._connect_start_screen()
+        self._name_shortcuts_in_tooltips()
         self.show_start(show_start)
 
     def _build_docks(self) -> None:

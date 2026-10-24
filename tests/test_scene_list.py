@@ -220,3 +220,32 @@ def test_a_checkbox_does_not_delete_its_own_row(qtbot, tmp_path):
     assert sl._find(("track", 0)).checkState(0) == Qt.CheckState.Unchecked
     assert sl._find(("group", group)).checkState(0) == Qt.CheckState.Unchecked
     window.undo_stack.setClean()
+
+
+def test_keys_tick_rename_and_open_the_menu(qtbot, tmp_path, monkeypatch):
+    """Space ticks the current row (instead of playing), F2 edits a POI's name, the menu key
+    or Shift+F10 opens the row's context menu - all without a mouse."""
+    from helpers import menu_choices
+
+    window = two_track_window(qtbot, tmp_path)
+    window.show()
+    lst, tree = window.scene_list, window.scene_list.tree
+    group = next(k for k in keys(lst) if k and k[0] == "group")
+    lst.select(group)
+    tree.setFocus()
+    item = lst._find(group)
+    before = item.checkState(0)
+    qtbot.keyClick(tree, Qt.Key.Key_Space)
+    qtbot.wait(10)
+    assert lst._find(group).checkState(0) != before  # (the row was rebuilt meanwhile)
+    assert not window.timeline.playing
+    lst.select(("poi", 0))
+    tree.setFocus()
+    qtbot.keyClick(tree, Qt.Key.Key_F2)
+    assert window.poi_editor.name.hasFocus() and window.poi_editor.name.text() == "Hut"
+    shown = menu_choices(monkeypatch)
+    lst.select(("poi", 0))
+    tree.setFocus()
+    qtbot.keyClick(tree, Qt.Key.Key_Menu)
+    qtbot.keyClick(tree, Qt.Key.Key_F10, Qt.KeyboardModifier.ShiftModifier)
+    assert [list(menu) for menu in shown] == [["Remove"], ["Remove"]]

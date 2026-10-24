@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QPointF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QPointF, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -76,6 +76,7 @@ class SceneList(QWidget):
         self.tree.setUniformRowHeights(True)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._context_menu)
+        self.tree.installEventFilter(self)  # (keys: see eventFilter)
         self.tree.itemSelectionChanged.connect(self._on_selection)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.itemDoubleClicked.connect(self._on_double_click)
@@ -313,6 +314,36 @@ class SceneList(QWidget):
             self._tracks_menu(menu)
         if not menu.isEmpty():
             menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        """Keys of the tree: Space ticks the current row (not Play), F2 edits a POI's or
+        photo's name, the menu key (Shift+F10) opens the row's context menu."""
+        if obj is self.tree and event.type() in (QEvent.Type.ShortcutOverride,
+                                                 QEvent.Type.KeyPress):  # fmt: skip
+            item, key = self.tree.currentItem(), self.current_key()
+            k = event.key()
+            menu_key = k == Qt.Key.Key_Menu or (
+                k == Qt.Key.Key_F10 and event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+            )
+            checkable = item is not None and bool(item.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+            named = bool(key) and key[0] in ("poi", "photo")
+            ours = ((k == Qt.Key.Key_Space and checkable) or (k == Qt.Key.Key_F2 and named)
+                    or (menu_key and item is not None))  # fmt: skip
+            if not ours:
+                return super().eventFilter(obj, event)
+            event.accept()
+            if event.type() == QEvent.Type.KeyPress:
+                if k == Qt.Key.Key_Space:
+                    on = item.checkState(0) != Qt.CheckState.Checked
+                    item.setCheckState(0, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
+                elif k == Qt.Key.Key_F2:
+                    editor = self.window.poi_editor if key[0] == "poi" else self.window.photo_editor
+                    editor.name.setFocus()
+                    editor.name.selectAll()
+                else:
+                    self._context_menu(self.tree.visualItemRect(item).center())
+            return True
+        return super().eventFilter(obj, event)
 
     def keyPressEvent(self, event) -> None:
         key = self.current_key()

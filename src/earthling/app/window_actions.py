@@ -275,6 +275,24 @@ class ActionsMixin:
                        -1)  # fmt: skip
         panes[(current + step) % len(panes)][1].setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _name_shortcuts_in_tooltips(self) -> None:
+        """Tooltips name the shortcut (Qt shows the action's text only); a tooltip that is the
+        action's text follows it (Undo: "Undo Set Fog Density (Ctrl+Z)")."""
+        from earthling.ui.palette import menu_text
+
+        def update(action: QAction, follows: bool, base: str) -> None:
+            text = menu_text(action.text()) if follows else base
+            tip = f"{text} ({action.shortcuts()[0].toString()})"
+            if action.toolTip() != tip:  # (setToolTip emits changed again)
+                action.setToolTip(tip)
+
+        for action in self.findChildren(QAction):
+            if action.shortcuts():
+                base = action.toolTip()
+                follows = base == menu_text(action.text())
+                update(action, follows, base)
+                action.changed.connect(lambda a=action, f=follows, b=base: update(a, f, b))
+
     def show_shortcuts(self) -> None:
         """A list of every keyboard shortcut."""
         from earthling.ui.palette import menu_entries

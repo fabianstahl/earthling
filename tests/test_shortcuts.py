@@ -74,3 +74,22 @@ def test_the_timeline_keys_are_in_the_palette(window):  # noqa: F811
     assert found[("Playback", "Play / Pause")] == "Space"
     assert found[("Playback", "Next Key")] == "Alt+."
     assert found[("Playback", "Previous Frame")] == ","
+
+
+def test_tooltips_name_the_shortcuts(window):  # noqa: F811
+    """Every action and button with a shortcut names it in its tooltip; the Undo tooltip
+    still says what it undoes."""
+    from PyQt6.QtWidgets import QAbstractButton
+
+    for action in window.findChildren(QAction):
+        for key in action.shortcuts()[:1]:
+            assert key.toString() in action.toolTip(), action.text()
+    for button in window.findChildren(QAbstractButton):
+        action = getattr(button, "defaultAction", lambda: None)()
+        if action is not None and action.shortcuts():
+            assert action.shortcuts()[0].toString() in button.toolTip(), button.text()
+    window.set_property("fog.density", 1.5)
+    assert (
+        window.undo_action.toolTip().startswith("Undo") and "Ctrl+Z" in window.undo_action.toolTip()
+    )
+    assert window.undo_action.toolTip() != "Undo (Ctrl+Z)"
