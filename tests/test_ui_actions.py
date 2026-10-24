@@ -129,3 +129,14 @@ def test_menu_actions_open_what_they_promise(window, qtbot, monkeypatch):
             action.trigger()
             qtbot.wait(20)
             assert opened, path  # (the generator's dialog opened)
+
+
+def test_what_the_scene_list_adds_is_in_the_menus(window):
+    """The scene list's "+" (GPX files, a line, POIs, photos) is also in the Add menu: in the
+    command palette and reachable without a mouse."""
+    from earthling.ui.palette import menu_entries
+
+    crumbs = {(e.crumb, e.title) for e in menu_entries(window.menuBar())}
+    for title in ("GPX Files…", "New Line (Flight, Ferry, Road)…", "POI at the Marker",
+                  "POI Where I Click…", "POI at a Place…", "Photos…"):  # fmt: skip
+        assert ("Add", title) in crumbs, title

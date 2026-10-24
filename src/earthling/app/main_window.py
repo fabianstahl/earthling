@@ -272,7 +272,6 @@ class MainWindow(QMainWindow):
         self.settings_action = self._add_action(
             self.file_menu, "Project Se&ttings…", self.edit_settings, "Ctrl+,", "gear-six"
         )
-        self._add_action(self.file_menu, "New &Line…", self.new_line, None, "path")
         self.file_menu.addSeparator()
         self._add_action(self.file_menu, "Open &Scene…", self._open_scene_dialog)
         self.save_action = self._add_action(
@@ -301,6 +300,18 @@ class MainWindow(QMainWindow):
         redo.setIcon(theme.icon("arrow-clockwise"))
         edit_menu.addAction(undo)
         edit_menu.addAction(redo)
+
+        # what the scene list's "+" adds, also here: in the palette and without a mouse
+        add_menu = bar.addMenu("&Add")
+        for text, slot, icon_name in (
+            ("&GPX Files…", lambda: self.add_gpx_dialog(), "file-plus"),
+            ("New &Line (Flight, Ferry, Road)…", lambda: self.new_line(), "path"),
+            ("POI at the &Marker", lambda: self.poi_editor.add_at_hiker(), "map-pin"),
+            ("POI Where I &Click…", lambda: self.poi_editor.add_by_click(), "crosshair"),
+            ("POI at a &Place…", lambda: self.poi_editor.add_at_place(), "magnifying-glass"),
+            ("P&hotos…", lambda: self.photo_editor.add_dialog(), "image"),
+        ):
+            self._add_action(add_menu, text, slot, None, icon_name)
 
         self.animation_menu = bar.addMenu("&Animation")
         from earthling.app import generators

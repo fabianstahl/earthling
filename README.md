@@ -61,9 +61,9 @@ timeline and export 4K video.
 ![The application: scene list, viewport, inspector and timeline](docs/images/gui.jpg)
 
 - **Scene list** (left): the camera, the track groups and their tracks, points of interest,
-  photos and map layers. The checkboxes show and hide, "+" adds (GPX files, lines, POIs at
-  the marker or with a click, photos), and you can drop GPX files, pictures or a project
-  folder on it. Selecting an entry shows its settings in the inspector.
+  photos and map layers. The checkboxes show and hide, "+" (and the Add menu) adds GPX files,
+  lines, POIs at the marker or with a click, photos, and you can drop GPX files, pictures or
+  a project folder on it. Selecting an entry shows its settings in the inspector.
 - **Inspector** (right): a rail of categories (Camera, Terrain, Light, Weather, Water,
   Tracks, Progress, Labels, Overlays, Layers, Export) shows one category at a time. Sections
   have an on/off switch where that makes sense, rarely needed settings wait behind "More
