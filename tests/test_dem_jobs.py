@@ -1,6 +1,11 @@
+import threading
+
+import httpx
 import shapely
 
 from earthling.core.geo import lonlat_to_tile
+from earthling.data.cache import TileCache
+from earthling.data.dem import DemSource, SourceFile, download_sources, source_dir
 from earthling.data.jobs import source_area
 
 
@@ -34,3 +39,47 @@ def test_fine_sources_are_only_fetched_for_detailed_tiles():
     # 30 m sources are worth it down to ~480 m samples (z9 and finer)
     coarse = source_area(CoarseSource(), coarse_tiles, area)
     assert coarse.area > 0.2
+
+
+def test_download_sources_failures_timeouts_and_cancel(tmp_path):
+    """Server errors and timeouts fail one file (the others go on); a cancel in the middle of
+    a file leaves no partial file behind."""
+
+    class Source(DemSource):
+        id = "test_download_sources"
+
+    def handler(request):
+        name = request.url.path.lstrip("/")
+        if name == "broken.tif":
+            return httpx.Response(500)
+        if name == "slow.tif":
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(200, content=b"\x01" * (1 << 20) + b"\x02" * 1000)  # 2 chunks
+
+    def files(*names):
+        return [SourceFile(f"https://dem.example/{n}", n, (0, 0, 1, 1)) for n in names]
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    cache = TileCache(tmp_path)
+    folder = source_dir(cache, Source())
+    done = []
+    progress = download_sources(Source(), files("broken.tif", "slow.tif", "ok.tif"), cache, client,
+                                on_progress=lambda p: done.append(p.done))  # fmt: skip
+    assert (progress.failed, progress.downloaded, progress.done) == (2, 1, 3)
+    assert done == [1, 2, 2, 2, 3]  # per file, and per chunk while downloading
+    assert "broken.tif" in progress.errors[0] and "timed out" in progress.errors[1]
+    assert progress.bytes == (1 << 20) + 1000
+    assert (folder / "ok.tif").stat().st_size == progress.bytes
+    assert not (folder / "broken.tif").exists() and not (folder / "broken.tif.missing").exists()
+
+    cancel = threading.Event()
+    seen = []
+
+    def on_progress(p):
+        seen.append(p.bytes)
+        cancel.set()  # after the first chunk
+
+    progress = download_sources(Source(), files("big.tif", "next.tif"), cache, client,
+                                on_progress=on_progress, cancel=cancel)  # fmt: skip
+    assert seen == [1 << 20] and progress.downloaded == 0 and progress.done == 0
+    assert not (folder / "big.tif").exists() and not (folder / "next.tif").exists()

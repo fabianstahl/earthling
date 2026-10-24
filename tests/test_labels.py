@@ -345,3 +345,106 @@ def test_clouds_hide_only_labels_seen_through_a_layer():
     bands = [(4600.0, 5400.0), (9800.0, 10700.0)]
     assert sight_in_clouds(rel, camera, 7000.0, bands).tolist() == [False, True, True]
     assert sight_in_clouds(rel, camera, 7000.0, []).tolist() == [False, False, False]
+
+
+def test_static_priority():
+    from earthling.render.labels import static_priority
+
+    def f(kind, **kw):
+        return LabelFeature("x", kind, "X", 7.0, 46.0, **kw)
+
+    p = static_priority([
+        f("place", rank=4), f("place", rank=1),
+        f("city", population=5e6), f("city", population=1e5),
+        f("pass", ele=2500.0), f("pass", ele=1000.0),
+        f("hut", track_distance_m=100.0), f("hut", track_distance_m=20_000.0),
+        f("peak", prominence=2000.0, ele=4800.0), f("peak", prominence=None, ele=None),
+    ])  # fmt: skip
+    assert (p[0::2] > p[1::2]).all()  # town over hamlet, big city, high pass, hut on the way
+    assert static_priority([]).shape == (0,)
+
+
+def test_enricher_takes_the_ground_from_the_dem():
+    from types import SimpleNamespace
+
+    from earthling.render.labels import LabelLayer
+
+    zooms = []
+
+    def heights_at(lon, lat, z=None):
+        zooms.append(z)
+        return np.where(np.asarray(lon) < 7.05, 2000.0, np.nan)  # no DEM in the east
+
+    inside = LabelFeature("i", "hut", "Inside", 7.0, 46.0)
+    outside = LabelFeature("o", "hut", "Outside", 7.1, 46.0, ele=1800.0)
+    segment = SimpleNamespace(lon=np.array([6.9, 7.2]), lat=np.array([46.0, 46.0]))
+    run = LabelLayer.make_enricher(None, FRAME, SimpleNamespace(heights_at=heights_at),
+                                   [SimpleNamespace(segments=[segment])])  # fmt: skip
+    run([inside, outside])
+    assert inside.ele == 2000.0 and inside.ground == 2000.0
+    assert outside.ground == 1800.0  # no DEM height: the OSM elevation
+    assert inside.track_distance_m < 20.0  # (on the track, a chord in the local frame)
+    assert 11 in zooms and None in zooms  # (coarse heights for the prominence)
+    # without a DEM only the track distances
+    lone = LabelFeature("l", "peak", "Lone", 7.0, 46.009)
+    LabelLayer.make_enricher(None, FRAME, None, [SimpleNamespace(segments=[segment])])([lone])
+    assert lone.ground is None and lone.track_distance_m == pytest.approx(1000.0, rel=0.02)
+
+
+def test_track_distance_filter_and_distance_fade(gl_ctx, tmp_path):
+    far_hut = LabelFeature("h", "hut", "Hut", 7.0, 46.0, ele=3500.0, ground=3500.0,
+                           track_distance_m=5000.0)  # fmt: skip
+    country = LabelFeature("n", "country", "Land", 7.0, 46.0, ele=3500.0, ground=3500.0,
+                           track_distance_m=5000.0)  # fmt: skip
+    huts = {"labels__huts": True}
+    renderer, _ = render_labels(gl_ctx, tmp_path, [far_hut], labels__max_track_distance=2.0,
+                                **huts)  # fmt: skip
+    assert renderer.labels.last_drawn == 0
+    renderer, _ = render_labels(gl_ctx, tmp_path, [far_hut], labels__max_track_distance=10.0,
+                                **huts)  # fmt: skip
+    assert renderer.labels.last_drawn == 1
+    renderer, _ = render_labels(gl_ctx, tmp_path, [country], labels__countries=True,
+                                labels__max_track_distance=2.0)  # fmt: skip
+    assert renderer.labels.last_drawn == 1  # countries are not near the track
+    renderer, _ = render_labels(gl_ctx, tmp_path, [far_hut], labels__max_distance=10.0, **huts)
+    assert renderer.labels.last_drawn == 0  # the camera is ~55 km away: faded out
+    renderer.labels.release()
+
+
+def test_load_sync_for_exports():
+    from earthling.render.labels import LabelLayer
+
+    layer = LabelLayer.__new__(LabelLayer)
+    layer.data, layer.enricher, layer._version = None, "enrich", -1
+    assert not layer.load_sync()
+
+    class Data:
+        ready, version, features = False, 0, None
+
+        def load(self, enricher):
+            assert enricher == "enrich"
+            self.ready, self.version = True, 1
+            self.features = [peak("A"), LabelFeature("x", "peak", "No height", 7.0, 46.0)]
+
+    layer.data = Data()
+    assert layer.load_sync()
+    assert [f.name for f in layer.features] == ["A"]  # (labels need a height to stand on)
+    assert layer._ground.tolist() == [3500.0] and layer._lonlat.shape == (1, 2)
+
+
+def test_a_newcomer_waits_until_a_hidden_label_has_faded():
+    from earthling.render.labels import FADE_S, LabelLayer
+
+    layer = LabelLayer.__new__(LabelLayer)
+    layer._shown, layer._shown_time, layer.time = {}, None, 0.0
+    clash = np.array([[0.0, 1.0], [1.0, 0.0]])
+    layer._stable_placement(np.array([20]), np.array([1.0]), np.zeros((1, 1)), 10)
+    # feature 20 is hidden now (e.g. behind a ridge); 10 would take its place
+    shown = []
+    for step in range(1, 40):
+        layer.time = step * FADE_S / 10
+        shown.append(layer._stable_placement(np.array([10, 20]), np.array([1.0, 0.0]), clash, 10))
+    assert shown[0][0] == 0.0 and 0.0 < shown[0][1] < 1.0  # 10 waits while 20 fades out
+    first = next(i for i, s in enumerate(shown) if s[0] > 0.0)
+    assert shown[first - 1][1] <= 0.02  # 10 comes once 20 is gone
+    assert shown[-1][0] == 1.0 and shown[-1][1] == 0.0

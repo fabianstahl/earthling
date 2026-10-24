@@ -18,19 +18,6 @@ def gl_ctx():
 
 
 @pytest.fixture(autouse=True)
-def _no_network(monkeypatch):
-    """Tests never touch the network: real HTTP transports refuse (httpx.MockTransport, which
-    the download tests use, still works)."""
-    import httpx
-
-    def refuse(self, request):
-        raise httpx.ConnectError(f"tests must not touch the network: {request.url}")
-
-    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", refuse)
-    yield
-
-
-@pytest.fixture(autouse=True)
 def _isolated_qsettings():
     """Keep tests from touching the user's real settings (recent projects etc.), and from each
     other's: every test starts with empty settings."""
@@ -61,3 +48,19 @@ def _isolated_gpx_cache(tmp_path_factory, monkeypatch):
 
     monkeypatch.setattr(gpx, "PARSE_CACHE_DIR", tmp_path_factory.getbasetemp() / "gpx_cache")
     yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_network():
+    """Real HTTP requests fail (tests use httpx.MockTransport, see ``helpers.mock_http``).
+
+    Session-scoped, so background threads outliving a test (borders, labels) are offline too;
+    code that treats the data as optional then simply goes without it."""
+    import httpx
+
+    def refuse(self, request):  # (as if offline: the code handles that)
+        raise httpx.ConnectError(f"tests must not touch the network: {request.url}")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(httpx.HTTPTransport, "handle_request", refuse)
+        yield

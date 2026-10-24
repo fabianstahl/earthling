@@ -1,5 +1,5 @@
-"""Shared test helpers: the demo project, a local frame, PNG bytes, terrain fakes and a meter
-for how long the user interface freezes."""
+"""Shared test helpers: the demo project, a local frame, PNG bytes, terrain fakes, mock HTTP,
+small synthetic projects and a meter for how long the user interface freezes."""
 
 import io
 import time
@@ -167,3 +167,25 @@ zones = [{{ within_km = 1.0, imagery_zoom = 12, dem_zoom = 10 }}]
 {extra}"""
     (folder / "earthling.toml").write_bytes(toml.encode("utf-8"))
     return folder
+
+
+def mock_http(monkeypatch, handler) -> list:
+    """Route the data layer's default HTTP clients to ``handler`` (request -> httpx.Response).
+    Returns the list the requests are recorded in."""
+    import httpx
+
+    from earthling.data import check, dem, downloader, labels
+
+    real = downloader.http_client
+    requests = []
+
+    def record(request):
+        requests.append(request)
+        return handler(request)
+
+    def client(transport=None, **kwargs):
+        return real(httpx.MockTransport(record), **kwargs)
+
+    for module in (downloader, dem, check, labels):
+        monkeypatch.setattr(module, "http_client", client)
+    return requests

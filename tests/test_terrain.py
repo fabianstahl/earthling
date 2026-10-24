@@ -426,3 +426,132 @@ def test_eviction_keeps_siblings_needed_for_refinement(gl_ctx):
     for _ in range(4):  # every frame refined: the hidden siblings were never evicted
         sel = terrain.update(camera, vp, 512)
         assert sel.draw and all(k[0] == 11 for k in sel.draw)
+
+
+def test_texture_pool_recycles_equal_sizes(gl_ctx):
+    from earthling.render.terrain import TexturePool
+
+    pool = TexturePool(gl_ctx, max_free_per_size=1)
+    first = pool.acquire(np.full((8, 8, 3), 10, dtype=np.uint8))
+    pool.release(first)
+    again = pool.acquire(np.full((8, 8, 3), 200, dtype=np.uint8))
+    assert again is first  # reused, with the new content
+    assert np.frombuffer(again.read(), dtype=np.uint8)[:3].tolist() == [200, 200, 200]
+    other = pool.acquire(np.zeros((16, 16, 3), dtype=np.uint8))
+    field = pool.acquire(np.zeros((8, 8, 2), dtype=np.float32))
+    assert other is not first and field.dtype == "f2"  # (float fields as half floats)
+    spare = pool.acquire(np.zeros((8, 8, 3), dtype=np.uint8))
+    pool.release(again)
+    pool.release(spare)  # one free texture per size is kept, the other one released
+    assert sum(len(v) for v in pool._free.values()) == 1
+    pool.clear()
+    assert pool._free == {}
+
+
+def terrain_shaders(gl_ctx):
+    from earthling.render.layers import generate_glsl
+    from earthling.render.shader_library import ShaderLibrary
+
+    library = ShaderLibrary(gl_ctx)
+    library.register_virtual("layers_generated.glsl", generate_glsl())  # (as the renderer)
+    return library
+
+
+def single_node_layer(gl_ctx, data):
+    from earthling.render.terrain import TerrainLayer
+
+    tx, ty = lonlat_to_tile(7.0, 46.0, 10)
+    layer = TerrainLayer(gl_ctx, terrain_shaders(gl_ctx), workers=2)
+    key = (10, int(tx), int(ty))
+    layer.set_source(FRAME, data, lod.NodeSet({10: [key[1:]]}))
+    camera = Camera()
+    OrbitController(camera).frame_bounds(*layer_bounds(key))
+    return layer, key, camera
+
+
+def layer_bounds(key):
+    lon, lat = tile_to_lonlat(key[1] + 0.5, key[2] + 0.5, key[0])
+    centre = np.asarray(FRAME.geodetic_to_enu(lat, lon, 2000.0))
+    return centre - 20_000.0, centre + 20_000.0
+
+
+def test_a_layer_switched_on_later_loads_only_its_texture(gl_ctx):
+    """Another texture source (e.g. the topo map) refreshes resident nodes; the imagery they
+    have is kept, sources still initialising are waited for."""
+
+    class Sources(FakeTerrainData):
+        def __init__(self):
+            super().__init__()
+            self.ready, self.asked = False, []
+
+        def source_ready(self, source):
+            return source != "borders" or self.ready
+
+        def texture_for(self, key, source="imagery"):
+            self.asked.append(source)
+            return np.full((32, 32, 3), 50, np.uint8)
+
+    data = Sources()
+    layer, key, camera = single_node_layer(gl_ctx, data)
+    vp = camera.view_projection(1.0)
+    assert layer.finish_loading(camera, vp, 256) and layer.resident_count == 1
+    imagery = layer._resident[key].imagery
+    assert data.asked == ["imagery"]
+    layer.required_sources = frozenset({"imagery", "topo", "borders"})
+    assert not layer.fully_loaded()
+    assert layer.finish_loading(camera, vp, 256)
+    node = layer._resident[key]
+    assert node.imagery is imagery and node.textures["topo"] is not None
+    assert "borders" not in node.textures and data.asked == ["imagery", "topo"]
+    assert layer.fully_loaded()  # (borders: not ready, nothing to wait for yet)
+    data.ready = True
+    layer.update(camera, vp, 256)  # the refresh is requested with the next frame
+    assert layer.pending_count == 1 and not layer.fully_loaded()
+    assert layer.finish_loading(camera, vp, 256) and "borders" in layer._resident[key].textures
+    layer.shutdown()
+
+
+def test_clear_releases_everything_and_closes_the_data(gl_ctx):
+    class Closable(FakeTerrainData):
+        closed = 0
+
+        def close(self):
+            self.closed += 1
+
+    data = Closable()
+    layer, key, camera = single_node_layer(gl_ctx, data)
+    assert layer.bounds() is None  # nothing loaded yet
+    far = layer.node_bounds(key)  # (default heights until the node is there)
+    layer.finish_loading(camera, camera.view_projection(1.0), 256)
+    lo, hi = layer.bounds()
+    assert lo[2] == pytest.approx(1500.0) and hi[2] == pytest.approx(2500.0)
+    layer.invalidate_bounds()
+    assert layer.node_bounds(key).radius < far.radius  # real heights: a tighter sphere
+    layer._submit((11, 2 * key[1], 2 * key[2]))
+    layer.clear()
+    assert data.closed == 1 and layer.resident_count == 0 and layer.pending_count == 0
+    assert layer._heightmaps == {} and layer.bounds() is None
+    layer.shutdown()
+
+
+def test_hot_reloaded_terrain_shader_gets_new_vertex_arrays(gl_ctx):
+    layer, key, camera = single_node_layer(gl_ctx, FakeTerrainData())
+    vp = camera.view_projection(1.0)
+    layer.finish_loading(camera, vp, 64)
+    fbo = gl_ctx.simple_framebuffer((64, 64))
+    fbo.use()
+    layer.draw(camera, vp, [key])
+    node = layer._resident[key]
+    (old_glo,) = node.vaos
+    library = layer.shaders
+
+    class Reloaded:
+        program = terrain_shaders(gl_ctx).get("terrain")
+
+        def get(self, name, defines=None):
+            return self.program if not defines else library.get(name, defines=defines)
+
+    layer.shaders = Reloaded()
+    layer.draw(camera, vp, [key, (10, key[1] + 5, key[2])])  # (an unknown node is skipped)
+    assert old_glo not in node.vaos and list(node.vaos) == [Reloaded.program.glo]
+    layer.shutdown()

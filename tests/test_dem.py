@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 import pytest
 import rasterio
@@ -142,3 +144,122 @@ def test_vectorised_heights_match_scalar(baker):
     for i in range(3):
         assert h[i] == pytest.approx(data.height_at(lon[i], lat[i]), abs=1e-3)
     assert np.isnan(h[3])
+
+
+def write_raster(path, data, crs, transform, nodata=-9999.0):
+    profile = dict(driver="GTiff", width=data.shape[1], height=data.shape[0], count=1,
+                   dtype="float32", crs=crs, transform=transform, nodata=nodata)  # fmt: skip
+    with rasterio.open(path, "w", **profile) as ds:
+        ds.write(data.astype(np.float32), 1)
+
+
+class ListedSource(DemSource):
+    """Whatever files the test put into the folder, in a fixed priority order."""
+
+    id = "listed"
+    native_resolution_m = 25.0
+
+    def __init__(self, *names):
+        self.files = [SourceFile("", name, (6, 45, 8, 47)) for name in names]
+
+    def files_for_bounds(self, bounds):
+        return self.files
+
+
+def test_projected_source_rasters(tmp_path):
+    """Source files in a projected CRS (e.g. UTM, Swiss LV95) are sampled at the right place."""
+    from pyproj import Transformer
+
+    cache = TileCache(tmp_path)
+    folder = source_dir(cache, ListedSource())
+    folder.mkdir(parents=True)
+    # UTM 32N around 7 E / 46 N, 25 m pixels: height = a ramp in easting and northing
+    e0, n0, n = 340_000.0, 5_110_000.0, 800
+    east = e0 + (np.arange(n) + 0.5) * 25.0
+    north = n0 - (np.arange(n) + 0.5) * 25.0
+    ge, gn = np.meshgrid(east, north)
+    write_raster(folder / "utm.tif", 1000.0 + (ge - e0) * 0.05 + (n0 - gn) * 0.02, "EPSG:32632",
+                 from_origin(e0, n0, 25.0, 25.0))  # fmt: skip
+    baker = DemBaker(ListedSource("utm.tif"), cache)
+    to_utm = Transformer.from_crs(4326, 32632, always_xy=True)
+    lon, lat = Transformer.from_crs(32632, 4326, always_xy=True).transform(e0 + 10_000, n0 - 10_000)
+    z = 13
+    tx, ty = lonlat_to_tile(lon, lat, z)
+    heights = baker.bake_tile(z, int(tx), int(ty))
+    mx, my = sample_positions_mercator(z, int(tx), int(ty))
+    slon, slat = mercator_to_lonlat(*np.meshgrid(mx, my))
+    se, sn = to_utm.transform(slon, slat)
+    expected = 1000.0 + (se - e0) * 0.05 + (n0 - sn) * 0.02
+    assert np.abs(heights - expected).max() < 0.05
+
+
+def test_file_priority_and_nodata(tmp_path):
+    cache = TileCache(tmp_path)
+    folder = source_dir(cache, ListedSource())
+    folder.mkdir(parents=True)
+    res = 1 / 1200
+    transform = from_origin(6.0, 47.0, res, res)
+    write_raster(folder / "first.tif", np.full((2400, 2400), 1111.0), "EPSG:4326", transform)
+    write_raster(folder / "second.tif", np.full((2400, 2400), 2222.0), "EPSG:4326", transform)
+    write_raster(folder / "empty.tif", np.full((2400, 2400), -9999.0), "EPSG:4326", transform)
+    tx, ty = lonlat_to_tile(7.0, 46.0, 12)
+    key = (12, int(tx), int(ty))
+    baker = DemBaker(ListedSource("first.tif", "second.tif"), cache)
+    assert np.nanmax(np.abs(baker.bake_tile(*key) - 1111.0)) < 0.01  # the first one wins
+    assert len(baker._rasters) == 1  # (the second one not even read)
+    baker = DemBaker(ListedSource("empty.tif"), cache)
+    assert baker.bake_tile(*key) is None  # only nodata there: a missing tile
+    assert baker.bake([key]).missing == 1
+    write_raster(folder / "east.tif", np.full((60, 60), 5.0), "EPSG:4326",
+                 from_origin(9.0, 47.0, 0.01, 0.01))  # fmt: skip
+    assert DemBaker(ListedSource("east.tif"), cache).bake_tile(*key) is None  # not there
+
+
+def test_direct_sources_retry_network_errors_and_cancel(tmp_path, monkeypatch):
+    import httpx
+
+    import earthling.data.dem as dem
+    from earthling.data.dem import WmsDemSource, get_dem_source
+    from helpers import mock_http
+
+    class Wms(WmsDemSource):
+        id = name = "test_dem_retry"
+        wms_url = "https://wms.example/wms"
+        layer = "DEM"
+        concurrency = 2
+        max_requests_per_second = 0.0
+
+    answers = {"errors": 2}
+
+    def server(request):
+        if answers["errors"]:
+            answers["errors"] -= 1
+            raise httpx.ConnectError("connection refused", request=request)
+        values = np.full((HEIGHTMAP_SAMPLES, HEIGHTMAP_SAMPLES), 777.0, "<f4")
+        return httpx.Response(200, content=values.tobytes(),
+                              headers={"content-type": "image/x-bil;bits=32"})  # fmt: skip
+
+    requests = mock_http(monkeypatch, server)
+    sleeps = []
+    monkeypatch.setattr(dem.time, "sleep", sleeps.append)  # no real back-off
+    baker = DemBaker(Wms(), TileCache(tmp_path))  # (its own client)
+    heights = baker.bake_tile(12, 2100, 1450)
+    assert np.allclose(heights, 777.0) and len(requests) == 3 and sleeps == [1.0, 2.0]
+    # cancelled from the progress callback: the remaining tiles are not baked
+    cancel = threading.Event()
+    seen = []
+
+    def on_progress(p):
+        seen.append(p.done)
+        cancel.set()
+
+    tiles = [(12, 2100 + i, 1451) for i in range(20)]
+    progress = baker.bake(tiles, on_progress, cancel)
+    assert 1 <= progress.done < 20 and seen[0] == 1
+    # a server that stays down: given up after the retries, the tile counts as failed
+    answers["errors"], sleeps[:] = 100, []
+    failed = baker.bake([(12, 2200, 1450)])
+    assert failed.failed == 1 and "connection refused" in failed.errors[0]
+    assert sleeps == [1.0, 2.0, 4.0, 8.0, 16.0]
+    with pytest.raises(KeyError, match="unknown DEM source 'nope'.*copernicus_glo30"):
+        get_dem_source("nope")

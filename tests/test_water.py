@@ -1,11 +1,17 @@
 """Step 19.10: the water mask (vector tiles) and the water surface."""
 
+import json
+import os
+import time
+
+import httpx
 import numpy as np
 import pytest
 
 from earthling.data.cache import TileCache
 from earthling.data.vector_tiles import decode_tile, ring_area
-from earthling.data.water import PROVIDER_ID, WaterData
+from earthling.data.water import PROVIDER_ID, TILEJSON_URL, WaterData
+from helpers import mock_http
 
 
 # --- a minimal MVT encoder (only what the tests need) -------------------------------------------
@@ -141,3 +147,140 @@ def test_water_surface_reflects_and_glints(gl_ctx):
                   water__color=(0.0, 0.0, 1.0))  # fmt: skip
     rgb = even.reshape(-1, 3)
     assert rgb[:, 2].mean() > rgb[:, 1].mean() + 5.0  # blue sea, not the green imagery
+
+
+# --- the TileJSON, on-demand downloads, polygon filtering ------------------------------------
+TILES_URL = "https://tiles.example/water/{z}/{x}/{y}.pbf"
+
+
+def tagged_tile(features, extent=4096) -> bytes:
+    """A "water" layer of (tags, rings, geometry type) features; string and int tags."""
+    keys, values, encoded = [], [], []
+    for tags, rings, gtype in features:
+        pairs = b""
+        for key, value in tags.items():
+            if key not in keys:
+                keys.append(key)
+            if value not in values:
+                values.append(value)
+            pairs += _varint(keys.index(key)) + _varint(values.index(value))
+        encoded.append(_field(2, 2, _field(2, 2, pairs) + _field(3, 0, gtype)
+                                    + _field(4, 2, _polygon(rings))))  # fmt: skip
+    value_bytes = b"".join(
+        _field(4, 2, _field(4, 0, v) if isinstance(v, int) else _field(1, 2, v.encode()))
+        for v in values
+    )
+    layer = (_field(15, 0, 2) + _field(1, 2, b"water") + b"".join(encoded)
+             + b"".join(_field(3, 2, k.encode()) for k in keys) + value_bytes
+             + _field(5, 0, extent))  # fmt: skip
+    return _field(3, 2, layer)
+
+
+def write_tilejson(root, doc=None):
+    path = root / "_vector" / "openfreemap.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc if doc is not None else {"tiles": [TILES_URL]}))
+    return path
+
+
+def test_tilejson_downloaded_cached_and_refreshed(tmp_path, monkeypatch):
+    answers = []
+    requests = mock_http(monkeypatch, lambda r: answers.pop(0))
+    cache = TileCache(tmp_path)
+    answers.append(httpx.Response(200, json={"tiles": [TILES_URL]}))
+    assert WaterData(cache).provider().url_template == TILES_URL
+    assert str(requests[0].url) == TILEJSON_URL
+    offline = WaterData(cache)
+    offline.allow_download = False
+    assert offline.provider().url_template == TILES_URL and len(requests) == 1  # from the file
+    # older than a month: fetched again, the old one kept when that fails
+    path = write_tilejson(tmp_path, {"tiles": ["https://old.example/{z}/{x}/{y}.pbf"]})
+    month_ago = time.time() - 31 * 86400
+    os.utime(path, (month_ago, month_ago))
+    answers.append(httpx.Response(500))
+    assert WaterData(cache).provider().url_template.startswith("https://old.example")
+    answers.append(httpx.Response(200, json={"tiles": [TILES_URL]}))
+    assert WaterData(cache).provider().url_template == TILES_URL
+    assert json.loads(path.read_text())["tiles"] == [TILES_URL]
+
+
+def test_no_tile_url_no_water(tmp_path, monkeypatch):
+    requests = mock_http(monkeypatch, lambda r: httpx.Response(200, json={"tiles": []}))
+    water = WaterData(TileCache(tmp_path))
+    assert water.provider() is None and water.mask(14, 100, 200) is None
+    offline = WaterData(TileCache(tmp_path / "offline"))
+    offline.allow_download = False
+    assert offline.provider() is None and offline.tile_bytes(14, 1, 1) is None
+    assert len(requests) == 1  # only the online instance asked
+
+
+def test_tiles_downloaded_on_demand(tmp_path, monkeypatch):
+    def server(request):
+        if request.url.path == "/water/14/100/200.pbf":
+            return httpx.Response(200, content=water_tile([SEA]))
+        if request.url.path == "/water/14/2/2.pbf":
+            raise OSError("connection reset")  # (not an httpx error: not retried)
+        return httpx.Response(404)
+
+    requests = mock_http(monkeypatch, server)
+    cache = TileCache(tmp_path)
+    write_tilejson(tmp_path)
+    water = WaterData(cache)
+    assert water.polygons(14, 100, 200)[0][0] == 4096  # (extent, rings)
+    assert cache.read(PROVIDER_ID, 14, 100, 200, "pbf") is not None
+    assert water.tile_bytes(14, 1, 1) is None and cache.is_missing(PROVIDER_ID, 14, 1, 1)
+    assert water.tile_bytes(14, 2, 2) is None  # network trouble never breaks rendering
+    paths = [r.url.path for r in requests]
+    assert water.tile_bytes(14, 1, 1) is None and water.tile_bytes(14, 100, 200) is not None
+    assert [r.url.path for r in requests] == paths  # known missing / cached: no new requests
+    water.allow_download = False
+    assert water.tile_bytes(14, 3, 3) is None and [r.url.path for r in requests] == paths
+
+
+def test_polygons_only_permanent_water_surfaces(tmp_path):
+    square = [[(0, 0), (4096, 0), (4096, 4096), (0, 4096), (0, 0)]]
+    tile = tagged_tile([
+        ({"class": "ocean"}, square, 3),
+        ({"class": "swimming_pool"}, square, 3),
+        ({"class": "lake", "intermittent": 1}, square, 3),  # dry in summer
+        ({"class": "lake"}, square, 3),
+        ({"class": "river"}, [[(0, 0), (4096, 4096)]], 2),  # a line, not an area
+    ])  # fmt: skip
+    cache = TileCache(tmp_path)
+    write_tilejson(tmp_path)
+    cache.write(PROVIDER_ID, 14, 100, 200, "pbf", tile)
+    cache.write(PROVIDER_ID, 14, 101, 200, "pbf", b"\x1a\xff\xff")  # truncated
+    water = WaterData(cache)
+    water.allow_download = False
+    assert len(water.polygons(14, 100, 200)) == 2  # the sea and the permanent lake
+    sea_only = WaterData(cache, classes={"ocean"})
+    sea_only.allow_download = False
+    assert len(sea_only.polygons(14, 100, 200)) == 1
+    assert water.polygons(14, 101, 200) == []  # undecodable: no water, but no error
+    assert water.coverage(14, 101, 200, size=16).max() == 0.0
+    for x in range(300):  # the polygon cache stays bounded
+        water.polygons(10, x, 0)
+    assert len(water._polygons) <= 257
+
+
+def test_is_water_and_raster(tmp_path):
+    from earthling.core.geo import mercator_to_lonlat, tile_bounds_mercator
+
+    cache = TileCache(tmp_path)
+    write_tilejson(tmp_path)
+    cache.write(PROVIDER_ID, 14, 8500, 5800, "pbf", water_tile([SEA]))
+    water = WaterData(cache)
+    water.allow_download = False
+    x0, y0, x1, y1 = tile_bounds_mercator(14, 8500, 5800)
+
+    def at(fx, fy):  # fractions of the tile, y down
+        lon, lat = mercator_to_lonlat(x0 + fx * (x1 - x0), y1 - fy * (y1 - y0))
+        return float(lon), float(lat)
+
+    lon, lat = zip(at(0.05, 0.5), at(0.9, 0.5), at(0.25, 0.5), strict=True)
+    assert water.is_water(lon, lat).tolist() == [1.0, 0.0, 0.0]  # sea, land, the island
+    # two tiles side by side: the cached one with the sea, the other one unknown
+    (w, s), (e, n) = at(0.2, 0.9), at(1.5, 0.1)
+    raster, origin = water.raster((w, s, e, n), 14, size=32)
+    assert origin == (8500, 5800) and raster.shape == (32, 64)
+    assert raster[16, 2] == pytest.approx(1.0) and raster[:, 32:].max() == 0.0

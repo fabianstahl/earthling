@@ -79,7 +79,8 @@ def test_scene_roundtrip_with_pois():
     assert "poi.coffee_stop_2.opacity" not in other.registry
 
 
-def render_poi(gl_ctx, poi, time=1.0, **props):
+def render_poi(gl_ctx, poi, time=1.0, extra=(), **props):
+    """``extra``: POIs given to the layer without properties in the scene."""
     from earthling.core.geo import lonlat_to_tile
     from earthling.render import lod
     from earthling.render.camera import Camera, OrbitController
@@ -97,7 +98,7 @@ def render_poi(gl_ctx, poi, time=1.0, **props):
     renderer.store = scene.store
     renderer.animation = scene.animation
     renderer.time = time
-    renderer.pois.set_pois(scene.pois)
+    renderer.pois.set_pois([*scene.pois, *extra])
     camera = Camera()
     renderer.terrain.finish_loading(camera, camera.view_projection(1.0), 240)
     orbit = OrbitController(camera)
@@ -186,3 +187,94 @@ def test_hiker_marker_does_not_write_depth(gl_ctx):
     renderer.marker.render(camera, camera.view_projection(320 / 240), 320, 240, 0.0, None)
     after = np.frombuffer(target.read(components=1, attachment=-1, dtype="f4"), dtype="f4")
     assert np.array_equal(before, after)
+
+
+def test_which_pois_are_drawn(gl_ctx):
+    sign = Poi("camp", "Camp", 7.0, 46.0, "builtin:turnaround", size_px=300.0,
+               height_offset_m=2600.0)  # fmt: skip
+    ghost = Poi("ghost", "Ghost", 7.0, 46.0, height_offset_m=2600.0)
+    renderer, _ = render_poi(gl_ctx, sign, extra=[ghost])
+    assert renderer.pois.last_drawn == ["camp"]  # (no properties: not part of the scene)
+    renderer, _ = render_poi(gl_ctx, sign, poi__camp__opacity=0.0)
+    assert renderer.pois.last_drawn == []
+    # neither an icon nor a caption: nothing to draw
+    blank = Poi("blank", "Blank", 7.0, 46.0, "none", height_offset_m=2600.0)
+    renderer, _ = render_poi(gl_ctx, blank)
+    assert renderer.pois.last_drawn == []
+    renderer.pois.release()
+    assert renderer.pois._icons == {}
+
+
+def icon_quad(gl_ctx, effect, since, strength=1.0):
+    """Corner offsets (px, y down) of the icon quad of a 100 px POI without a pin line."""
+    from earthling.render.labels import FontAtlas
+    from earthling.render.pois import PoiLayer
+    from earthling.render.shader_library import ShaderLibrary
+
+    poi = Poi("p", "P", 7.0, 46.0, "builtin:pin", size_px=100.0, lift_px=0.0)
+    scene = Scene()
+    scene.set_pois([poi])
+    scene.store.set("poi.p.effect", effect)
+    scene.store.set("poi.p.effect_strength", strength)
+    atlas = FontAtlas(gl_ctx)
+    layer = PoiLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: atlas)
+    icon = layer._icon(poi)
+    vertices = layer._geometry(poi, icon, np.zeros(3), scene.store, since, 1.0, 1.0, 1.0, atlas)
+    return vertices[:6, 3:5].astype(float), icon.size
+
+
+def test_icon_effects(gl_ctx):
+    still, (fw, fh) = icon_quad(gl_ctx, "none", 0.25)
+    width = 100.0 * fw / fh
+    assert still[:, 1].mean() == pytest.approx(-50.0)  # standing on its anchor
+    assert np.ptp(still[:, 0]) == pytest.approx(width) and np.ptp(still[:, 1]) == 100.0
+    # 1 Hz: at 0.5 s the bounce is highest, at 0.25 s the pulse biggest, the spin a quarter
+    bounce, _ = icon_quad(gl_ctx, "bounce", 0.5)
+    assert bounce[:, 1].mean() == pytest.approx(-50.0 - 35.0)
+    pulse, _ = icon_quad(gl_ctx, "pulse", 0.25)
+    assert np.ptp(pulse[:, 1]) == pytest.approx(115.0)
+    floating, _ = icon_quad(gl_ctx, "float", 0.25, strength=2.0)
+    assert floating[:, 1].mean() == pytest.approx(-50.0 - 16.0)
+    spin, _ = icon_quad(gl_ctx, "spin", 0.25)
+    assert np.ptp(spin[:, 0]) == pytest.approx(100.0) and np.ptp(spin[:, 1]) == pytest.approx(width)
+    wobble, _ = icon_quad(gl_ctx, "wobble", 0.25)
+    tilt = np.degrees(np.arctan2(*(wobble[1] - wobble[0])[::-1]))  # the top edge
+    assert abs(tilt) == pytest.approx(12.0)
+
+
+def test_unreadable_icons_fall_back_to_the_pin(gl_ctx, tmp_path):
+    from earthling.render.pois import PoiLayer
+    from earthling.render.shader_library import ShaderLibrary
+
+    (tmp_path / "broken.png").write_bytes(b"not a png")
+    layer = PoiLayer(gl_ctx, ShaderLibrary(gl_ctx), lambda: None)
+    layer.set_pois([], base_dir=tmp_path)
+    pin = layer._icon(Poi("a", "A", 7.0, 46.0))
+    assert layer._icon(Poi("b", "B", 7.0, 46.0, icon="broken.png")) is pin
+    assert layer._icon(Poi("c", "C", 7.0, 46.0, icon="missing.png")) is pin
+    assert resolve_icon("", None) is None
+    layer.release()
+
+
+def test_anchor_heights_from_the_terrain():
+    from types import SimpleNamespace
+
+    from earthling.render.pois import LIFT_M, PoiLayer
+    from helpers import FRAME
+
+    layer = PoiLayer.__new__(PoiLayer)
+    layer._anchors = {}
+    heights = [None, 2000.0]
+    calls = []
+
+    def height_at(lon, lat):
+        calls.append((lon, lat))
+        return heights[min(len(calls) - 1, 1)]
+
+    terrain = SimpleNamespace(height_at=height_at)
+    poi = Poi("p", "P", 7.0, 46.0, height_offset_m=10.0)
+    loading = layer._anchor(poi, FRAME, terrain, 2.0)
+    assert loading[2] == pytest.approx(10.0 + LIFT_M, abs=0.5)  # heights not loaded yet
+    loaded = layer._anchor(poi, FRAME, terrain, 2.0)
+    assert loaded[2] == pytest.approx(4000.0 + 10.0 + LIFT_M, abs=0.5)  # exaggerated ground
+    assert layer._anchor(poi, FRAME, terrain, 2.0) is loaded and len(calls) == 2  # cached
