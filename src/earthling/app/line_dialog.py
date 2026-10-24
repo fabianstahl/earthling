@@ -90,6 +90,7 @@ class LineDialog(QDialog):
         form.addRow("", QLabel(f"(times in the project's time zone, {timezone})"))
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                         | QDialogButtonBox.StandardButton.Cancel)  # fmt: skip
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)

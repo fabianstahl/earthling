@@ -50,6 +50,7 @@ def _no_modal_dialogs(monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Discard)
     for name in ("warning", "critical", "information"):
         monkeypatch.setattr(QMessageBox, name, lambda *a, **k: QMessageBox.StandardButton.Ok)
+    monkeypatch.setattr(QMessageBox, "about", lambda *a, **k: None)
     yield
 
 

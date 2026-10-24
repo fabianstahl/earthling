@@ -53,7 +53,7 @@ def window(qtbot, tmp_path, monkeypatch):
     w.show()
     assert w.open_project(offline_demo(tmp_path))
     qtbot.wait(50)
-    closer = QTimer()
+    closer = w.dialog_closer = QTimer()  # (a test that looks at a dialog stops it)
     closer.timeout.connect(close_dialogs)
     closer.start(40)
     yield w

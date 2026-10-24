@@ -72,6 +72,7 @@ class ExportDialog(QDialog):
         buttons.addStretch()
         self.export_btn = QPushButton("Export")
         self.cancel_btn = QPushButton("Close")
+        self.export_btn.setDefault(True)  # (Enter exports)
         buttons.addWidget(self.export_btn)
         buttons.addWidget(self.cancel_btn)
         layout.addLayout(buttons)

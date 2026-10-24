@@ -40,6 +40,7 @@ class SourceDialog(QDialog):
         choose.clicked.connect(self._choose)
         self.run_button = QPushButton("Test")
         self.run_button.clicked.connect(self.run)
+        self.run_button.setDefault(True)  # (Enter tests)
         self.report = QPlainTextEdit(readOnly=True)
         self.report.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.tiles = QLabel()
