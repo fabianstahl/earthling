@@ -229,6 +229,8 @@ def test_keys_tick_rename_and_open_the_menu(qtbot, tmp_path, monkeypatch):
 
     window = two_track_window(qtbot, tmp_path)
     window.show()
+    window.activateWindow()  # (keyboard focus needs the active window)
+    qtbot.waitUntil(window.isActiveWindow)
     lst, tree = window.scene_list, window.scene_list.tree
     group = next(k for k in keys(lst) if k and k[0] == "group")
     lst.select(group)

@@ -61,12 +61,14 @@ class AnimationCommand(QUndoCommand):
 
 
 def window_journey(window) -> Journey | None:
-    """The journey of the open project as the viewport shows it (None before a project)."""
+    """The journey of the open project as the viewport shows it (None before a project, and
+    without a walked track that could be drawn: e.g. every GPX file failed to load)."""
     renderer = window.viewport.renderer
-    if window.session is None or renderer is None or renderer.tracks.path is None:
+    path = renderer.tracks.path if renderer is not None else None
+    if window.session is None or path is None or not path.tracks:
         return None
     tz = ZoneInfo(window.session.config.project.timezone)
-    return Journey(window.session, renderer.tracks.path, list(renderer.tracks._gpu),
+    return Journey(window.session, path, list(renderer.tracks._gpu),
                    renderer.terrain.data, tz)  # fmt: skip
 
 

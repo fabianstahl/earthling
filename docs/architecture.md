@@ -138,5 +138,7 @@ slow suite (`uv run pytest -m slow`, about 10 minutes, also offline) chains whol
 (GPX to video), checks that large journeys and the most expensive settings stay within time
 budgets, and measures how long the interface freezes (`helpers.longest_freeze`).
 `tests/test_monkey.py` takes 1500 random steps through the interface (menus, buttons, keys,
-the scene list, the inspector, the palette, value drags, undo) from a fixed seed: a failure
-repeats, and its message lists the steps that led there.
+the scene list, the inspector, the palette, value drags, clicks and drags in the 3D view,
+undo) for each of two fixed seeds. It fills in and accepts the dialogs it opens (or cancels
+them), picks popup menu entries, and file dialogs hand it GPX files, photos, scenes and
+folders, broken ones too. A failure repeats, and its message lists the steps that led there.

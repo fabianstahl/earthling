@@ -114,3 +114,23 @@ def test_scene_frame_origin_with_undo(qtbot):
     assert window.scene.animation.curves["camera.pose"].keys[0].value == pytest.approx(
         pose, abs=1e-4
     )
+
+
+def test_generators_need_a_track_to_follow(qtbot, tmp_path):
+    """A project without a track that can be drawn (a broken file, a single point) has an
+    empty path: a generator refuses, as without a project (the camera one raised)."""
+    from earthling.app import generators
+    from earthling.app.main_window import MainWindow
+    from helpers import gpx_text, make_project
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    point = gpx_text({"Point": [(46.0, 7.0, 1000.0, "2026-07-01T08:00:00Z")]})
+    files = {"broken.gpx": "<gpx><broken", "point.gpx": point}
+    assert window.open_project(make_project(tmp_path / "p", files))
+    qtbot.waitUntil(lambda: getattr(window.viewport.renderer, "tracks", None) is not None)
+    qtbot.waitUntil(lambda: window.viewport.renderer.tracks.path is not None)  # (empty)
+    ran = []
+    assert not generators.run(window, "Draw", lambda hike, _scene: ran.append(hike))
+    assert not ran
