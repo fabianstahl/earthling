@@ -608,6 +608,13 @@ def format_value(d: PropertyDef, value: Any) -> str:
     return ""
 
 
+def set_shown(widget: QWidget, shown: bool) -> None:
+    """``setVisible`` only on a change: even a no-op setVisible(True) on a widget never hidden
+    polishes it against the style sheet (a few hundred rows made a category take 0.4 s)."""
+    if widget.isHidden() == shown:
+        widget.setVisible(shown)
+
+
 def retire(view: QWidget | None) -> None:
     """Delete a replaced view safely: a focused field inside would report "editing finished"
     while it is destroyed (a crash), so its focus goes first and its signals stop."""
@@ -919,13 +926,13 @@ class SectionView(QWidget):
             self.switch.blockSignals(True)
             self.switch.setChecked(on)
             self.switch.blockSignals(False)
-            self.switch.setVisible(self.switch_def.shown(values))
+            set_shown(self.switch, self.switch_def.shown(values))
         self.caret.setProperty("off", not on)
         self.caret.style().unpolish(self.caret)
         self.caret.style().polish(self.caret)
         for d in self.defs:
             if d.id in self.rows:
-                self.rows[d.id].setVisible(self.row_visible(d, values))
+                set_shown(self.rows[d.id], self.row_visible(d, values))
         hidden_advanced = [
             d
             for d in self.defs
@@ -934,16 +941,16 @@ class SectionView(QWidget):
             and d.shown(values)
             and (self.rows[d.id].tab in (None, self.tab))
         ]
-        self.more.setVisible(bool(hidden_advanced) and not self.flat)
+        set_shown(self.more, bool(hidden_advanced) and not self.flat)
         self.more.setText("Fewer settings" if self.more_open
                           else f"More settings · {len(hidden_advanced)}")  # fmt: skip
         self.more.setIcon(theme.icon("caret-down" if self.more_open else "caret-right",
                                      theme.TEXT_3))  # fmt: skip
-        self.body.setVisible(open_ and on)
+        set_shown(self.body, open_ and on)
         count = len(self.rows)
         self.off_note.setText(f"Off · switch on to edit its {count} settings")
-        self.off_note.setVisible(open_ and not on)
-        self.setVisible(self.has_content())
+        set_shown(self.off_note, open_ and not on)
+        set_shown(self, self.has_content())
 
     # --- section menu -----------------------------------------------------------------
     def _reset(self, pid: str) -> None:

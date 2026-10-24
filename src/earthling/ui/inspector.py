@@ -230,10 +230,23 @@ class Rail(QWidget):
         return b
 
 
+@dataclass
+class _Page:
+    """A built category view, kept while its settings stay the same: building one takes up to
+    a few hundred milliseconds, showing it again almost nothing."""
+
+    key: tuple
+    widget: QWidget
+    editors: dict
+    rows: dict
+    sections: dict
+
+
 class Inspector(QWidget):
     """Category rail + header, search, filter chips and the sections of the current view.
 
-    ``editors``, ``rows`` and ``sections`` hold the widgets currently shown."""
+    ``editors``, ``rows`` and ``sections`` hold the widgets currently shown. Category views
+    are kept (``_pages``); search results and item forms are built each time."""
 
     FILTERS = (("all", "All"), ("changed", "Changed"), ("animated", "Animated"),
                ("pinned", "Pinned"))  # fmt: skip
@@ -259,6 +272,7 @@ class Inspector(QWidget):
         self.editors: dict[str, PropertyEditor] = {}
         self.rows: dict[str, PropertyRow] = {}
         self.sections: dict[str, SectionView] = {}
+        self._pages: dict[str, _Page] = {}
         self._section_state: dict[str, tuple[bool, bool, str | None]] = {}
         self._shown_top: QWidget | None = None
         self.reveal_item: Callable[[str], bool] | None = None  # shows an item's section
@@ -383,6 +397,8 @@ class Inspector(QWidget):
         self.show_category(category.id)
         section = self.sections.get(title)
         if section is not None:
+            section.set_open(True)  # (a kept page does not read _section_state again)
+            section.refresh()
             QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(section, 0, 0))
 
     def reveal(self, pid: str) -> None:
@@ -435,29 +451,77 @@ class Inspector(QWidget):
         if previous_top is not None:
             previous_top.setParent(self)
         self._shown_top = None
-        self.editors.clear()
-        self.rows.clear()
-        self.sections.clear()
+        query = self.search.text().strip()
+        if query or self.filter != "all" or self.item is not None:
+            container = self._build_view(query)
+        else:
+            container = self._category_page()
+        if previous_top is not None and previous_top is not (self.item or {}).get("top"):
+            previous_top.hide()
+        old = self.scroll.takeWidget()
+        self.scroll.setWidget(container)
+        if old is not None and old is not container:
+            if any(page.widget is old for page in self._pages.values()):
+                old.hide()  # (kept for later)
+                old.setParent(self)
+            else:
+                retire(old)
+        self.refresh_key_states()
+        self._update_counts()
+
+    def _new_view(self) -> tuple[QWidget, QVBoxLayout]:
+        """An empty view; ``editors``, ``rows`` and ``sections`` start afresh for it."""
+        self.editors, self.rows, self.sections = {}, {}, {}
         container = QWidget()
         container.setObjectName("panelBody")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        query = self.search.text().strip()
+        return container, layout
+
+    def _build_view(self, query: str) -> QWidget:
+        container, layout = self._new_view()
         if query or self.filter != "all":
             self._build_results(layout, query)
-        elif self.item is not None:
-            self._build_item(layout)
         else:
-            self._build_category(layout)
+            self._build_item(layout)
         layout.addStretch()
-        if previous_top is not None and previous_top is not (self.item or {}).get("top"):
-            previous_top.hide()
-        old = self.scroll.takeWidget()
-        self.scroll.setWidget(container)
-        retire(old)
-        self.refresh_key_states()
-        self._update_counts()
+        return container
+
+    def _category_page(self) -> QWidget:
+        """The current category's view: the kept one if its settings did not change (its
+        values are brought up to date: a hidden view misses the edits), else a new one."""
+        category = next((c for c in self.categories() if c.id == self.category), CATEGORIES[0])
+        mine = [(t, defs) for t, defs in self.all_sections() if category_of(t) is category]
+        looks = self.looks.get(category.id) or []
+        key = (tuple((t, tuple(map(id, defs))) for t, defs in mine), tuple(map(id, looks)))
+        page = self._pages.get(category.id)
+        if page is not None and page.key == key:
+            self.rail.set_current(category.id)
+            self._set_header(category.icon, category.title, category.subtitle)
+            self.editors, self.rows, self.sections = page.editors, page.rows, page.sections
+            for pid, editor in self.editors.items():
+                d = self.store.registry[pid]
+                editor.set_value(self.store[pid])
+                self.rows[pid].set_changed(self.store[pid] != d.coerce(d.default))
+            for section in self.sections.values():
+                section.refresh()
+            return page.widget
+        if page is not None and page.widget is not self.scroll.widget():
+            retire(page.widget)
+        container, layout = self._new_view()
+        self._build_category(layout)
+        layout.addStretch()
+        self._pages[category.id] = _Page(key, container, self.editors, self.rows, self.sections)
+        return container
+
+    def _forget_pages(self) -> None:
+        """Drop the kept views (all but the one shown, which goes on its next rebuild)."""
+        shown = self.scroll.widget()
+        for page in self._pages.values():
+            if page.widget is not shown:
+                retire(page.widget)
+        self._pages.clear()
 
     def _set_header(self, icon: str, title: str, subtitle: str) -> None:
         self.tile.setPixmap(theme.icon(icon, theme.ACCENT_TEXT).pixmap(QSize(20, 20)))
@@ -620,6 +684,7 @@ class Inspector(QWidget):
             self.pins.add(pid)
         else:
             self.pins.discard(pid)
+        self._forget_pages()  # (their stars would be stale)
         self.settings.setValue("inspector/pins", sorted(self.pins))
         self._counts_timer.start()
 

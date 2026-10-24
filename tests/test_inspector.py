@@ -73,3 +73,27 @@ def test_sections_keep_their_state_between_categories(qtbot, tmp_path):
     inspector.show_category("camera")
     inspector.show_category("weather")
     assert not inspector.sections["Sky & Atmosphere"].is_open
+
+
+def test_category_views_are_kept_and_brought_up_to_date(qtbot, tmp_path):
+    """Switching back to a category shows its kept view (no rebuild), with the values that
+    changed meanwhile; a changed set of settings builds it anew."""
+    inspector, store = make_inspector(qtbot, tmp_path)
+    inspector.show_category("weather")
+    weather = inspector.scroll.widget()
+    fog = inspector.editors["fog.density"]
+    inspector.show_category("tracks")
+    store.set("fog.density", 2.5)  # (while the weather view is hidden)
+    inspector.show_category("weather")
+    assert inspector.scroll.widget() is weather and inspector.editors["fog.density"] is fog
+    assert fog.field.value == 2.5 and inspector.rows["fog.density"].changed
+    inspector.sections["Height Fog"].set_open(False)  # its state stays with the view
+    inspector.show_category("tracks")
+    inspector.show_category("weather")
+    assert not inspector.sections["Height Fog"].is_open
+    d = store.registry["fog.density"]
+    store.registry.remove(d.id)
+    store.registry.add(d)  # (the same id, but a new definition object: e.g. regrouped)
+    inspector.show_category("tracks")
+    inspector.show_category("weather")
+    assert inspector.scroll.widget() is not weather
